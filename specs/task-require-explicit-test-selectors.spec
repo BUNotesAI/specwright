@@ -18,10 +18,10 @@ tags: [bootstrap, lint, verify, quality-gate]
 ## 边界
 
 ### 允许修改
-- crates/spec-core/**
-- crates/spec-lint/**
-- crates/spec-gateway/**
-- crates/spec-cli/**
+- src/spec_core/**
+- src/spec_lint/**
+- src/spec_gateway/**
+- src/**
 - specs/**
 
 ### 禁止做

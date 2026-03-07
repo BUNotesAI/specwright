@@ -19,7 +19,7 @@ tags: [bootstrap, skills, claude-code, tool-first, phase5]
 
 ### 允许修改
 - .claude/skills/**
-- crates/spec-cli/**
+- src/**
 - specs/**
 - README.md
 

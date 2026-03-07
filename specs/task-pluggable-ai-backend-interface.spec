@@ -18,9 +18,9 @@ tags: [bootstrap, verify, ai, gateway, phase4]
 ## 边界
 
 ### 允许修改
-- crates/spec-core/**
-- crates/spec-verify/**
-- crates/spec-gateway/**
+- src/spec_core/**
+- src/spec_verify/**
+- src/spec_gateway/**
 - specs/**
 - README.md
 
@@ -33,7 +33,6 @@ tags: [bootstrap, verify, ai, gateway, phase4]
 
 场景: Stub backend 返回结构化 AI 决策
   测试:
-    包: spec-verify
     过滤: test_stub_ai_backend_returns_uncertain_decision
   假设 某个场景被提交给 `StubAiBackend`
   当 backend 生成 AI 决策
@@ -42,7 +41,6 @@ tags: [bootstrap, verify, ai, gateway, phase4]
 
 场景: AiVerifier 使用 backend 响应构造结果
   测试:
-    包: spec-verify
     过滤: test_ai_verifier_with_custom_backend_uses_backend_response
   假设 某个自定义 backend 返回结构化 AI 决策
   当 `AiVerifier` 使用该 backend 验证场景
@@ -51,7 +49,6 @@ tags: [bootstrap, verify, ai, gateway, phase4]
 
 场景: AI request 包含场景与代码上下文
   测试:
-    包: spec-verify
     过滤: test_build_ai_request_includes_scenario_and_code_paths
   假设 某个场景和代码路径被交给 `AiVerifier`
   当 verifier 构造 `AiRequest`

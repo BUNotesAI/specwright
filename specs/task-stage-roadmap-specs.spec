@@ -19,8 +19,8 @@ tags: [bootstrap, roadmap, planning]
 ## 边界
 
 ### 允许修改
-- crates/spec-parser/**
-- crates/spec-cli/**
+- src/spec_parser/**
+- src/**
 - specs/**
 
 ### 禁止做
@@ -32,7 +32,6 @@ tags: [bootstrap, roadmap, planning]
 
 场景: 嵌套 roadmap spec 继续继承顶层 project 规则
   测试:
-    包: spec-parser
     过滤: resolves_parent_from_nested_spec_directory_via_ancestor_specs_dir
   假设 某个 roadmap task spec 位于 `specs/roadmap/`
   当 parser 默认解析其继承链

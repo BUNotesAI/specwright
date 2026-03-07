@@ -18,11 +18,11 @@ tags: [bootstrap, verify, parser, contract, phase4]
 ## 边界
 
 ### 允许修改
-- crates/spec-core/**
-- crates/spec-parser/**
-- crates/spec-verify/**
-- crates/spec-cli/**
-- crates/spec-gateway/**
+- src/spec_core/**
+- src/spec_parser/**
+- src/spec_verify/**
+- src/**
+- src/spec_gateway/**
 - specs/**
 
 ### 禁止做
@@ -34,7 +34,6 @@ tags: [bootstrap, verify, parser, contract, phase4]
 
 场景: parser 保留结构化测试选择器
   测试:
-    包: spec-parser
     过滤: test_parse_structured_test_selector_block
   假设 某个场景使用 `测试:` 块声明 `包: spec-parser` 和 `过滤: test_parse_structured_test_selector_block`
   当 parser 解析该场景
@@ -43,7 +42,6 @@ tags: [bootstrap, verify, parser, contract, phase4]
 
 场景: 单行测试选择器继续兼容
   测试:
-    包: spec-parser
     过滤: test_parse_shorthand_test_selector_as_filter_only
   假设 某个场景继续使用单行 `测试: test_name`
   当 parser 解析该场景
@@ -52,7 +50,6 @@ tags: [bootstrap, verify, parser, contract, phase4]
 
 场景: verifier 使用 package 范围执行测试
   测试:
-    包: spec-verify
     过滤: test_build_cargo_test_command_with_package_selector
   假设 某个场景声明 `包: spec-parser` 和 `过滤: test_parse_structured_test_selector_block`
   当 TestVerifier 构造测试命令

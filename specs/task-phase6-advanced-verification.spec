@@ -18,10 +18,10 @@ tags: [roadmap, planned, phase6, verification]
 ## 边界
 
 ### 允许修改
-- crates/spec-cli/**
-- crates/spec-core/**
-- crates/spec-gateway/**
-- crates/spec-report/**
+- src/**
+- src/spec_core/**
+- src/spec_gateway/**
+- src/spec_report/**
 - README.md
 - specs/**
 
@@ -43,7 +43,6 @@ tags: [roadmap, planned, phase6, verification]
 
 场景: 成本报告按层输出
   测试:
-    包: spec-report
     过滤: test_cost_report_breaks_down_tokens_time_and_layers
   假设 某次生命周期执行同时使用了 test 与 AI 层
   当 用户请求成本报告

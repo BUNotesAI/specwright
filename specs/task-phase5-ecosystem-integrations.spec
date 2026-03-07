@@ -23,8 +23,8 @@ tags: [roadmap, planned, phase5, ecosystem]
 - .claude/**
 - AGENTS.md
 - README.md
-- crates/spec-cli/**
-- crates/spec-report/**
+- src/**
+- src/spec_report/**
 - specs/**
 
 ### 禁止做
@@ -45,7 +45,6 @@ tags: [roadmap, planned, phase5, ecosystem]
 
 场景: JSON 输出适合作为编排接口
   测试:
-    包: spec-report
     过滤: test_report_json_exposes_contract_and_verification_summary_for_orchestrators
   假设 外部编排系统读取 lifecycle 或 guard 结果
   当 用户选择 JSON 输出

@@ -18,9 +18,9 @@ tags: [bootstrap, parser, gateway, cli]
 ## 边界
 
 ### 允许修改
-- crates/spec-parser/**
-- crates/spec-gateway/**
-- crates/spec-cli/**
+- src/spec_parser/**
+- src/spec_gateway/**
+- src/**
 
 ### 禁止做
 - 不要硬编码仓库绝对路径

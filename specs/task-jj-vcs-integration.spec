@@ -23,9 +23,9 @@ changing any default behaviour for pure-Git users.
 ## Boundaries
 
 ### Allowed Changes
-- crates/spec-cli/src/main.rs
-- crates/spec-cli/src/vcs.rs (new file)
-- crates/spec-cli/Cargo.toml (only if a dev-dependency is needed for tests)
+- src/main.rs
+- src/vcs.rs (new file)
+- Cargo.toml (only if a dev-dependency is needed for tests)
 
 ### Forbidden
 - Do not modify spec-core, spec-parser, spec-lint, spec-verify, spec-gateway, or spec-report

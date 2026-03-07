@@ -18,7 +18,7 @@ tags: [bootstrap, cli, git, boundaries, guard]
 ## 边界
 
 ### 允许修改
-- crates/spec-cli/**
+- src/**
 - specs/**
 
 ### 禁止做

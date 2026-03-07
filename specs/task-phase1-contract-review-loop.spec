@@ -19,8 +19,8 @@ tags: [roadmap, planned, phase1, review]
 ## 边界
 
 ### 允许修改
-- crates/spec-cli/**
-- crates/spec-report/**
+- src/**
+- src/spec_report/**
 - README.md
 - .github/workflows/**
 - specs/**

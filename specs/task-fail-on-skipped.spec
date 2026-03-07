@@ -18,9 +18,9 @@ tags: [bootstrap, verify, lifecycle]
 ## 边界
 
 ### 允许修改
-- crates/spec-gateway/**
-- crates/spec-cli/**
-- crates/spec-core/src/verify.rs
+- src/spec_gateway/**
+- src/**
+- src/spec_core/verify.rs
 
 ### 禁止做
 - 不要在存在 `skip` 的情况下返回 `passed: true`

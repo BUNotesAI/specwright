@@ -18,10 +18,10 @@ tags: [roadmap, planned, phase0, contract]
 ## 边界
 
 ### 允许修改
-- crates/spec-core/**
-- crates/spec-parser/**
-- crates/spec-gateway/**
-- crates/spec-cli/**
+- src/spec_core/**
+- src/spec_parser/**
+- src/spec_gateway/**
+- src/**
 - specs/**
 - README.md
 
@@ -34,7 +34,6 @@ tags: [roadmap, planned, phase0, contract]
 
 场景: 继承链保留项目级约束与已定决策
   测试:
-    包: spec-gateway
     过滤: test_load_resolves_full_project_contract_from_spec_directory
   假设 `project.spec` 声明了 Constraints 与 Decisions
   当 task spec 通过默认继承链加载
@@ -43,7 +42,6 @@ tags: [roadmap, planned, phase0, contract]
 
 场景: Task Contract 区分 Must 与 Decisions
   测试:
-    包: spec-gateway
     过滤: test_task_contract_keeps_must_must_not_and_decisions_distinct
   假设 某个 task spec 同时声明 Must、Must Not 与已定决策
   当 gateway 构造 Task Contract

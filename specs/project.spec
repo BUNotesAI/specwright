@@ -58,7 +58,7 @@ tags: [bootstrap, project]
 
 场景: 校验显式变更集边界
   测试: test_boundaries_verifier_rejects_change_outside_allowed_paths
-  假设 某个任务合约声明只允许修改 `crates/spec-parser/**`
+  假设 某个任务合约声明只允许修改 `src/spec_parser/**`
   当 verifier 检查显式变更路径 `crates/spec-gateway/src/lifecycle.rs`
   那么 验证结果为非通过
   并且 失败原因指出该路径不在允许边界内

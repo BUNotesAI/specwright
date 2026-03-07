@@ -18,8 +18,8 @@ tags: [bootstrap, contract, gateway, cli]
 ## 边界
 
 ### 允许修改
-- crates/spec-gateway/**
-- crates/spec-cli/**
+- src/spec_gateway/**
+- src/**
 - specs/**
 
 ### 禁止做

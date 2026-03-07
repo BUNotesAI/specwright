@@ -19,11 +19,11 @@ tags: [roadmap, planned, phase3, governance]
 ## 边界
 
 ### 允许修改
-- crates/spec-core/**
-- crates/spec-parser/**
-- crates/spec-lint/**
-- crates/spec-cli/**
-- crates/spec-gateway/**
+- src/spec_core/**
+- src/spec_parser/**
+- src/spec_lint/**
+- src/**
+- src/spec_gateway/**
 - README.md
 - specs/**
 
@@ -36,7 +36,6 @@ tags: [roadmap, planned, phase3, governance]
 
 场景: org.spec 参与三层继承链
   测试:
-    包: spec-gateway
     过滤: test_load_resolves_org_project_task_chain
   假设 仓库同时存在 `org.spec`、`project.spec` 与 task spec
   当 gateway 加载 task spec
@@ -45,7 +44,6 @@ tags: [roadmap, planned, phase3, governance]
 
 场景: lint 报告 Spec 质量
   测试:
-    包: spec-lint
     过滤: test_quality_report_scores_testability_and_smells
   假设 某个 Contract 含有明确 Test binding 与若干 spec smell
   当 用户运行 `agent-spec lint --quality`
@@ -54,7 +52,6 @@ tags: [roadmap, planned, phase3, governance]
 
 场景: lint 检测跨 spec 机械矛盾
   测试:
-    包: spec-lint
     过滤: test_cross_check_reports_boundary_and_decision_conflicts
   假设 同目录下多个 spec 在 Boundaries 或 Decisions 上存在机械冲突
   当 用户运行 `agent-spec lint --cross-check`

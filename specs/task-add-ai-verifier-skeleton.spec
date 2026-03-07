@@ -19,11 +19,11 @@ tags: [bootstrap, verify, ai, gateway, report, phase4]
 ## 边界
 
 ### 允许修改
-- crates/spec-core/**
-- crates/spec-verify/**
-- crates/spec-gateway/**
-- crates/spec-report/**
-- crates/spec-cli/**
+- src/spec_core/**
+- src/spec_verify/**
+- src/spec_gateway/**
+- src/spec_report/**
+- src/**
 - specs/**
 - README.md
 
@@ -36,7 +36,6 @@ tags: [bootstrap, verify, ai, gateway, report, phase4]
 
 场景: stub 模式把未覆盖场景标成 uncertain
   测试:
-    包: spec-gateway
     过滤: test_verify_with_ai_mode_stub_marks_uncovered_scenarios_uncertain
   假设 某个任务级 spec 的场景未被机械 verifier 覆盖
   当 gateway 使用 `AiMode::Stub` 执行验证
@@ -45,7 +44,6 @@ tags: [bootstrap, verify, ai, gateway, report, phase4]
 
 场景: 默认 off 模式保持 skip 语义
   测试:
-    包: spec-gateway
     过滤: test_verify_default_keeps_uncovered_scenarios_skipped
   假设 同一个未被覆盖的场景
   当 gateway 使用默认 AI 模式执行验证
@@ -54,7 +52,6 @@ tags: [bootstrap, verify, ai, gateway, report, phase4]
 
 场景: 文本报告输出 AI 证据
   测试:
-    包: spec-report
     过滤: test_format_verification_text_includes_ai_analysis_evidence
   假设 某个验证结果包含 `AiAnalysis` 证据
   当 report 以 text 格式输出

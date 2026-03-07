@@ -19,11 +19,11 @@ tags: [roadmap, planned, phase4, ai]
 ## 边界
 
 ### 允许修改
-- crates/spec-core/**
-- crates/spec-lint/**
-- crates/spec-verify/**
-- crates/spec-gateway/**
-- crates/spec-cli/**
+- src/spec_core/**
+- src/spec_lint/**
+- src/spec_verify/**
+- src/spec_gateway/**
+- src/**
 - README.md
 - specs/**
 
@@ -36,7 +36,6 @@ tags: [roadmap, planned, phase4, ai]
 
 场景: AI request 打包完整验证上下文
   测试:
-    包: spec-verify
     过滤: test_build_ai_request_includes_contract_change_set_and_evidence_context
   假设 某个场景需要 AI 验证
   当 verifier 构造 `AiRequest`
@@ -45,7 +44,6 @@ tags: [roadmap, planned, phase4, ai]
 
 场景: lint 检测 sycophancy 风险
   测试:
-    包: spec-lint
     过滤: test_sycophancy_linter_flags_bug_finding_bias
   假设 某个 Spec 使用“找出所有 bug”这类诱导性语句
   当 用户运行 lint

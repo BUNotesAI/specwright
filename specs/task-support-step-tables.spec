@@ -18,8 +18,8 @@ tags: [bootstrap, parser, dsl]
 ## 边界
 
 ### 允许修改
-- crates/spec-core/**
-- crates/spec-parser/**
+- src/spec_core/**
+- src/spec_parser/**
 
 ### 禁止做
 - 不要把表格行拆成新的步骤

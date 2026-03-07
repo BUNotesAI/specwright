@@ -18,8 +18,8 @@ tags: [bootstrap, ai, gateway, embed, phase4]
 ## 边界
 
 ### 允许修改
-- crates/spec-gateway/**
-- crates/spec-verify/**
+- src/spec_gateway/**
+- src/spec_verify/**
 - specs/**
 - README.md
 
@@ -32,7 +32,6 @@ tags: [bootstrap, ai, gateway, embed, phase4]
 
 场景: gateway 支持注入自定义 AI backend
   测试:
-    包: spec-gateway
     过滤: test_verify_with_injected_ai_backend_uses_host_backend
   假设 某个宿主 agent 提供自定义 `AiBackend`
   当 gateway 使用该 backend 执行验证
@@ -41,7 +40,6 @@ tags: [bootstrap, ai, gateway, embed, phase4]
 
 场景: 默认 gateway 入口仍不依赖外部 provider
   测试:
-    包: spec-gateway
     过滤: test_verify_default_keeps_uncovered_scenarios_skipped
   假设 某个未被覆盖的场景
   当 gateway 使用默认验证入口

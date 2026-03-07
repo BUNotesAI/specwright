@@ -18,10 +18,10 @@ tags: [bootstrap, verify, parser, contract]
 ## 边界
 
 ### 允许修改
-- crates/spec-core/**
-- crates/spec-parser/**
-- crates/spec-verify/**
-- crates/spec-cli/**
+- src/spec_core/**
+- src/spec_parser/**
+- src/spec_verify/**
+- src/**
 - specs/**
 
 ### 禁止做

@@ -18,7 +18,7 @@ tags: [bootstrap, cli, git, boundaries, guard, phase4]
 ## 边界
 
 ### 允许修改
-- crates/spec-cli/**
+- src/**
 - specs/**
 - README.md
 
