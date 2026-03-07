@@ -1,5 +1,10 @@
 # agent-spec
 
+[![Crates.io](https://img.shields.io/crates/v/agent-spec.svg)](https://crates.io/crates/agent-spec)
+[![docs.rs](https://docs.rs/agent-spec/badge.svg)](https://docs.rs/agent-spec)
+[![CI](https://github.com/ZhangHanDong/agent-spec/actions/workflows/contract-guard.yml/badge.svg)](https://github.com/ZhangHanDong/agent-spec/actions/workflows/contract-guard.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 `agent-spec` is an AI-native BDD/spec verification tool for task execution.
 
 The core idea is simple:
