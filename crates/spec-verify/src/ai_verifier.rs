@@ -39,6 +39,7 @@ impl AiVerifier {
             AiMode::Off => None,
             AiMode::Stub => Some(Arc::new(StubAiBackend) as Arc<dyn AiBackend>),
             AiMode::External => None,
+            AiMode::Caller => None,
         };
         Self { backend }
     }

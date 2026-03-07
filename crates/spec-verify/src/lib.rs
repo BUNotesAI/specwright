@@ -16,7 +16,7 @@ use spec_core::{
 pub use boundaries::BoundariesVerifier;
 pub use structural::StructuralVerifier;
 pub use test_verifier::TestVerifier;
-pub use ai_verifier::{AiBackend, AiVerifier, StubAiBackend};
+pub use ai_verifier::{AiBackend, AiVerifier, StubAiBackend, build_ai_request};
 
 /// AI verifier mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +24,8 @@ pub enum AiMode {
     Off,
     Stub,
     External,
+    /// Caller mode: emit AiRequests for the calling agent to resolve externally.
+    Caller,
 }
 
 /// Context for verification.

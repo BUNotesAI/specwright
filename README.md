@@ -140,6 +140,24 @@ cargo run -q --bin agent-spec -- guard --spec-dir specs --code .
 
 `guard` is intended for pre-commit / CI use. It lints all specs in `specs/` and verifies them against the current change set.
 
+### 5. Contract Acceptance (replaces Code Review)
+
+```bash
+cargo run -q --bin agent-spec -- explain specs/my-task.spec --code . --format markdown
+```
+
+`explain` renders a reviewer-friendly summary of the Contract + verification results. Use `--format markdown` for direct PR description paste. Use `--history` to include retry trajectory from run logs.
+
+The reviewer judges two questions: (1) Is the Contract definition correct? (2) Did all verifications pass?
+
+### 6. Stamp for traceability
+
+```bash
+cargo run -q --bin agent-spec -- stamp specs/my-task.spec --code . --dry-run
+```
+
+Outputs git trailers (`Spec-Name`, `Spec-Passing`, `Spec-Summary`) for the commit message. Currently only `--dry-run` is supported.
+
 ## Explicit Test Binding
 
 Task-level scenarios should declare an explicit `Test:` / `测试:` selector.
@@ -192,14 +210,17 @@ cargo run -q --bin agent-spec -- verify specs/my-task.spec --code . --change cra
 cargo run -q --bin agent-spec -- lifecycle specs/my-task.spec --code . --change crates/spec-parser/src/parser.rs
 ```
 
-Single-task commands also support optional git-backed change discovery:
+Single-task commands also support optional VCS-backed change discovery:
 
 ```bash
 cargo run -q --bin agent-spec -- verify specs/my-task.spec --code . --change-scope staged
 cargo run -q --bin agent-spec -- lifecycle specs/my-task.spec --code . --change-scope worktree
+cargo run -q --bin agent-spec -- lifecycle specs/my-task.spec --code . --change-scope jj
 ```
 
-`verify` and `lifecycle` default to `--change-scope none`, which preserves their previous behavior unless you explicitly opt into git-based change discovery.
+Available scopes: `none` (default for verify/lifecycle), `staged`, `worktree`, `jj`.
+
+When a `.jj/` directory is detected (even colocated with `.git/`), use `--change-scope jj` to discover changes via `jj diff --name-only`. The `stamp` command also outputs a `Spec-Change:` trailer with the jj change ID, and `explain --history` shows file-level diffs between adjacent runs via jj operation IDs.
 
 ## AI Verifier Skeleton
 
@@ -216,6 +237,9 @@ Available modes:
 
 - `off`: default, preserves the current mechanical-verifier-only behavior
 - `stub`: turns otherwise-uncovered scenarios into `uncertain` results with `AiAnalysis` evidence
+- `caller`: the calling Agent acts as the AI verifier (two-step protocol)
+
+`caller` mode enables the Agent running `agent-spec` to also serve as the AI verifier. When `lifecycle --ai-mode caller` finds skipped scenarios, it writes `AiRequest` objects to `.agent-spec/pending-ai-requests.json`. The Agent reads the requests, analyzes each scenario, writes `ScenarioAiDecision` JSON, then calls `resolve-ai --decisions <file>` to merge decisions back into the report.
 
 `stub` mode does not claim success. It is only a scaffold for:
 
@@ -274,8 +298,13 @@ For consistency, `verify` and `lifecycle` use the same precedence when `--change
 - `contract`: render the Task Contract view
 - `lifecycle`: run lint + verify + report
 - `guard`: lint all specs and verify them against the current change set
+- `explain`: generate a human-readable contract review summary (for Contract Acceptance)
+- `stamp`: preview git trailers for a verified contract (`--dry-run`)
+- `resolve-ai`: merge external AI decisions into a verification report (caller mode)
+- `checkpoint`: preview VCS-aware checkpoint status
 - `install-hooks`: install git hooks for automatic checking
 - `brief`: compatibility alias for `contract`
+- `measure-determinism`: [experimental] measure contract verification variance
 
 ## Examples
 

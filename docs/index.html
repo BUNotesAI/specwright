@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>agent-spec — Contract-Driven AI Coding</title>
+<meta name="description" content="An AI-native BDD/spec verification tool. Humans write contracts. Agents implement. Machines verify.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════ */
+/*  Design tokens                                      */
+/* ═══════════════════════════════════════════════════ */
+:root {
+  --bg:        #0a0a0c;
+  --bg-subtle: #111115;
+  --bg-card:   #16161b;
+  --bg-code:   #1c1c24;
+  --border:    #2a2a35;
+  --border-hi: #3a3a48;
+  --text:      #c8c8d0;
+  --text-dim:  #7a7a88;
+  --text-bright: #eeeef2;
+  --accent:    #e8a845;
+  --accent-dim:#b8842a;
+  --green:     #4ade80;
+  --red:       #f87171;
+  --blue:      #60a5fa;
+  --purple:    #a78bfa;
+  --orange:    #fb923c;
+  --cyan:      #22d3ee;
+
+  --font-body: 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', monospace;
+  --font-size: 17px;
+  --line-height: 1.7;
+  --max-w: 1080px;
+  --section-gap: 140px;
+}
+
+/* ═══════════════════════════════════════════════════ */
+/*  Reset & base                                       */
+/* ═══════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font-body);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ═══════════════════════════════════════════════════ */
+/*  Utility                                            */
+/* ═══════════════════════════════════════════════════ */
+.container { max-width: var(--max-w); margin: 0 auto; padding: 0 32px; }
+.mono { font-family: var(--font-mono); }
+.accent { color: var(--accent); }
+.dim { color: var(--text-dim); }
+.bright { color: var(--text-bright); }
+
+/* Scroll-reveal */
+.reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ═══════════════════════════════════════════════════ */
+/*  Navigation                                         */
+/* ═══════════════════════════════════════════════════ */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(10,10,12,0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 0;
+  transition: box-shadow 0.3s;
+}
+nav.scrolled { box-shadow: 0 2px 24px rgba(0,0,0,0.4); }
+nav .inner {
+  max-width: var(--max-w); margin: 0 auto; padding: 0 32px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+nav .logo {
+  font-family: var(--font-mono); font-weight: 700; font-size: 18px;
+  color: var(--accent); text-decoration: none; letter-spacing: -0.5px;
+}
+nav .logo span { color: var(--text-dim); font-weight: 400; }
+nav .links { display: flex; gap: 28px; }
+nav .links a {
+  font-family: var(--font-mono); font-size: 13px; color: var(--text-dim);
+  text-decoration: none; transition: color 0.2s; letter-spacing: 0.3px;
+}
+nav .links a:hover { color: var(--accent); }
+
+/* ═══════════════════════════════════════════════════ */
+/*  Hero                                               */
+/* ═══════════════════════════════════════════════════ */
+.hero {
+  min-height: 100vh; display: flex; align-items: center;
+  position: relative; overflow: hidden;
+}
+.hero::before {
+  content: ''; position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 40%, rgba(232,168,69,0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 30% at 70% 60%, rgba(96,165,250,0.04) 0%, transparent 60%);
+  pointer-events: none;
+}
+.hero-content { position: relative; z-index: 1; }
+.hero h1 {
+  font-family: var(--font-mono); font-size: clamp(40px, 6vw, 72px);
+  font-weight: 700; color: var(--text-bright); line-height: 1.1;
+  letter-spacing: -2px; margin-bottom: 24px;
+}
+.hero h1 .cursor {
+  display: inline-block; width: 3px; height: 0.85em;
+  background: var(--accent); margin-left: 4px;
+  animation: blink 1s step-end infinite; vertical-align: text-bottom;
+}
+@keyframes blink { 50% { opacity: 0; } }
+.hero .tagline {
+  font-size: clamp(18px, 2.5vw, 24px); color: var(--text);
+  max-width: 640px; margin-bottom: 40px;
+}
+.hero .tagline em {
+  font-style: normal; color: var(--accent); font-weight: 600;
+}
+.hero-badges {
+  display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 48px;
+}
+.badge {
+  font-family: var(--font-mono); font-size: 12px; padding: 6px 14px;
+  border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text-dim); background: var(--bg-card);
+  letter-spacing: 0.5px;
+}
+.badge.accent { border-color: var(--accent-dim); color: var(--accent); }
+.hero-cta { display: flex; gap: 16px; flex-wrap: wrap; }
+.btn {
+  font-family: var(--font-mono); font-size: 14px; font-weight: 500;
+  padding: 12px 28px; border-radius: 8px; text-decoration: none;
+  transition: all 0.2s; cursor: pointer; border: none; letter-spacing: 0.3px;
+}
+.btn-primary {
+  background: var(--accent); color: var(--bg);
+}
+.btn-primary:hover { background: #f0b555; transform: translateY(-1px); }
+.btn-ghost {
+  background: transparent; color: var(--text); border: 1px solid var(--border);
+}
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ═══════════════════════════════════════════════════ */
+/*  Section headings                                   */
+/* ═══════════════════════════════════════════════════ */
+section { padding: var(--section-gap) 0; }
+.section-label {
+  font-family: var(--font-mono); font-size: 12px; color: var(--accent);
+  letter-spacing: 2px; text-transform: uppercase; margin-bottom: 16px;
+}
+.section-title {
+  font-size: clamp(28px, 4vw, 42px); font-weight: 700;
+  color: var(--text-bright); line-height: 1.2; margin-bottom: 20px;
+  letter-spacing: -0.5px;
+}
+.section-desc {
+  font-size: 18px; color: var(--text); max-width: 680px; margin-bottom: 48px;
+}
+
+/* ═══════════════════════════════════════════════════ */
+/*  The Core Shift — animated comparison               */
+/* ═══════════════════════════════════════════════════ */
+.shift-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 32px;
+  margin-bottom: 48px;
+}
+@media (max-width: 768px) { .shift-grid { grid-template-columns: 1fr; } }
+.shift-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 32px; position: relative; overflow: hidden;
+}
+.shift-card.old { border-color: rgba(248,113,113,0.2); }
+.shift-card.new { border-color: rgba(232,168,69,0.3); }
+.shift-card h3 {
+  font-family: var(--font-mono); font-size: 14px; margin-bottom: 24px;
+  letter-spacing: 1px; text-transform: uppercase;
+}
+.shift-card.old h3 { color: var(--red); }
+.shift-card.new h3 { color: var(--accent); }
+
+/* Animated attention bar */
+.attn-bar {
+  display: flex; height: 36px; border-radius: 6px; overflow: hidden;
+  margin-bottom: 12px; border: 1px solid var(--border);
+}
+.attn-seg {
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  transition: width 1.2s ease; white-space: nowrap; overflow: hidden;
+}
+.shift-card .attn-label {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  margin-top: 6px;
+}
+
+/* ═══════════════════════════════════════════════════ */
+/*  Contract anatomy — interactive spec                */
+/* ═══════════════════════════════════════════════════ */
+.contract-demo {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+}
+.contract-tabs {
+  display: flex; border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+.contract-tab {
+  font-family: var(--font-mono); font-size: 13px; padding: 12px 20px;
+  color: var(--text-dim); cursor: pointer; border: none; background: none;
+  border-bottom: 2px solid transparent; transition: all 0.2s;
+  letter-spacing: 0.3px;
+}
+.contract-tab:hover { color: var(--text); }
+.contract-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.contract-pane {
+  padding: 28px 32px; display: none; min-height: 200px;
+  animation: fadeIn 0.3s ease;
+}
+.contract-pane.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.contract-pane h4 {
+  font-family: var(--font-mono); font-size: 13px; color: var(--accent);
+  margin-bottom: 16px; letter-spacing: 1px; text-transform: uppercase;
+}
+.contract-pane p, .contract-pane li {
+  font-size: 15px; line-height: 1.6;
+}
+.contract-pane ul { padding-left: 20px; margin-top: 8px; }
+.contract-pane li { margin-bottom: 6px; }
+.contract-pane code {
+  font-family: var(--font-mono); font-size: 13px; background: var(--bg-code);
+  padding: 2px 7px; border-radius: 4px; color: var(--accent);
+}
+.spec-keyword { color: var(--purple); font-weight: 600; }
+.spec-string { color: var(--green); }
+.spec-header { color: var(--accent); font-weight: 600; }
+
+/* ═══════════════════════════════════════════════════ */
+/*  Seven-step workflow — animated pipeline            */
+/* ═══════════════════════════════════════════════════ */
+.pipeline {
+  display: flex; flex-direction: column; gap: 0;
+  position: relative; padding-left: 40px;
+}
+.pipeline::before {
+  content: ''; position: absolute; left: 15px; top: 24px;
+  bottom: 24px; width: 2px; background: var(--border);
+}
+.pipe-step {
+  position: relative; padding: 20px 0 20px 32px;
+  opacity: 0; transform: translateX(-20px);
+  transition: all 0.5s ease;
+}
+.pipe-step.visible {
+  opacity: 1; transform: translateX(0);
+}
+.pipe-dot {
+  position: absolute; left: -33px; top: 24px;
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--accent); background: var(--bg);
+  z-index: 1; transition: all 0.3s;
+}
+.pipe-step.visible .pipe-dot {
+  background: var(--accent);
+  box-shadow: 0 0 12px rgba(232,168,69,0.4);
+}
+.pipe-num {
+  font-family: var(--font-mono); font-size: 11px; color: var(--accent-dim);
+  letter-spacing: 1px; margin-bottom: 4px;
+}
+.pipe-title {
+  font-family: var(--font-mono); font-size: 16px; font-weight: 600;
+  color: var(--text-bright); margin-bottom: 6px;
+}
+.pipe-desc { font-size: 15px; color: var(--text); max-width: 560px; }
+.pipe-cmd {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+  background: var(--bg-code); padding: 8px 14px; border-radius: 6px;
+  margin-top: 10px; display: inline-block; border: 1px solid var(--border);
+}
+.pipe-who {
+  display: inline-block; font-family: var(--font-mono); font-size: 10px;
+  padding: 2px 8px; border-radius: 4px; margin-left: 8px;
+  letter-spacing: 0.5px; vertical-align: middle;
+}
+.who-human { background: rgba(96,165,250,0.15); color: var(--blue); }
+.who-agent { background: rgba(167,139,250,0.15); color: var(--purple); }
+.who-machine { background: rgba(74,222,128,0.15); color: var(--green); }
+
+/* ═══════════════════════════════════════════════════ */
+/*  Verification pyramid                               */
+/* ═══════════════════════════════════════════════════ */
+.pyramid {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px; margin: 48px 0;
+}
+.pyramid-layer {
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; padding: 16px 24px;
+  font-family: var(--font-mono); font-size: 13px;
+  border: 1px solid var(--border); position: relative;
+  transition: all 0.5s ease; cursor: default;
+  opacity: 0; transform: scale(0.9);
+}
+.pyramid-layer.visible { opacity: 1; transform: scale(1); }
+.pyramid-layer:hover {
+  transform: scale(1.02); border-color: var(--accent);
+  box-shadow: 0 4px 20px rgba(232,168,69,0.1);
+}
+.pyramid-layer .layer-name { font-weight: 600; }
+.pyramid-layer .layer-meta {
+  font-size: 11px; color: var(--text-dim); margin-left: 16px;
+}
+.pyr-l1 { width: 90%; background: rgba(74,222,128,0.06); border-color: rgba(74,222,128,0.2); }
+.pyr-l2 { width: 75%; background: rgba(96,165,250,0.06); border-color: rgba(96,165,250,0.2); }
+.pyr-l3 { width: 60%; background: rgba(167,139,250,0.06); border-color: rgba(167,139,250,0.2); }
+.pyr-l4 { width: 45%; background: rgba(232,168,69,0.06); border-color: rgba(232,168,69,0.2); }
+.pyr-l1 .layer-name { color: var(--green); }
+.pyr-l2 .layer-name { color: var(--blue); }
+.pyr-l3 .layer-name { color: var(--purple); }
+.pyr-l4 .layer-name { color: var(--accent); }
+.pyramid-label {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  margin-top: 12px; letter-spacing: 1px;
+}
+.pyramid-arrows {
+  display: flex; justify-content: space-between; width: 90%; margin-top: -4px;
+}
+.pyramid-arrows span { font-size: 12px; color: var(--text-dim); font-family: var(--font-mono); }
+
+/* ═══════════════════════════════════════════════════ */
+/*  AI Modes — two-path diagram                        */
+/* ═══════════════════════════════════════════════════ */
+.ai-modes {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 32px;
+  margin: 48px 0;
+}
+@media (max-width: 768px) { .ai-modes { grid-template-columns: 1fr; } }
+.ai-mode-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 32px; position: relative;
+}
+.ai-mode-card h3 {
+  font-family: var(--font-mono); font-size: 15px; font-weight: 600;
+  color: var(--text-bright); margin-bottom: 8px;
+}
+.ai-mode-card .mode-tag {
+  font-family: var(--font-mono); font-size: 11px; color: var(--accent);
+  background: rgba(232,168,69,0.1); padding: 2px 10px; border-radius: 4px;
+  display: inline-block; margin-bottom: 16px;
+}
+.ai-mode-card p { font-size: 15px; margin-bottom: 16px; }
+.flow-diagram {
+  display: flex; flex-direction: column; gap: 6px;
+  font-family: var(--font-mono); font-size: 12px;
+  padding: 16px; background: var(--bg-code); border-radius: 8px;
+}
+.flow-row {
+  display: flex; align-items: center; gap: 8px; padding: 4px 0;
+}
+.flow-arrow { color: var(--text-dim); }
+.flow-node {
+  padding: 4px 10px; border-radius: 4px; white-space: nowrap;
+}
+.flow-agent { background: rgba(167,139,250,0.15); color: var(--purple); }
+.flow-spec  { background: rgba(232,168,69,0.15); color: var(--accent); }
+.flow-human { background: rgba(96,165,250,0.15); color: var(--blue); }
+.flow-ext   { background: rgba(74,222,128,0.15); color: var(--green); }
+
+/* ═══════════════════════════════════════════════════ */
+/*  Spec hierarchy — three layers                      */
+/* ═══════════════════════════════════════════════════ */
+.hierarchy {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 16px; margin: 48px 0;
+}
+.hier-layer {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 20px 28px; display: flex; align-items: center;
+  gap: 20px; transition: all 0.3s; background: var(--bg-card);
+}
+.hier-layer:hover { border-color: var(--accent-dim); }
+.hier-l0 { width: 85%; }
+.hier-l1 { width: 70%; }
+.hier-l2 { width: 55%; }
+.hier-tag {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  padding: 4px 12px; border-radius: 4px; white-space: nowrap;
+  letter-spacing: 0.5px;
+}
+.hier-l0 .hier-tag { background: rgba(232,168,69,0.15); color: var(--accent); }
+.hier-l1 .hier-tag { background: rgba(96,165,250,0.15); color: var(--blue); }
+.hier-l2 .hier-tag { background: rgba(74,222,128,0.15); color: var(--green); }
+.hier-desc { font-size: 14px; color: var(--text); }
+.hier-arrow {
+  font-family: var(--font-mono); font-size: 14px; color: var(--text-dim);
+}
+.hier-inherit {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  text-align: center; margin-top: -8px; margin-bottom: -8px;
+}
+
+/* ═══════════════════════════════════════════════════ */
+/*  Verdict badges                                     */
+/* ═══════════════════════════════════════════════════ */
+.verdict-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+  margin: 32px 0;
+}
+@media (max-width: 640px) { .verdict-grid { grid-template-columns: 1fr 1fr; } }
+.verdict-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 20px; text-align: center;
+}
+.verdict-icon { font-size: 28px; margin-bottom: 10px; }
+.verdict-name {
+  font-family: var(--font-mono); font-size: 14px; font-weight: 600;
+  margin-bottom: 6px;
+}
+.verdict-desc { font-size: 13px; color: var(--text-dim); }
+
+/* ═══════════════════════════════════════════════════ */
+/*  Skills section                                     */
+/* ═══════════════════════════════════════════════════ */
+.skills-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+  margin-top: 48px;
+}
+@media (max-width: 768px) { .skills-grid { grid-template-columns: 1fr; } }
+.skill-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 28px; transition: border-color 0.2s;
+}
+.skill-card:hover { border-color: var(--accent-dim); }
+.skill-card h3 {
+  font-family: var(--font-mono); font-size: 15px; font-weight: 600;
+  color: var(--text-bright); margin-bottom: 6px;
+}
+.skill-card .skill-tag {
+  font-family: var(--font-mono); font-size: 11px; display: inline-block;
+  padding: 2px 10px; border-radius: 4px; margin-bottom: 12px;
+}
+.skill-tag-workflow { background: rgba(167,139,250,0.15); color: var(--purple); }
+.skill-tag-author { background: rgba(74,222,128,0.15); color: var(--green); }
+.skill-card p { font-size: 14px; color: var(--text); line-height: 1.6; }
+.skills-install {
+  margin-top: 36px; text-align: center;
+}
+.skills-install-box {
+  display: inline-flex; align-items: center; gap: 12px;
+  background: var(--bg-code); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 28px;
+  font-family: var(--font-mono); font-size: 15px;
+  transition: border-color 0.2s; cursor: pointer;
+}
+.skills-install-box:hover { border-color: var(--accent); }
+.skills-install-box .cmd-prompt { color: var(--text-dim); }
+.skills-install-box .cmd-text { color: var(--green); }
+.skills-install-box .copy-hint {
+  font-size: 11px; color: var(--text-dim); opacity: 0;
+  transition: opacity 0.2s; margin-left: 4px;
+}
+.skills-install-box:hover .copy-hint { opacity: 1; }
+.skills-install-box.copied .copy-hint { opacity: 1; color: var(--accent); }
+.skills-install-note {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+  margin-top: 12px;
+}
+.skills-agents {
+  display: flex; justify-content: center; gap: 16px; margin-top: 24px;
+  flex-wrap: wrap;
+}
+.agent-badge {
+  font-family: var(--font-mono); font-size: 12px;
+  padding: 6px 16px; border-radius: 6px;
+  border: 1px solid var(--border); color: var(--text-dim);
+  background: var(--bg-card);
+}
+
+/* ═══════════════════════════════════════════════════ */
+/*  Contract language switcher                         */
+/* ═══════════════════════════════════════════════════ */
+.lang-switcher {
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--bg-subtle); border-radius: 6px;
+  margin-left: auto;
+}
+.lang-btn {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  padding: 4px 12px; border-radius: 4px; border: none;
+  background: transparent; color: var(--text-dim);
+  cursor: pointer; transition: all 0.2s; letter-spacing: 0.3px;
+}
+.lang-btn:hover { color: var(--text); }
+.lang-btn.active { background: var(--bg-card); color: var(--accent); }
+.contract-toolbar {
+  display: flex; align-items: center;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle); padding: 0 16px;
+}
+.contract-toolbar .contract-tabs {
+  border-bottom: none; flex: 1;
+}
+.lang-content { display: none; }
+.lang-content.active { display: block; }
+
+/* ═══════════════════════════════════════════════════ */
+/*  Install / CLI section                              */
+/* ═══════════════════════════════════════════════════ */
+.install-block {
+  background: var(--bg-code); border: 1px solid var(--border);
+  border-radius: 10px; padding: 24px 28px; margin: 24px 0;
+  font-family: var(--font-mono); font-size: 14px; color: var(--text);
+  line-height: 1.9; overflow-x: auto;
+}
+.install-block .comment { color: var(--text-dim); }
+.install-block .cmd { color: var(--green); }
+
+/* ═══════════════════════════════════════════════════ */
+/*  Footer                                             */
+/* ═══════════════════════════════════════════════════ */
+footer {
+  border-top: 1px solid var(--border); padding: 48px 0;
+  text-align: center; color: var(--text-dim);
+  font-family: var(--font-mono); font-size: 13px;
+}
+footer a { color: var(--accent); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+
+/* ═══════════════════════════════════════════════════ */
+/*  Responsive                                         */
+/* ═══════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  :root { --section-gap: 80px; }
+  .container { padding: 0 20px; }
+  nav .links { gap: 16px; }
+  nav .links a { font-size: 12px; }
+  .pipeline { padding-left: 28px; }
+  .pipe-step { padding-left: 20px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!--  Navigation                                    -->
+<!-- ═══════════════════════════════════════════════ -->
+<nav id="nav">
+  <div class="inner">
+    <a href="#" class="logo">agent-spec<span> v0.1</span></a>
+    <div class="links">
+      <a href="#shift">Why</a>
+      <a href="#skills">Skills</a>
+      <a href="#contract">Contract</a>
+      <a href="#workflow">Workflow</a>
+      <a href="#verify">Verify</a>
+      <a href="#ai-verify">AI</a>
+      <a href="#start">Start</a>
+      <a href="https://github.com/ZhangHanDong/agent-spec" target="_blank">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!--  Hero                                          -->
+<!-- ═══════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="container hero-content">
+    <h1>agent-spec<span class="cursor"></span></h1>
+    <p class="tagline">
+      Humans write the <em>contract</em>. Agents implement. Machines verify.<br>
+      An AI-native BDD/spec tool that shifts code review from <em>reading diffs</em> to <em>defining intent</em>.
+    </p>
+    <div class="hero-badges">
+      <span class="badge accent">Rust</span>
+      <span class="badge">BDD / Spec</span>
+      <span class="badge">CLI-first</span>
+      <span class="badge">中文 + English</span>
+      <span class="badge">Git & jj aware</span>
+      <span class="badge">Agent-agnostic</span>
+    </div>
+    <div class="hero-cta">
+      <a href="#start" class="btn btn-primary">Get Started</a>
+      <a href="#shift" class="btn btn-ghost">See How It Works</a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!--  The Core Shift                                -->
+<!-- ═══════════════════════════════════════════════ -->
+<section id="shift">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">The Core Shift</div>
+      <h2 class="section-title">Review Point Displacement</h2>
+      <p class="section-desc">
+        Traditional code review asks humans to judge <strong>500 lines of code diff</strong>.
+        agent-spec moves the review point: humans define <strong>50 lines of contract</strong>,
+        and machines verify the code against it.
+      </p>
+    </div>
+
+    <div class="shift-grid reveal">
+      <div class="shift-card old">
+        <h3>❌ Traditional Flow</h3>
+        <p style="font-size:14px; color:var(--text-dim); margin-bottom:18px;">
+          Issue → Branch → Code → PR → <strong style="color:var(--red)">Read Diff (80%)</strong> → Approve
+        </p>
+        <div class="attn-bar" id="bar-old">
+          <div class="attn-seg" style="width:10%; background:rgba(96,165,250,0.25); color:var(--blue);">10%</div>
+          <div class="attn-seg" style="width:80%; background:rgba(248,113,113,0.25); color:var(--red);">80%</div>
+          <div class="attn-seg" style="width:10%; background:rgba(167,139,250,0.2); color:var(--purple);">10%</div>
+        </div>
+        <div class="attn-label">Write Issue → <strong style="color:var(--red)">Read Code Diff</strong> → Approve</div>
+      </div>
+
+      <div class="shift-card new">
+        <h3>✓ agent-spec Flow</h3>
+        <p style="font-size:14px; color:var(--text-dim); margin-bottom:18px;">
+          <strong style="color:var(--accent)">Contract (60%)</strong> → Agent Codes → Explain → Approve
+        </p>
+        <div class="attn-bar" id="bar-new">
+          <div class="attn-seg" style="width:60%; background:rgba(232,168,69,0.25); color:var(--accent);">60%</div>
+          <div class="attn-seg" style="width:30%; background:rgba(96,165,250,0.2); color:var(--blue);">30%</div>
+          <div class="attn-seg" style="width:10%; background:rgba(167,139,250,0.2); color:var(--purple);">10%</div>
+        </div>
+        <div class="attn-label"><strong style="color:var(--accent)">Write Contract</strong> → Read Explain → Approve</div>
+      </div>
+    </div>
+
+    <p class="reveal" style="font-size:15px; color:var(--text-dim); text-align:center; max-width:600px; margin:0 auto;">
+      Human time shifts from <em>"reading code"</em> to <em>"defining intent"</em> — a higher-value activity.
+      Quality assurance shifts from <em>"human judgment"</em> to <em>"machine verification"</em>.
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!--  Skills                                        -->
+<!-- ═══════════════════════════════════════════════ -->
+<section id="skills">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">Agent Integration</div>
+      <h2 class="section-title">Skills for Every AI Agent</h2>
+      <p class="section-desc">
+        agent-spec ships project-local Skills that teach AI agents the contract-driven
+        workflow. One install command — works with Claude Code, Codex, Cursor, Aider, and any agent that reads workspace conventions.
+      </p>
+    </div>
+
+    <div class="skills-install reveal">
+      <div class="skills-install-box" id="skills-copy" title="Click to copy">
+        <span class="cmd-prompt">$</span>
+        <span class="cmd-text">npx skills add ZhangHanDong/agent-spec</span>
+        <span class="copy-hint">click to copy</span>
+      </div>
+      <div class="skills-install-note">Installs agent-spec skills into your project's agent configuration files</div>
+    </div>
+
+    <div class="skills-grid reveal">
+      <div class="skill-card">
+        <h3>agent-spec-tool-first</h3>
+        <div class="skill-tag skill-tag-workflow">workflow</div>
+        <p>
+          The default integration path. Teaches the Agent the seven-step workflow:
+          read the Contract, implement within Boundaries, run lifecycle for verification,
+          retry on failure, generate explain for review. CLI commands are the primary interface.
+        </p>
+      </div>
+      <div class="skill-card">
+        <h3>agent-spec-authoring</h3>
+        <div class="skill-tag skill-tag-author">authoring</div>
+        <p>
+          The spec writing path. Teaches the Agent how to draft and revise Task Contracts
+          in the DSL — four elements structure, bilingual keywords, test selectors,
+          step tables, and the "exception paths ≥ happy paths" principle.
+        </p>
+      </div>
+    </div>
+
+    <div class="skills-agents reveal">
+      <span class="agent-badge">Claude Code</span>
+      <span class="agent-badge">Codex CLI</span>
+      <span class="agent-badge">Cursor</span>
+      <span class="agent-badge">Aider</span>
+      <span class="agent-badge">AGENTS.md</span>
+      <span class="agent-badge">.cursorrules</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!--  Contract Anatomy                              -->
+<!-- ═══════════════════════════════════════════════ -->
+<section id="contract">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">Task Contract</div>
+      <h2 class="section-title">Four Elements of a Contract</h2>
+      <p class="section-desc">
+        A Contract is not a vague Issue. It's a precise specification with four parts that
+        constrain the Agent's behavior and define deterministic acceptance criteria.
+      </p>
+    </div>
+
+    <div class="contract-demo reveal">
+      <div class="contract-toolbar">
+        <div class="contract-tabs">
+          <button class="contract-tab active" data-pane="intent">Intent</button>
+          <button class="contract-tab" data-pane="decisions">Decisions</button>
+          <button class="contract-tab" data-pane="boundaries">Boundaries</button>
+          <button class="contract-tab" data-pane="criteria">Completion Criteria</button>
+        </div>
+        <div class="lang-switcher">
+          <button class="lang-btn active" data-lang="en">EN</button>
+          <button class="lang-btn" data-lang="zh">中文</button>
+          <button class="lang-btn" data-lang="ja">日本語</button>
+        </div>
+      </div>
+
+      <!-- ── Intent ─────────────────────────────── -->
+      <div class="contract-pane active" id="pane-intent">
+        <h4>## Intent — What and Why</h4>
+        <p style="margin-bottom:12px;">A focused statement of purpose. Not a feature list — a clear direction that gives the Agent context.</p>
+        <div class="install-block" style="margin:0;">
+          <div class="lang-content active" data-lang="en">
+            <span class="spec-header">## Intent</span><br><br>
+            Add a user registration endpoint to the existing auth module.<br>
+            New users register with email + password; a verification email is sent<br>
+            on success. This is the first step of the user system — login and<br>
+            password reset will be built on top of it later.
+          </div>
+          <div class="lang-content" data-lang="zh">
+            <span class="spec-header">## 意图</span><br><br>
+            为现有的认证模块添加用户注册 endpoint。新用户通过邮箱+密码注册，<br>
+            注册成功后发送验证邮件。这是用户体系的第一步，后续会在此基础上<br>
+            添加登录和密码重置。
+          </div>
+          <div class="lang-content" data-lang="ja">
+            <span class="spec-header">## 意図</span><br><br>
+            既存の認証モジュールにユーザー登録エンドポイントを追加する。<br>
+            新規ユーザーはメールアドレスとパスワードで登録し、成功時に確認<br>
+            メールを送信する。これはユーザーシステムの第一歩であり、今後<br>
+            ログインとパスワードリセットをこの基盤の上に構築する。
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Decisions ──────────────────────────── -->
+      <div class="contract-pane" id="pane-decisions">
+        <h4>## Decisions — Fixed Technical Choices</h4>
+        <p style="margin-bottom:12px;">Already-decided choices that remove the Agent's decision space. The Agent follows these without questioning.</p>
+        <div class="install-block" style="margin:0;">
+          <div class="lang-content active" data-lang="en">
+            <span class="spec-header">## Decisions</span><br><br>
+            - Route: <span class="spec-string">POST /api/v1/auth/register</span><br>
+            - Password hash: <span class="spec-string">bcrypt, cost factor = 12</span><br>
+            - Verification token: <span class="spec-string">crypto.randomUUID(), stored in DB, 24h expiry</span><br>
+            - Email: use existing EmailService, do not create a new one
+          </div>
+          <div class="lang-content" data-lang="zh">
+            <span class="spec-header">## 已定决策</span><br><br>
+            - 路由: <span class="spec-string">POST /api/v1/auth/register</span><br>
+            - 密码哈希: <span class="spec-string">bcrypt, cost factor = 12</span><br>
+            - 验证 Token: <span class="spec-string">crypto.randomUUID(), 存数据库, 24h 过期</span><br>
+            - 邮件: 使用现有 EmailService，不新建
+          </div>
+          <div class="lang-content" data-lang="ja">
+            <span class="spec-header">## 決定事項</span><br><br>
+            - ルーティング: <span class="spec-string">POST /api/v1/auth/register</span><br>
+            - パスワードハッシュ: <span class="spec-string">bcrypt, コストファクター = 12</span><br>
+            - 検証トークン: <span class="spec-string">crypto.randomUUID(), DB保存, 24時間有効</span><br>
+            - メール: 既存のEmailServiceを使用、新規作成しない
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Boundaries ─────────────────────────── -->
+      <div class="contract-pane" id="pane-boundaries">
+        <h4>## Boundaries — What to Touch, What Not to Touch</h4>
+        <p style="margin-bottom:12px;">Path globs are <strong>mechanically enforced</strong> by the BoundariesVerifier. Natural language prohibitions are checked by lint.</p>
+        <div class="install-block" style="margin:0;">
+          <div class="lang-content active" data-lang="en">
+            <span class="spec-header">## Boundaries</span><br><br>
+            <span class="spec-keyword">### Allowed Changes</span><br>
+            - crates/api/src/auth/**<br>
+            - crates/api/tests/auth/**<br><br>
+            <span class="spec-keyword">### Forbidden</span><br>
+            - Do not add new dependencies<br>
+            - Do not modify the existing login endpoint
+          </div>
+          <div class="lang-content" data-lang="zh">
+            <span class="spec-header">## 边界</span><br><br>
+            <span class="spec-keyword">### 允许修改</span><br>
+            - crates/api/src/auth/**<br>
+            - crates/api/tests/auth/**<br><br>
+            <span class="spec-keyword">### 禁止做</span><br>
+            - 不要添加新的依赖<br>
+            - 不要修改现有的登录 endpoint
+          </div>
+          <div class="lang-content" data-lang="ja">
+            <span class="spec-header">## 境界</span><br><br>
+            <span class="spec-keyword">### 変更許可</span><br>
+            - crates/api/src/auth/**<br>
+            - crates/api/tests/auth/**<br><br>
+            <span class="spec-keyword">### 禁止事項</span><br>
+            - 新しい依存関係を追加しない<br>
+            - 既存のログインエンドポイントを変更しない
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Completion Criteria ─────────────────── -->
+      <div class="contract-pane" id="pane-criteria">
+        <h4>## Completion Criteria — Deterministic Pass/Fail</h4>
+        <p style="margin-bottom:12px;">BDD scenarios with explicit test bindings. Key rule: <strong>exception paths ≥ happy paths</strong>.</p>
+        <div class="install-block" style="margin:0;">
+          <div class="lang-content active" data-lang="en">
+            <span class="spec-header">## Completion Criteria</span><br><br>
+            <span class="spec-keyword">Scenario:</span> Successful registration<br>
+            &nbsp;&nbsp;<span class="spec-keyword">Test:</span> <span class="spec-string">test_register_returns_201</span><br>
+            &nbsp;&nbsp;<span class="spec-keyword">Given</span> no user with email <span class="spec-string">"alice@example.com"</span> exists<br>
+            &nbsp;&nbsp;<span class="spec-keyword">When</span> client submits the registration request<br>
+            &nbsp;&nbsp;<span class="spec-keyword">Then</span> response status should be <span class="spec-string">201</span><br><br>
+            <span class="spec-keyword">Scenario:</span> Duplicate email rejected <span class="dim">← exception path</span><br>
+            &nbsp;&nbsp;<span class="spec-keyword">Test:</span> <span class="spec-string">test_register_rejects_duplicate</span><br>
+            &nbsp;&nbsp;<span class="spec-keyword">Given</span> a user with email <span class="spec-string">"alice@example.com"</span> already exists<br>
+            &nbsp;&nbsp;<span class="spec-keyword">When</span> client submits the same email for registration<br>
+            &nbsp;&nbsp;<span class="spec-keyword">Then</span> response status should be <span class="spec-string">409</span>
+          </div>
+          <div class="lang-content" data-lang="zh">
+            <span class="spec-header">## 完成条件</span><br><br>
+            <span class="spec-keyword">场景:</span> 注册成功<br>
+            &nbsp;&nbsp;<span class="spec-keyword">测试:</span> <span class="spec-string">test_register_returns_201</span><br>
+            &nbsp;&nbsp;<span class="spec-keyword">假设</span> 不存在邮箱为 <span class="spec-string">"alice@example.com"</span> 的用户<br>
+            &nbsp;&nbsp;<span class="spec-keyword">当</span> 客户端提交注册请求<br>
+            &nbsp;&nbsp;<span class="spec-keyword">那么</span> 响应状态码为 <span class="spec-string">201</span><br><br>
+            <span class="spec-keyword">场景:</span> 重复邮箱被拒绝 <span class="dim">← 异常路径</span><br>
+            &nbsp;&nbsp;<span class="spec-keyword">测试:</span> <span class="spec-string">test_register_rejects_duplicate</span><br>
+            &nbsp;&nbsp;<span class="spec-keyword">假设</span> 已存在邮箱为 <span class="spec-string">"alice@example.com"</span> 的用户<br>
+            &nbsp;&nbsp;<span class="spec-keyword">当</span> 客户端提交相同邮箱的注册请求<br>
+            &nbsp;&nbsp;<span class="spec-keyword">那么</span> 响应状态码为 <span class="spec-string">409</span>
+          </div>
+          <div class="lang-content" data-lang="ja">
+            <span class="spec-header">## 完了条件</span><br><br>
+            <span class="spec-keyword">シナリオ:</span> 登録成功<br>
+            &nbsp;&nbsp;<span class="spec-keyword">テスト:</span> <span class="spec-string">test_register_returns_201</span><br>
+            &nbsp;&nbsp;<span class="spec-keyword">前提</span> メール <span class="spec-string">"alice@example.com"</span> のユーザーが存在しない<br>
+            &nbsp;&nbsp;<span class="spec-keyword">もし</span> クライアントが登録リクエストを送信する<br>
+            &nbsp;&nbsp;<span class="spec-keyword">ならば</span> レスポンスステータスは <span class="spec-string">201</span> である<br><br>
+            <span class="spec-keyword">シナリオ:</span> 重複メール拒否 <span class="dim">← 例外パス</span><br>
+            &nbsp;&nbsp;<span class="spec-keyword">テスト:</span> <span class="spec-string">test_register_rejects_duplicate</span><br>
+            &nbsp;&nbsp;<span class="spec-keyword">前提</span> メール <span class="spec-string">"alice@example.com"</span> のユーザーが既に存在する<br>
+            &nbsp;&nbsp;<span class="spec-keyword">もし</span> クライアントが同じメールで登録リクエストを送信する<br>
+            &nbsp;&nbsp;<span class="spec-keyword">ならば</span> レスポンスステータスは <span class="spec-string">409</span> である
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!--  Seven-Step Workflow                           -->
+<!-- ═══════════════════════════════════════════════ -->
+<section id="workflow">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">Workflow</div>
+      <h2 class="section-title">Seven Steps, Three Actors</h2>
+      <p class="section-desc">
+        Human writes intent. Agent implements code. Machine verifies correctness.
+        Each step has a clear owner and a specific agent-spec command.
+      </p>
+    </div>
+
+    <div class="pipeline" id="pipeline">
+      <div class="pipe-step">
+        <div class="pipe-dot"></div>
+        <div class="pipe-num">STEP 01</div>
+        <div class="pipe-title">Write Contract <span class="pipe-who who-human">HUMAN</span></div>
+        <div class="pipe-desc">Define Intent, Decisions, Boundaries, and Completion Criteria. Exception scenarios ≥ happy path scenarios.</div>
+        <div class="pipe-cmd">agent-spec init --level task --name "User Registration"</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-dot"></div>
+        <div class="pipe-num">STEP 02</div>
+        <div class="pipe-title">Quality Gate <span class="pipe-who who-machine">MACHINE</span></div>
+        <div class="pipe-desc">Check Contract quality before handing to Agent. Catches vague verbs, unquantified constraints, sycophancy bias.</div>
+        <div class="pipe-cmd">agent-spec lint specs/task.spec --min-score 0.7</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-dot"></div>
+        <div class="pipe-num">STEP 03</div>
+        <div class="pipe-title">Agent Implements <span class="pipe-who who-agent">AGENT</span></div>
+        <div class="pipe-desc">Agent reads the Contract and codes within its constraints. Decisions are fixed, boundaries are enforced, criteria are the stop condition.</div>
+        <div class="pipe-cmd">agent-spec contract specs/task.spec</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-dot"></div>
+        <div class="pipe-num">STEP 04</div>
+        <div class="pipe-title">Lifecycle Verification <span class="pipe-who who-machine">MACHINE</span></div>
+        <div class="pipe-desc">Four-layer verification pipeline: lint → structural → boundaries → tests. Agent retries on failure — no human needed.</div>
+        <div class="pipe-cmd">agent-spec lifecycle specs/task.spec --code . --format json</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-dot"></div>
+        <div class="pipe-num">STEP 05</div>
+        <div class="pipe-title">Guard Gate <span class="pipe-who who-machine">MACHINE</span></div>
+        <div class="pipe-desc">Pre-commit or CI check. All specs in the repo are verified against the current change set.</div>
+        <div class="pipe-cmd">agent-spec guard --spec-dir specs --code .</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-dot"></div>
+        <div class="pipe-num">STEP 06</div>
+        <div class="pipe-title">Contract Acceptance <span class="pipe-who who-human">HUMAN</span></div>
+        <div class="pipe-desc">Reviewer reads a Contract-level summary — not a code diff. Two questions: Is the Contract correct? Did all verifications pass?</div>
+        <div class="pipe-cmd">agent-spec explain specs/task.spec --format markdown</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-dot"></div>
+        <div class="pipe-num">STEP 07</div>
+        <div class="pipe-title">Stamp & Archive <span class="pipe-who who-machine">MACHINE</span></div>
+        <div class="pipe-desc">Record Contract-to-Commit traceability via Git trailers. Every commit traces back to intent.</div>
+        <div class="pipe-cmd">agent-spec stamp specs/task.spec --dry-run</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!--  Verification Pyramid                          -->
+<!-- ═══════════════════════════════════════════════ -->
+<section id="verify">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">Verification</div>
+      <h2 class="section-title">Four-Layer Verification Pyramid</h2>
+      <p class="section-desc">
+        Deterministic layers run first — zero token cost, no false negatives.
+        AI layers handle the residual — probabilistic, with structured evidence.
+      </p>
+    </div>
+
+    <div class="pyramid reveal">
+      <div class="pyramid-layer pyr-l4">
+        <span class="layer-name">L4 · AI Verifier</span>
+        <span class="layer-meta">probabilistic · ~$0.01-0.05 · uncertain verdict</span>
+      </div>
+      <div class="pyramid-layer pyr-l3">
+        <span class="layer-name">L3 · Test Verifier</span>
+        <span class="layer-meta">deterministic · 0 tokens · runs bound tests</span>
+      </div>
+      <div class="pyramid-layer pyr-l2">
+        <span class="layer-name">L2 · Boundaries Verifier</span>
+        <span class="layer-meta">deterministic · 0 tokens · path glob matching</span>
+      </div>
+      <div class="pyramid-layer pyr-l1">
+        <span class="layer-name">L1 · Structural Verifier</span>
+        <span class="layer-meta">deterministic · 0 tokens · pattern matching on Must-Not</span>
+      </div>
+      <div class="pyramid-arrows">
+        <span>← cheaper, faster, deterministic</span>
+        <span>richer, costly, probabilistic →</span>
+      </div>
+    </div>
+
+    <div class="verdict-grid reveal">
+      <div class="verdict-card">
+        <div class="verdict-icon">✅</div>
+        <div class="verdict-name" style="color:var(--green);">pass</div>
+        <div class="verdict-desc">Verified by a deterministic or AI verifier</div>
+      </div>
+      <div class="verdict-card">
+        <div class="verdict-icon">❌</div>
+        <div class="verdict-name" style="color:var(--red);">fail</div>
+        <div class="verdict-desc">Verification found a concrete violation</div>
+      </div>
+      <div class="verdict-card">
+        <div class="verdict-icon">⏭️</div>
+        <div class="verdict-name" style="color:var(--text-dim);">skip</div>
+        <div class="verdict-desc">No verifier covered this scenario</div>
+      </div>
+      <div class="verdict-card">
+        <div class="verdict-icon">❓</div>
+        <div class="verdict-name" style="color:var(--orange);">uncertain</div>
+        <div class="verdict-desc">AI reviewed but needs human judgment</div>
+      </div>
+    </div>
+
+    <p class="reveal" style="font-size:15px; color:var(--text-dim); text-align:center;">
+      Key rule: <code style="font-family:var(--font-mono); background:var(--bg-code); padding:2px 8px; border-radius:4px; color:var(--red);">skip ≠ pass</code>
+      &nbsp;—&nbsp; all four verdicts are semantically distinct.
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!--  AI Verification Modes                         -->
+<!-- ═══════════════════════════════════════════════ -->
+<section id="ai-verify">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">AI Verification</div>
+      <h2 class="section-title">Two Modes of AI Verification</h2>
+      <p class="section-desc">
+        Mechanical verifiers handle deterministic checks. For the rest, agent-spec
+        supports two modes: the calling Agent does the review, or an injected backend does it.
+      </p>
+    </div>
+
+    <div class="ai-modes reveal">
+      <div class="ai-mode-card">
+        <h3>Caller Mode</h3>
+        <div class="mode-tag">--ai-mode caller</div>
+        <p>The calling Agent (Claude Code, Codex…) performs AI verification itself. agent-spec emits structured requests; the Agent returns structured decisions.</p>
+        <div class="flow-diagram">
+          <div class="flow-row"><span class="flow-node flow-agent">Agent</span> <span class="flow-arrow">→</span> <span class="flow-node flow-spec">lifecycle</span></div>
+          <div class="flow-row"><span class="flow-node flow-spec">agent-spec</span> <span class="flow-arrow">→</span> runs L1–L3 mechanical</div>
+          <div class="flow-row"><span class="flow-node flow-spec">agent-spec</span> <span class="flow-arrow">→</span> emits <code>AiRequest[]</code></div>
+          <div class="flow-row"><span class="flow-node flow-agent">Agent</span> <span class="flow-arrow">→</span> analyzes code, returns <code>AiDecision[]</code></div>
+          <div class="flow-row"><span class="flow-node flow-spec">agent-spec</span> <span class="flow-arrow">→</span> merges into final report</div>
+          <div class="flow-row"><span class="flow-node flow-human">Human</span> <span class="flow-arrow">→</span> reviews <code>uncertain</code> findings</div>
+        </div>
+      </div>
+
+      <div class="ai-mode-card">
+        <h3>Backend Mode</h3>
+        <div class="mode-tag">Rust API: AiBackend trait</div>
+        <p>An independent AI backend is injected via the Rust API. Ideal for orchestrator systems (Symphony-like) using a different model for verification.</p>
+        <div class="flow-diagram">
+          <div class="flow-row"><span class="flow-node flow-ext">Orchestrator</span> <span class="flow-arrow">→</span> injects <code>AiBackend</code></div>
+          <div class="flow-row"><span class="flow-node flow-spec">agent-spec</span> <span class="flow-arrow">→</span> runs L1–L3 mechanical</div>
+          <div class="flow-row"><span class="flow-node flow-spec">agent-spec</span> <span class="flow-arrow">→</span> calls <code>backend.analyze()</code></div>
+          <div class="flow-row"><span class="flow-node flow-ext">AI Backend</span> <span class="flow-arrow">→</span> returns <code>AiDecision</code></div>
+          <div class="flow-row"><span class="flow-node flow-spec">agent-spec</span> <span class="flow-arrow">→</span> complete report, no human loop</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="reveal" style="font-size:15px; color:var(--text-dim); text-align:center; max-width:600px; margin:0 auto;">
+      Both modes share the same data structures: <code style="font-family:var(--font-mono); background:var(--bg-code); padding:2px 8px; border-radius:4px; color:var(--accent);">AiRequest</code> and
+      <code style="font-family:var(--font-mono); background:var(--bg-code); padding:2px 8px; border-radius:4px; color:var(--accent);">AiDecision</code>.
+      agent-spec stays provider-agnostic.
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!--  Spec Hierarchy                                -->
+<!-- ═══════════════════════════════════════════════ -->
+<section id="hierarchy">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">Governance</div>
+      <h2 class="section-title">Three-Layer Spec Hierarchy</h2>
+      <p class="section-desc">
+        Constraints and decisions inherit downward. Organization rules flow through
+        project conventions into every task contract. Write once, enforce everywhere.
+      </p>
+    </div>
+
+    <div class="hierarchy reveal">
+      <div class="hier-layer hier-l0">
+        <span class="hier-tag">L0 · org.spec</span>
+        <span class="hier-desc">Security policies, coding standards, forbidden patterns — organization-wide</span>
+      </div>
+      <div class="hier-inherit">↓ inherits</div>
+      <div class="hier-layer hier-l1">
+        <span class="hier-tag">L1 · project.spec</span>
+        <span class="hier-desc">Tech stack decisions, API conventions, test requirements — project-wide</span>
+      </div>
+      <div class="hier-inherit">↓ inherits</div>
+      <div class="hier-layer hier-l2">
+        <span class="hier-tag">L2 · task.spec</span>
+        <span class="hier-desc">Intent, boundaries, BDD completion criteria — one per task</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!--  Getting Started                               -->
+<!-- ═══════════════════════════════════════════════ -->
+<section id="start">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">Get Started</div>
+      <h2 class="section-title">From Zero to Verified in 5 Commands</h2>
+    </div>
+
+    <div class="install-block reveal">
+      <span class="comment"># Install</span><br>
+      <span class="cmd">cargo install agent-spec</span><br><br>
+      <span class="comment"># Create a task contract</span><br>
+      <span class="cmd">agent-spec init --level task --name "User Registration"</span><br><br>
+      <span class="comment"># Check contract quality</span><br>
+      <span class="cmd">agent-spec lint specs/user-registration.spec --min-score 0.7</span><br><br>
+      <span class="comment"># Verify code against contract</span><br>
+      <span class="cmd">agent-spec lifecycle specs/user-registration.spec --code . --format json</span><br><br>
+      <span class="comment"># Generate review summary for PR</span><br>
+      <span class="cmd">agent-spec explain specs/user-registration.spec --format markdown</span>
+    </div>
+
+    <div class="reveal" style="margin-top:48px; text-align:center;">
+      <a href="https://github.com/ZhangHanDong/agent-spec" class="btn btn-primary" target="_blank">View on GitHub</a>
+      <a href="https://github.com/ZhangHanDong/agent-spec/tree/main/examples" class="btn btn-ghost" target="_blank" style="margin-left:12px;">See Examples</a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!--  Footer                                        -->
+<!-- ═══════════════════════════════════════════════ -->
+<footer>
+  <div class="container">
+    <p>agent-spec — AI-native BDD/spec verification · MIT License</p>
+    <p style="margin-top:8px;">
+      <a href="https://github.com/ZhangHanDong/agent-spec">GitHub</a> ·
+      <a href="https://github.com/ZhangHanDong/agent-spec/tree/main/examples">Examples</a> ·
+      <a href="https://github.com/ZhangHanDong/agent-spec/tree/main/.claude/skills">Claude Code Skills</a>
+    </p>
+  </div>
+</footer>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!--  Scripts                                       -->
+<!-- ═══════════════════════════════════════════════ -->
+<script>
+// ── Scroll reveal ───────────────────────────────
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
+
+document.querySelectorAll('.reveal, .pipe-step, .pyramid-layer').forEach(el => {
+  observer.observe(el);
+});
+
+// ── Nav scroll effect ───────────────────────────
+const nav = document.getElementById('nav');
+window.addEventListener('scroll', () => {
+  nav.classList.toggle('scrolled', window.scrollY > 40);
+});
+
+// ── Contract tabs ───────────────────────────────
+document.querySelectorAll('.contract-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.contract-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.contract-pane').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('pane-' + tab.dataset.pane).classList.add('active');
+  });
+});
+
+// ── Contract language switcher ──────────────────
+let currentLang = 'en';
+document.querySelectorAll('.lang-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentLang = btn.dataset.lang;
+    // Update button states
+    document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    // Update all language content blocks across all panes
+    document.querySelectorAll('.lang-content').forEach(el => {
+      el.classList.toggle('active', el.dataset.lang === currentLang);
+    });
+  });
+});
+
+// ── Skills install copy button ──────────────────
+const skillsCopy = document.getElementById('skills-copy');
+if (skillsCopy) {
+  skillsCopy.addEventListener('click', () => {
+    const cmd = 'npx skills add ZhangHanDong/agent-spec';
+    navigator.clipboard.writeText(cmd).then(() => {
+      skillsCopy.classList.add('copied');
+      const hint = skillsCopy.querySelector('.copy-hint');
+      if (hint) hint.textContent = 'copied!';
+      setTimeout(() => {
+        skillsCopy.classList.remove('copied');
+        if (hint) hint.textContent = 'click to copy';
+      }, 2000);
+    });
+  });
+}
+
+// ── Pipeline stagger ────────────────────────────
+const pipeSteps = document.querySelectorAll('.pipe-step');
+const pipeObserver = new IntersectionObserver((entries) => {
+  entries.forEach((entry, i) => {
+    if (entry.isIntersecting) {
+      setTimeout(() => {
+        entry.target.classList.add('visible');
+      }, i * 120);
+    }
+  });
+}, { threshold: 0.2 });
+pipeSteps.forEach(s => pipeObserver.observe(s));
+
+// ── Pyramid stagger ────────────────────────────
+const pyrLayers = document.querySelectorAll('.pyramid-layer');
+const pyrObserver = new IntersectionObserver((entries) => {
+  if (entries.some(e => e.isIntersecting)) {
+    pyrLayers.forEach((layer, i) => {
+      setTimeout(() => layer.classList.add('visible'), (pyrLayers.length - 1 - i) * 200);
+    });
+  }
+}, { threshold: 0.3 });
+pyrLayers.forEach(l => pyrObserver.observe(l));
+</script>
+</body>
+</html>

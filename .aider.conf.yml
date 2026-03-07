@@ -5,9 +5,18 @@
 #   2. Implement against the contract
 #   3. Verify: agent-spec lifecycle specs/<task>.spec --code . --format json
 #   4. Guard: agent-spec guard --spec-dir specs --code .
+#   5. Review: agent-spec explain specs/<task>.spec --format markdown
 #
 # Key Commands:
 #   agent-spec contract <spec>   - render Task Contract for planning
 #   agent-spec lifecycle <spec>  - full lint + verify pipeline
 #   agent-spec guard             - repo-wide pre-commit check
 #   agent-spec explain <spec>    - human-readable review summary
+#   agent-spec stamp <spec>      - preview git trailers (--dry-run)
+#
+# Retry Protocol:
+#   When lifecycle fails, parse JSON output and fix code based on evidence.
+#   Do NOT modify the spec file to make verification pass.
+#   After 3 consecutive failures on the same scenario, escalate.
+#
+# Verdicts: pass, fail, skip, uncertain (skip != pass)

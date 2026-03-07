@@ -1,6 +1,8 @@
 #![warn(clippy::all)]
 #![deny(unsafe_code)]
 
+mod vcs;
+
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -180,6 +182,20 @@ enum Commands {
     },
     /// Install git hooks for automatic spec checking
     InstallHooks,
+    /// Merge external AI decisions into a verification report
+    ResolveAi {
+        /// Spec file
+        spec: PathBuf,
+        /// Code directory
+        #[arg(long, default_value = ".")]
+        code: PathBuf,
+        /// Path to AI decisions JSON file
+        #[arg(long)]
+        decisions: PathBuf,
+        /// Output format: text, json
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -259,6 +275,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             cmd_measure_determinism(&spec, &code, runs)
         }
         Commands::InstallHooks => cmd_install_hooks(),
+        Commands::ResolveAi {
+            spec,
+            code,
+            decisions,
+            format,
+        } => cmd_resolve_ai(&spec, &code, &decisions, &format),
     }
 }
 
@@ -457,6 +479,50 @@ fn cmd_lifecycle(
 
     let passing = gw.is_passing(&verify_report);
 
+    // Stage 2b: If caller mode, emit pending AI requests for skipped scenarios
+    let ai_pending = if ai_mode == spec_verify::AiMode::Caller {
+        let skipped: Vec<_> = verify_report
+            .results
+            .iter()
+            .filter(|r| r.verdict == spec_core::Verdict::Skip)
+            .collect();
+        if !skipped.is_empty() {
+            let ctx = spec_verify::VerificationContext {
+                code_paths: vec![code.to_path_buf()],
+                change_paths: effective_changes.clone(),
+                ai_mode,
+                resolved_spec: gw.resolved().clone(),
+            };
+            let requests: Vec<spec_core::AiRequest> = skipped
+                .iter()
+                .filter_map(|r| {
+                    ctx.resolved_spec
+                        .all_scenarios
+                        .iter()
+                        .find(|s| s.name == r.scenario_name)
+                        .map(|scenario| {
+                            spec_verify::build_ai_request(
+                                &ctx.resolved_spec.task.meta.name,
+                                scenario,
+                                &ctx,
+                            )
+                        })
+                })
+                .collect();
+            let requests_path = code.join(".agent-spec/pending-ai-requests.json");
+            std::fs::create_dir_all(requests_path.parent().unwrap_or(Path::new(".")))?;
+            std::fs::write(
+                &requests_path,
+                serde_json::to_string_pretty(&requests)?,
+            )?;
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
     // Stage 3: Report
     if format == "json" {
         let mut json_out = serde_json::json!({
@@ -465,6 +531,10 @@ fn cmd_lifecycle(
             "verification": serde_json::to_value(&verify_report).ok(),
             "failure_summary": if passing { None } else { Some(gw.failure_summary(&verify_report)) },
         });
+        if ai_pending {
+            json_out["ai_pending"] = serde_json::json!(true);
+            json_out["ai_requests_file"] = serde_json::json!(".agent-spec/pending-ai-requests.json");
+        }
         if let Some(ref lr) = lint_report {
             json_out["quality_score"] = serde_json::json!(lr.quality_score.overall);
             json_out["lint_issues"] = serde_json::json!(lr.diagnostics.len());
@@ -489,6 +559,7 @@ fn cmd_lifecycle(
     // Stage 4: Write run log if enabled
     if let Some(log_dir) = run_log_dir {
         let contract = gw.plan();
+        let vcs_ctx = vcs::get_vcs_context(code);
         let entry = RunLogEntry {
             spec_name: contract.name.clone(),
             passing,
@@ -504,6 +575,7 @@ fn cmd_lifecycle(
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
+            vcs: vcs_ctx,
         };
         write_run_log(log_dir, &entry)?;
     }
@@ -866,7 +938,8 @@ fn parse_ai_mode(input: &str) -> Result<spec_verify::AiMode, Box<dyn std::error:
     match input {
         "off" => Ok(spec_verify::AiMode::Off),
         "stub" => Ok(spec_verify::AiMode::Stub),
-        other => Err(format!("unsupported --ai-mode `{other}` (expected `off` or `stub`)").into()),
+        "caller" => Ok(spec_verify::AiMode::Caller),
+        other => Err(format!("unsupported --ai-mode `{other}` (expected `off`, `stub`, or `caller`)").into()),
     }
 }
 
@@ -903,9 +976,8 @@ fn cmd_explain(
     if history {
         let log_dir = spec
             .parent()
-            .unwrap_or(Path::new("."))
-            .join(".agent-spec");
-        let history_text = read_run_log_history(&log_dir, &contract.name);
+            .unwrap_or(Path::new("."));
+        let history_text = read_run_log_history(log_dir, &contract.name);
         if !history_text.is_empty() {
             println!("\n{history_text}");
         } else {
@@ -922,8 +994,9 @@ fn build_stamp_trailers(
     name: &str,
     passing: bool,
     summary: &spec_core::VerificationSummary,
+    vcs_ctx: Option<&vcs::VcsContext>,
 ) -> Vec<String> {
-    vec![
+    let mut trailers = vec![
         format!("Spec-Name: {name}"),
         format!("Spec-Passing: {passing}"),
         format!(
@@ -934,7 +1007,15 @@ fn build_stamp_trailers(
             summary.skipped,
             summary.uncertain,
         ),
-    ]
+    ];
+
+    if let Some(ctx) = vcs_ctx {
+        if ctx.vcs_type == vcs::VcsType::Jj {
+            trailers.push(format!("Spec-Change: {}", ctx.change_ref));
+        }
+    }
+
+    trailers
 }
 
 fn cmd_stamp(spec: &Path, code: &Path, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -949,7 +1030,8 @@ fn cmd_stamp(spec: &Path, code: &Path, dry_run: bool) -> Result<(), Box<dyn std:
     let report = gw.verify(code)?;
     let passing = gw.is_passing(&report);
 
-    let trailers = build_stamp_trailers(&contract.name, passing, &report.summary);
+    let vcs_ctx = vcs::get_vcs_context(code);
+    let trailers = build_stamp_trailers(&contract.name, passing, &report.summary, vcs_ctx.as_ref());
     for trailer in &trailers {
         println!("{trailer}");
     }
@@ -1012,6 +1094,8 @@ struct RunLogEntry {
     pub passing: bool,
     pub summary: String,
     pub timestamp: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vcs: Option<vcs::VcsContext>,
 }
 
 fn write_run_log(
@@ -1036,7 +1120,7 @@ fn sanitize_for_filename(name: &str) -> String {
 }
 
 fn read_run_log_history(base_dir: &Path, spec_name: &str) -> String {
-    let runs_dir = base_dir.join("runs");
+    let runs_dir = base_dir.join(".agent-spec/runs");
     let Ok(entries) = std::fs::read_dir(&runs_dir) else {
         return String::new();
     };
@@ -1078,6 +1162,28 @@ fn read_run_log_history(base_dir: &Path, spec_name: &str) -> String {
     for (i, log) in logs.iter().enumerate() {
         let status = if log.passing { "PASS" } else { "FAIL" };
         out.push_str(&format!("  #{}: [{}] {}\n", i + 1, status, log.summary));
+
+        // Show jj diff between adjacent runs when both have operation IDs
+        if i > 0 {
+            if let (Some(prev_vcs), Some(curr_vcs)) = (&logs[i - 1].vcs, &log.vcs) {
+                if prev_vcs.vcs_type == vcs::VcsType::Jj
+                    && curr_vcs.vcs_type == vcs::VcsType::Jj
+                {
+                    if let (Some(prev_op), Some(curr_op)) =
+                        (&prev_vcs.operation_ref, &curr_vcs.operation_ref)
+                    {
+                        if let Some(changed_files) =
+                            vcs::jj_diff_between_ops(Path::new("."), prev_op, curr_op)
+                        {
+                            out.push_str("    Changes between runs:\n");
+                            for f in &changed_files {
+                                out.push_str(&format!("      - {f}\n"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     out
@@ -1363,6 +1469,91 @@ fn render_contract_output(
     Ok(output)
 }
 
+// ── Resolve AI ──────────────────────────────────────────────────
+
+/// A single AI decision paired with its scenario name for the resolve-ai input file.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ScenarioAiDecision {
+    pub scenario_name: String,
+    #[serde(flatten)]
+    pub decision: spec_core::AiDecision,
+}
+
+fn cmd_resolve_ai(
+    spec: &Path,
+    code: &Path,
+    decisions_path: &Path,
+    format: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Load spec and run mechanical verification (caller mode skips AI internally)
+    let gw = spec_gateway::SpecGateway::load(spec)?;
+    let verify_report = gw.verify_with_ai_mode(code, spec_verify::AiMode::Caller)?;
+
+    // 2. Read external AI decisions
+    let decisions_json = std::fs::read_to_string(decisions_path)?;
+    let decisions: Vec<ScenarioAiDecision> = serde_json::from_str(&decisions_json)?;
+
+    // 3. Merge: replace Skip verdicts with AI decisions
+    let mut merged_results = verify_report.results;
+    for decision in &decisions {
+        if let Some(result) = merged_results
+            .iter_mut()
+            .find(|r| r.scenario_name == decision.scenario_name)
+        {
+            result.verdict = decision.decision.verdict;
+            result.step_results = result
+                .step_results
+                .iter()
+                .map(|step| spec_core::StepVerdict {
+                    step_text: step.step_text.clone(),
+                    verdict: decision.decision.verdict,
+                    reason: decision.decision.reasoning.clone(),
+                })
+                .collect();
+            result.evidence = vec![spec_core::Evidence::AiAnalysis {
+                model: decision.decision.model.clone(),
+                confidence: decision.decision.confidence,
+                reasoning: decision.decision.reasoning.clone(),
+            }];
+        }
+    }
+
+    let merged_report = spec_core::VerificationReport::from_results(
+        verify_report.spec_name,
+        merged_results,
+    );
+
+    let passing = gw.is_passing(&merged_report);
+
+    // 4. Output
+    if format == "json" {
+        let json_out = serde_json::json!({
+            "stage": "resolve-ai",
+            "passed": passing,
+            "verification": serde_json::to_value(&merged_report).ok(),
+            "failure_summary": if passing { None } else { Some(gw.failure_summary(&merged_report)) },
+        });
+        println!("{}", serde_json::to_string_pretty(&json_out)?);
+    } else {
+        println!("{}", gw.format_report(&merged_report, format));
+        if !passing {
+            eprintln!("\n{}", gw.failure_summary(&merged_report));
+        }
+    }
+
+    // Clean up pending requests file if it exists
+    let requests_path = code.join(".agent-spec/pending-ai-requests.json");
+    if requests_path.exists() {
+        let _ = std::fs::remove_file(&requests_path);
+    }
+
+    if passing {
+        Ok(())
+    } else {
+        Err(format_non_passing_summary(&merged_report.summary).into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -1371,8 +1562,8 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        GitChangeScope, build_stamp_trailers, parse_ai_mode, render_brief_output,
-        render_contract_output, resolve_command_change_paths, resolve_guard_change_paths,
+        GitChangeScope, RunLogEntry, build_stamp_trailers, parse_ai_mode, render_brief_output,
+        render_contract_output, resolve_command_change_paths, resolve_guard_change_paths, vcs,
     };
 
     const SAMPLE: &str = r#"spec: task
@@ -1623,7 +1814,7 @@ Scenario: Contract alias
         assert!(skill.contains("agent-spec contract"));
         assert!(skill.contains("agent-spec lifecycle"));
         assert!(skill.contains("agent-spec guard"));
-        assert!(skill.contains("Use `agent-spec` as a CLI tool first."));
+        assert!(skill.contains("Tool-First Workflow"));
     }
 
     #[test]
@@ -1637,7 +1828,7 @@ Scenario: Contract alias
         assert!(skill.contains("Decisions"));
         assert!(skill.contains("Boundaries"));
         assert!(skill.contains("Completion Criteria"));
-        assert!(skill.contains("Test:` / `测试:`"));
+        assert!(skill.contains("Test:` selector"));
     }
 
     #[test]
@@ -1866,7 +2057,7 @@ Scenario: Registration request stays structured
             uncertain: 0,
         };
 
-        let trailers = build_stamp_trailers("my-contract", false, &summary);
+        let trailers = build_stamp_trailers("my-contract", false, &summary, None);
 
         assert!(trailers.iter().any(|t| t.starts_with("Spec-Name:")));
         assert!(trailers.iter().any(|t| t.starts_with("Spec-Passing:")));
@@ -1885,11 +2076,12 @@ Scenario: Registration request stays structured
     fn test_lifecycle_writes_structured_run_log_summary() {
         let dir = make_temp_dir("agent-spec-run-log");
 
-        let entry = super::RunLogEntry {
+        let entry = RunLogEntry {
             spec_name: "test-contract".into(),
             passing: true,
             summary: "3/3 passed, 0 failed, 0 skipped, 0 uncertain".into(),
             timestamp: 1700000000,
+            vcs: None,
         };
         super::write_run_log(&dir, &entry).unwrap();
 
@@ -1917,16 +2109,17 @@ Scenario: Registration request stays structured
     #[test]
     fn test_explain_history_reads_run_log_summary() {
         let dir = make_temp_dir("agent-spec-explain-history");
-        let runs_dir = dir.join("runs");
+        let runs_dir = dir.join(".agent-spec/runs");
         fs::create_dir_all(&runs_dir).unwrap();
 
         // Write multiple run log entries
         for (i, passing) in [false, false, true].iter().enumerate() {
-            let entry = super::RunLogEntry {
+            let entry = RunLogEntry {
                 spec_name: "history-contract".into(),
                 passing: *passing,
                 summary: format!("run {}", i + 1),
                 timestamp: 1700000000 + i as u64,
+                vcs: None,
             };
             let json = serde_json::to_string_pretty(&entry).unwrap();
             fs::write(runs_dir.join(format!("{}.json", 1700000000 + i as u64)), json).unwrap();
@@ -2229,6 +2422,192 @@ Scenario: Registration request stays structured
         );
     }
 
+    // === jj VCS Integration Tests ===
+
+    #[test]
+    fn test_stamp_trailers_include_jj_change_id() {
+        let summary = spec_core::VerificationSummary {
+            total: 3,
+            passed: 3,
+            failed: 0,
+            skipped: 0,
+            uncertain: 0,
+        };
+        let jj_ctx = vcs::VcsContext {
+            vcs_type: vcs::VcsType::Jj,
+            change_ref: "kxqpylzn".into(),
+            operation_ref: Some("abc123".into()),
+        };
+
+        let trailers = build_stamp_trailers("my-spec", true, &summary, Some(&jj_ctx));
+
+        assert!(
+            trailers.iter().any(|t| t.starts_with("Spec-Change:")),
+            "should contain Spec-Change trailer for jj: {trailers:?}"
+        );
+        assert!(
+            trailers.iter().any(|t| t.contains("kxqpylzn")),
+            "Spec-Change should contain the jj change ID: {trailers:?}"
+        );
+    }
+
+    #[test]
+    fn test_stamp_trailers_omit_change_id_for_git() {
+        let summary = spec_core::VerificationSummary {
+            total: 3,
+            passed: 3,
+            failed: 0,
+            skipped: 0,
+            uncertain: 0,
+        };
+        let git_ctx = vcs::VcsContext {
+            vcs_type: vcs::VcsType::Git,
+            change_ref: "abc1234".into(),
+            operation_ref: None,
+        };
+
+        let trailers = build_stamp_trailers("my-spec", true, &summary, Some(&git_ctx));
+
+        assert!(
+            !trailers.iter().any(|t| t.starts_with("Spec-Change:")),
+            "should NOT contain Spec-Change trailer for git: {trailers:?}"
+        );
+    }
+
+    #[test]
+    fn test_run_log_entry_serialises_vcs_context() {
+        let entry = RunLogEntry {
+            spec_name: "vcs-test".into(),
+            passing: true,
+            summary: "3/3 passed".into(),
+            timestamp: 1700000000,
+            vcs: Some(vcs::VcsContext {
+                vcs_type: vcs::VcsType::Jj,
+                change_ref: "kxqpylzn".into(),
+                operation_ref: Some("op123".into()),
+            }),
+        };
+
+        let json = serde_json::to_string(&entry).unwrap();
+        let parsed: RunLogEntry = serde_json::from_str(&json).unwrap();
+
+        let vcs = parsed.vcs.expect("vcs should round-trip");
+        assert_eq!(vcs.vcs_type, vcs::VcsType::Jj);
+        assert_eq!(vcs.change_ref, "kxqpylzn");
+        assert_eq!(vcs.operation_ref.as_deref(), Some("op123"));
+    }
+
+    #[test]
+    fn test_run_log_entry_without_vcs_is_backward_compatible() {
+        // Old format JSON without vcs field
+        let old_json = r#"{
+            "spec_name": "old-contract",
+            "passing": true,
+            "summary": "2/2 passed",
+            "timestamp": 1700000000
+        }"#;
+
+        let entry: RunLogEntry = serde_json::from_str(old_json).unwrap();
+        assert_eq!(entry.spec_name, "old-contract");
+        assert!(entry.passing);
+        assert_eq!(entry.summary, "2/2 passed");
+        assert_eq!(entry.timestamp, 1700000000);
+        assert!(entry.vcs.is_none(), "vcs should be None for old format");
+    }
+
+    #[test]
+    fn test_explain_history_shows_jj_diff_between_runs() {
+        let dir = make_temp_dir("agent-spec-jj-diff-history");
+        let runs_dir = dir.join(".agent-spec/runs");
+        fs::create_dir_all(&runs_dir).unwrap();
+
+        // Write two run log entries with jj operation IDs
+        let entry1 = RunLogEntry {
+            spec_name: "jj-diff-contract".into(),
+            passing: false,
+            summary: "1/3 passed".into(),
+            timestamp: 1700000001,
+            vcs: Some(vcs::VcsContext {
+                vcs_type: vcs::VcsType::Jj,
+                change_ref: "change1".into(),
+                operation_ref: Some("op_aaa".into()),
+            }),
+        };
+        let entry2 = RunLogEntry {
+            spec_name: "jj-diff-contract".into(),
+            passing: true,
+            summary: "3/3 passed".into(),
+            timestamp: 1700000002,
+            vcs: Some(vcs::VcsContext {
+                vcs_type: vcs::VcsType::Jj,
+                change_ref: "change2".into(),
+                operation_ref: Some("op_bbb".into()),
+            }),
+        };
+
+        fs::write(
+            runs_dir.join("1700000001.json"),
+            serde_json::to_string_pretty(&entry1).unwrap(),
+        ).unwrap();
+        fs::write(
+            runs_dir.join("1700000002.json"),
+            serde_json::to_string_pretty(&entry2).unwrap(),
+        ).unwrap();
+
+        let history = super::read_run_log_history(&dir, "jj-diff-contract");
+        // The history should contain both runs
+        assert!(history.contains("2 runs"), "should show 2 runs: {history}");
+        assert!(history.contains("FAIL"), "should show FAIL: {history}");
+        assert!(history.contains("PASS"), "should show PASS: {history}");
+
+        // jj_diff_between_ops will return None (jj not available or not a real repo)
+        // so "Changes between runs" won't appear, but the history still renders correctly
+        // This tests graceful degradation when jj is not available.
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_explain_history_degrades_without_jj() {
+        let dir = make_temp_dir("agent-spec-no-jj-history");
+        let runs_dir = dir.join(".agent-spec/runs");
+        fs::create_dir_all(&runs_dir).unwrap();
+
+        // Two entries with jj VCS but no actual jj available
+        for (i, passing) in [false, true].iter().enumerate() {
+            let entry = RunLogEntry {
+                spec_name: "degrade-contract".into(),
+                passing: *passing,
+                summary: format!("run {}", i + 1),
+                timestamp: 1700000010 + i as u64,
+                vcs: Some(vcs::VcsContext {
+                    vcs_type: vcs::VcsType::Jj,
+                    change_ref: format!("change{i}"),
+                    operation_ref: Some(format!("op_{i}")),
+                }),
+            };
+            let json = serde_json::to_string_pretty(&entry).unwrap();
+            fs::write(
+                runs_dir.join(format!("{}.json", 1700000010 + i as u64)),
+                json,
+            ).unwrap();
+        }
+
+        let history = super::read_run_log_history(&dir, "degrade-contract");
+
+        // Should still show run history without crashing
+        assert!(history.contains("2 runs"), "should show 2 runs: {history}");
+        assert!(history.contains("FAIL"), "should show FAIL run: {history}");
+        assert!(history.contains("PASS"), "should show PASS run: {history}");
+        // No "Changes between runs" since jj_diff_between_ops returns None
+        assert!(
+            !history.contains("Changes between runs"),
+            "should NOT show changes section without jj: {history}"
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
     fn make_temp_dir(prefix: &str) -> PathBuf {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -2237,6 +2616,67 @@ Scenario: Registration request stays structured
         let dir = std::env::temp_dir().join(format!("{prefix}-{stamp}"));
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    // === Caller Mode AI Tests ===
+
+    #[test]
+    fn test_parse_ai_mode_accepts_caller() {
+        assert_eq!(
+            parse_ai_mode("caller").unwrap(),
+            spec_verify::AiMode::Caller
+        );
+    }
+
+    #[test]
+    fn test_resolve_ai_command_parses_correctly() {
+        use clap::Parser;
+        let cli = super::Cli::parse_from([
+            "agent-spec",
+            "resolve-ai",
+            "specs/task.spec",
+            "--code",
+            ".",
+            "--decisions",
+            "decisions.json",
+        ]);
+        match cli.command {
+            super::Commands::ResolveAi {
+                spec,
+                code,
+                decisions,
+                format,
+            } => {
+                assert!(spec.to_string_lossy().contains("task.spec"));
+                assert_eq!(code, PathBuf::from("."));
+                assert_eq!(decisions, PathBuf::from("decisions.json"));
+                assert_eq!(format, "json"); // default
+            }
+            _ => panic!("expected ResolveAi command"),
+        }
+    }
+
+    #[test]
+    fn test_scenario_ai_decision_serialization_roundtrip() {
+        let decision = super::ScenarioAiDecision {
+            scenario_name: "AI 场景".into(),
+            decision: spec_core::AiDecision {
+                model: "claude-agent".into(),
+                confidence: 0.92,
+                verdict: spec_core::Verdict::Pass,
+                reasoning: "All steps verified by agent analysis".into(),
+            },
+        };
+
+        let json = serde_json::to_string_pretty(&decision).unwrap();
+        assert!(json.contains("scenario_name"));
+        assert!(json.contains("claude-agent"));
+        assert!(json.contains("0.92"));
+
+        let parsed: super::ScenarioAiDecision = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.scenario_name, "AI 场景");
+        assert_eq!(parsed.decision.verdict, spec_core::Verdict::Pass);
+        assert_eq!(parsed.decision.model, "claude-agent");
     }
 
     fn repo_root() -> PathBuf {

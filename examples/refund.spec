@@ -15,7 +15,7 @@ tags: [payment, refund]
 - 退款操作需要管理员权限
 - 退款必须在原交易后 90 天内发起
 - 退款状态机: pending -> processing -> completed | failed
-- 响应应该快速返回
+- 退款接口响应时间不超过 500ms
 
 ## 验收标准
 

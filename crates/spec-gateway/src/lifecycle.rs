@@ -68,6 +68,11 @@ impl SpecGateway {
         Ok(Self { doc, resolved })
     }
 
+    /// Access the resolved spec (for caller-mode AI request building).
+    pub fn resolved(&self) -> &spec_core::ResolvedSpec {
+        &self.resolved
+    }
+
     // ── Stage 1: PLAN ───────────────────────────────────────────
 
     /// Get the default planning contract for agent execution.
