@@ -1,4 +1,6 @@
-use crate::spec_core::{Constraint, ResolvedSpec, Scenario, Section, SpecDocument, SpecError, SpecResult};
+use crate::spec_core::{
+    Constraint, ResolvedSpec, Scenario, Section, SpecDocument, SpecError, SpecResult,
+};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -251,7 +253,10 @@ inherits: project
 
         assert_eq!(resolved.task.meta.level, SpecLevel::Task);
         assert_eq!(resolved.inherited_constraints.len(), 1);
-        assert_eq!(resolved.inherited_constraints[0].text, "必须保留顶层项目规则");
+        assert_eq!(
+            resolved.inherited_constraints[0].text,
+            "必须保留顶层项目规则"
+        );
         assert!(resolved.inherited_decisions.is_empty());
 
         let _ = fs::remove_dir_all(root);

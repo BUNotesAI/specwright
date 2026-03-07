@@ -1,12 +1,13 @@
 #![warn(clippy::all)]
 #![deny(unsafe_code)]
+#![allow(dead_code)]
 
 mod spec_core;
-mod spec_parser;
-mod spec_lint;
-mod spec_verify;
-mod spec_report;
 mod spec_gateway;
+mod spec_lint;
+mod spec_parser;
+mod spec_report;
+mod spec_verify;
 
 mod vcs;
 
@@ -407,11 +408,15 @@ fn cmd_verify(
     let boundaries = crate::spec_verify::BoundariesVerifier;
     let test = crate::spec_verify::TestVerifier;
     let ai = crate::spec_verify::AiVerifier::from_mode(ai_mode);
-    let verifiers: Vec<&dyn crate::spec_verify::Verifier> = vec![&structural, &boundaries, &test, &ai];
+    let verifiers: Vec<&dyn crate::spec_verify::Verifier> =
+        vec![&structural, &boundaries, &test, &ai];
     let report = crate::spec_verify::run_verification(&ctx, &verifiers)?;
 
     let out_format = parse_output_format(format);
-    println!("{}", crate::spec_report::format_verification(&report, &out_format));
+    println!(
+        "{}",
+        crate::spec_report::format_verification(&report, &out_format)
+    );
 
     let non_passing = report.summary.failed + report.summary.skipped + report.summary.uncertain;
     if non_passing > 0 {
@@ -427,6 +432,7 @@ fn cmd_verify(
 
 // ── Lifecycle (full pipeline for CI/agent) ──────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_lifecycle(
     spec: &Path,
     code: &Path,
@@ -448,9 +454,7 @@ fn cmd_lifecycle(
     let active_layers: Option<Vec<&str>> = layers.map(|l| l.split(',').map(str::trim).collect());
 
     // Stage 1: Quality gate (skip if layers filter excludes lint)
-    let run_lint = active_layers
-        .as_ref()
-        .is_none_or(|l| l.contains(&"lint"));
+    let run_lint = active_layers.as_ref().is_none_or(|l| l.contains(&"lint"));
     let lint_report = if run_lint {
         match gw.quality_gate(min_score) {
             Ok(report) => Some(report),
@@ -518,10 +522,7 @@ fn cmd_lifecycle(
                 .collect();
             let requests_path = code.join(".agent-spec/pending-ai-requests.json");
             std::fs::create_dir_all(requests_path.parent().unwrap_or(Path::new(".")))?;
-            std::fs::write(
-                &requests_path,
-                serde_json::to_string_pretty(&requests)?,
-            )?;
+            std::fs::write(&requests_path, serde_json::to_string_pretty(&requests)?)?;
             true
         } else {
             false
@@ -540,7 +541,8 @@ fn cmd_lifecycle(
         });
         if ai_pending {
             json_out["ai_pending"] = serde_json::json!(true);
-            json_out["ai_requests_file"] = serde_json::json!(".agent-spec/pending-ai-requests.json");
+            json_out["ai_requests_file"] =
+                serde_json::json!(".agent-spec/pending-ai-requests.json");
         }
         if let Some(ref lr) = lint_report {
             json_out["quality_score"] = serde_json::json!(lr.quality_score.overall);
@@ -658,7 +660,11 @@ fn cmd_guard(
     let change_scope = GitChangeScope::parse(change_scope)?;
     let effective_changes = resolve_guard_change_paths(spec_dir, code, change, change_scope)?;
     if change.is_empty() && !effective_changes.is_empty() {
-        eprintln!("agent-spec guard: detected {} {} change(s) from git", effective_changes.len(), change_scope.label());
+        eprintln!(
+            "agent-spec guard: detected {} {} change(s) from git",
+            effective_changes.len(),
+            change_scope.label()
+        );
     }
 
     let mut errors = Vec::new();
@@ -871,9 +877,7 @@ fn resolve_git_change_paths(
     }
 }
 
-fn detect_jj_change_paths(
-    repo_root: &Path,
-) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+fn detect_jj_change_paths(repo_root: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
     // Try `jj diff --name-only` to get changed files in the current change
     let output = Command::new("jj")
         .arg("diff")
@@ -893,7 +897,10 @@ fn detect_jj_change_paths(
             continue;
         }
         let candidate = repo_root.join(trimmed);
-        if !changes.iter().any(|existing: &PathBuf| existing == &candidate) {
+        if !changes
+            .iter()
+            .any(|existing: &PathBuf| existing == &candidate)
+        {
             changes.push(candidate);
         }
     }
@@ -946,7 +953,10 @@ fn parse_ai_mode(input: &str) -> Result<crate::spec_verify::AiMode, Box<dyn std:
         "off" => Ok(crate::spec_verify::AiMode::Off),
         "stub" => Ok(crate::spec_verify::AiMode::Stub),
         "caller" => Ok(crate::spec_verify::AiMode::Caller),
-        other => Err(format!("unsupported --ai-mode `{other}` (expected `off`, `stub`, or `caller`)").into()),
+        other => Err(format!(
+            "unsupported --ai-mode `{other}` (expected `off`, `stub`, or `caller`)"
+        )
+        .into()),
     }
 }
 
@@ -981,9 +991,7 @@ fn cmd_explain(
 
     // Show history from run logs if requested
     if history {
-        let log_dir = spec
-            .parent()
-            .unwrap_or(Path::new("."));
+        let log_dir = spec.parent().unwrap_or(Path::new("."));
         let history_text = read_run_log_history(log_dir, &contract.name);
         if !history_text.is_empty() {
             println!("\n{history_text}");
@@ -1008,18 +1016,14 @@ fn build_stamp_trailers(
         format!("Spec-Passing: {passing}"),
         format!(
             "Spec-Summary: {}/{} passed, {} failed, {} skipped, {} uncertain",
-            summary.passed,
-            summary.total,
-            summary.failed,
-            summary.skipped,
-            summary.uncertain,
+            summary.passed, summary.total, summary.failed, summary.skipped, summary.uncertain,
         ),
     ];
 
-    if let Some(ctx) = vcs_ctx {
-        if ctx.vcs_type == vcs::VcsType::Jj {
-            trailers.push(format!("Spec-Change: {}", ctx.change_ref));
-        }
+    if let Some(ctx) = vcs_ctx
+        && ctx.vcs_type == vcs::VcsType::Jj
+    {
+        trailers.push(format!("Spec-Change: {}", ctx.change_ref));
     }
 
     trailers
@@ -1073,10 +1077,14 @@ fn cmd_checkpoint(action: &str) -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         "create" => {
-            eprintln!("checkpoint create is not yet implemented; use `checkpoint status` to see available VCS");
+            eprintln!(
+                "checkpoint create is not yet implemented; use `checkpoint status` to see available VCS"
+            );
             Ok(())
         }
-        other => Err(format!("unknown checkpoint action: {other} (expected `status` or `create`)").into()),
+        other => Err(
+            format!("unknown checkpoint action: {other} (expected `status` or `create`)").into(),
+        ),
     }
 }
 
@@ -1105,14 +1113,15 @@ struct RunLogEntry {
     pub vcs: Option<vcs::VcsContext>,
 }
 
-fn write_run_log(
-    base_dir: &Path,
-    entry: &RunLogEntry,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn write_run_log(base_dir: &Path, entry: &RunLogEntry) -> Result<(), Box<dyn std::error::Error>> {
     let runs_dir = base_dir.join(".agent-spec/runs");
     std::fs::create_dir_all(&runs_dir)?;
 
-    let filename = format!("{}-{}.json", entry.timestamp, sanitize_for_filename(&entry.spec_name));
+    let filename = format!(
+        "{}-{}.json",
+        entry.timestamp,
+        sanitize_for_filename(&entry.spec_name)
+    );
     let path = runs_dir.join(filename);
     let json = serde_json::to_string_pretty(entry)?;
     std::fs::write(&path, json)?;
@@ -1122,7 +1131,13 @@ fn write_run_log(
 
 fn sanitize_for_filename(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -1156,7 +1171,11 @@ fn read_run_log_history(base_dir: &Path, spec_name: &str) -> String {
 
     let first_pass = logs.iter().position(|e| e.passing);
     if let Some(idx) = first_pass {
-        out.push_str(&format!("  First pass: run #{} (timestamp {})\n", idx + 1, logs[idx].timestamp));
+        out.push_str(&format!(
+            "  First pass: run #{} (timestamp {})\n",
+            idx + 1,
+            logs[idx].timestamp
+        ));
     } else {
         out.push_str("  No passing run yet.\n");
     }
@@ -1171,24 +1190,17 @@ fn read_run_log_history(base_dir: &Path, spec_name: &str) -> String {
         out.push_str(&format!("  #{}: [{}] {}\n", i + 1, status, log.summary));
 
         // Show jj diff between adjacent runs when both have operation IDs
-        if i > 0 {
-            if let (Some(prev_vcs), Some(curr_vcs)) = (&logs[i - 1].vcs, &log.vcs) {
-                if prev_vcs.vcs_type == vcs::VcsType::Jj
-                    && curr_vcs.vcs_type == vcs::VcsType::Jj
-                {
-                    if let (Some(prev_op), Some(curr_op)) =
-                        (&prev_vcs.operation_ref, &curr_vcs.operation_ref)
-                    {
-                        if let Some(changed_files) =
-                            vcs::jj_diff_between_ops(Path::new("."), prev_op, curr_op)
-                        {
-                            out.push_str("    Changes between runs:\n");
-                            for f in &changed_files {
-                                out.push_str(&format!("      - {f}\n"));
-                            }
-                        }
-                    }
-                }
+        if i > 0
+            && let (Some(prev_vcs), Some(curr_vcs)) = (&logs[i - 1].vcs, &log.vcs)
+            && prev_vcs.vcs_type == vcs::VcsType::Jj
+            && curr_vcs.vcs_type == vcs::VcsType::Jj
+            && let (Some(prev_op), Some(curr_op)) =
+                (&prev_vcs.operation_ref, &curr_vcs.operation_ref)
+            && let Some(changed_files) = vcs::jj_diff_between_ops(Path::new("."), prev_op, curr_op)
+        {
+            out.push_str("    Changes between runs:\n");
+            for f in &changed_files {
+                out.push_str(&format!("      - {f}\n"));
             }
         }
     }
@@ -1525,10 +1537,8 @@ fn cmd_resolve_ai(
         }
     }
 
-    let merged_report = crate::spec_core::VerificationReport::from_results(
-        verify_report.spec_name,
-        merged_results,
-    );
+    let merged_report =
+        crate::spec_core::VerificationReport::from_results(verify_report.spec_name, merged_results);
 
     let passing = gw.is_passing(&merged_report);
 
@@ -1634,13 +1644,9 @@ Scenario: Contract alias
         run_git(&repo, &["init"]);
         run_git(&repo, &["add", "src/lib.rs"]);
 
-        let resolved = resolve_guard_change_paths(
-            &repo.join("specs"),
-            &repo,
-            &[],
-            GitChangeScope::Staged,
-        )
-        .unwrap();
+        let resolved =
+            resolve_guard_change_paths(&repo.join("specs"), &repo, &[], GitChangeScope::Staged)
+                .unwrap();
 
         assert_eq!(resolved.len(), 1);
         assert!(resolved[0].to_string_lossy().ends_with("src/lib.rs"));
@@ -1653,13 +1659,9 @@ Scenario: Contract alias
         let dir = make_temp_dir("agent-spec-cli-non-git");
         fs::create_dir_all(dir.join("specs")).unwrap();
 
-        let resolved = resolve_guard_change_paths(
-            &dir.join("specs"),
-            &dir,
-            &[],
-            GitChangeScope::Staged,
-        )
-        .unwrap();
+        let resolved =
+            resolve_guard_change_paths(&dir.join("specs"), &dir, &[], GitChangeScope::Staged)
+                .unwrap();
         assert!(resolved.is_empty());
 
         let _ = fs::remove_dir_all(dir);
@@ -1670,7 +1672,11 @@ Scenario: Contract alias
         let repo = make_temp_dir("agent-spec-cli-worktree");
         fs::create_dir_all(repo.join("src")).unwrap();
         fs::write(repo.join("src/staged.rs"), "pub fn staged() -> u8 { 1 }\n").unwrap();
-        fs::write(repo.join("src/unstaged.rs"), "pub fn unstaged() -> u8 { 1 }\n").unwrap();
+        fs::write(
+            repo.join("src/unstaged.rs"),
+            "pub fn unstaged() -> u8 { 1 }\n",
+        )
+        .unwrap();
 
         run_git(&repo, &["init"]);
         run_git(&repo, &["config", "user.email", "agent-spec@example.com"]);
@@ -1681,16 +1687,20 @@ Scenario: Contract alias
         fs::write(repo.join("src/staged.rs"), "pub fn staged() -> u8 { 2 }\n").unwrap();
         run_git(&repo, &["add", "src/staged.rs"]);
 
-        fs::write(repo.join("src/unstaged.rs"), "pub fn unstaged() -> u8 { 2 }\n").unwrap();
-        fs::write(repo.join("src/untracked.rs"), "pub fn untracked() -> u8 { 3 }\n").unwrap();
-
-        let resolved = resolve_guard_change_paths(
-            &repo.join("specs"),
-            &repo,
-            &[],
-            GitChangeScope::Worktree,
+        fs::write(
+            repo.join("src/unstaged.rs"),
+            "pub fn unstaged() -> u8 { 2 }\n",
         )
         .unwrap();
+        fs::write(
+            repo.join("src/untracked.rs"),
+            "pub fn untracked() -> u8 { 3 }\n",
+        )
+        .unwrap();
+
+        let resolved =
+            resolve_guard_change_paths(&repo.join("specs"), &repo, &[], GitChangeScope::Worktree)
+                .unwrap();
 
         assert!(contains_repo_suffix(&resolved, "src/staged.rs"));
         assert!(contains_repo_suffix(&resolved, "src/unstaged.rs"));
@@ -1704,7 +1714,11 @@ Scenario: Contract alias
         let repo = make_temp_dir("agent-spec-cli-staged-default");
         fs::create_dir_all(repo.join("src")).unwrap();
         fs::write(repo.join("src/staged.rs"), "pub fn staged() -> u8 { 1 }\n").unwrap();
-        fs::write(repo.join("src/unstaged.rs"), "pub fn unstaged() -> u8 { 1 }\n").unwrap();
+        fs::write(
+            repo.join("src/unstaged.rs"),
+            "pub fn unstaged() -> u8 { 1 }\n",
+        )
+        .unwrap();
 
         run_git(&repo, &["init"]);
         run_git(&repo, &["config", "user.email", "agent-spec@example.com"]);
@@ -1715,15 +1729,15 @@ Scenario: Contract alias
         fs::write(repo.join("src/staged.rs"), "pub fn staged() -> u8 { 2 }\n").unwrap();
         run_git(&repo, &["add", "src/staged.rs"]);
 
-        fs::write(repo.join("src/unstaged.rs"), "pub fn unstaged() -> u8 { 2 }\n").unwrap();
-
-        let resolved = resolve_guard_change_paths(
-            &repo.join("specs"),
-            &repo,
-            &[],
-            GitChangeScope::Staged,
+        fs::write(
+            repo.join("src/unstaged.rs"),
+            "pub fn unstaged() -> u8 { 2 }\n",
         )
         .unwrap();
+
+        let resolved =
+            resolve_guard_change_paths(&repo.join("specs"), &repo, &[], GitChangeScope::Staged)
+                .unwrap();
 
         assert!(contains_repo_suffix(&resolved, "src/staged.rs"));
         assert!(!contains_repo_suffix(&resolved, "src/unstaged.rs"));
@@ -1732,13 +1746,17 @@ Scenario: Contract alias
     }
 
     fn contains_repo_suffix(paths: &[PathBuf], suffix: &str) -> bool {
-        paths.iter()
+        paths
+            .iter()
             .any(|path| path.to_string_lossy().replace('\\', "/").ends_with(suffix))
     }
 
     #[test]
     fn test_parse_ai_mode_accepts_stub() {
-        assert_eq!(parse_ai_mode("stub").unwrap(), crate::spec_verify::AiMode::Stub);
+        assert_eq!(
+            parse_ai_mode("stub").unwrap(),
+            crate::spec_verify::AiMode::Stub
+        );
     }
 
     #[test]
@@ -1782,7 +1800,11 @@ Scenario: Contract alias
         fs::create_dir_all(repo.join("specs")).unwrap();
         fs::create_dir_all(repo.join("src")).unwrap();
         fs::write(repo.join("src/staged.rs"), "pub fn staged() -> u8 { 1 }\n").unwrap();
-        fs::write(repo.join("src/unstaged.rs"), "pub fn unstaged() -> u8 { 1 }\n").unwrap();
+        fs::write(
+            repo.join("src/unstaged.rs"),
+            "pub fn unstaged() -> u8 { 1 }\n",
+        )
+        .unwrap();
 
         run_git(&repo, &["init"]);
         run_git(&repo, &["config", "user.email", "agent-spec@example.com"]);
@@ -1793,8 +1815,16 @@ Scenario: Contract alias
         fs::write(repo.join("src/staged.rs"), "pub fn staged() -> u8 { 2 }\n").unwrap();
         run_git(&repo, &["add", "src/staged.rs"]);
 
-        fs::write(repo.join("src/unstaged.rs"), "pub fn unstaged() -> u8 { 2 }\n").unwrap();
-        fs::write(repo.join("src/untracked.rs"), "pub fn untracked() -> u8 { 3 }\n").unwrap();
+        fs::write(
+            repo.join("src/unstaged.rs"),
+            "pub fn unstaged() -> u8 { 2 }\n",
+        )
+        .unwrap();
+        fs::write(
+            repo.join("src/untracked.rs"),
+            "pub fn untracked() -> u8 { 3 }\n",
+        )
+        .unwrap();
 
         let resolved = resolve_command_change_paths(
             &repo.join("specs/task.spec"),
@@ -1813,10 +1843,9 @@ Scenario: Contract alias
 
     #[test]
     fn test_claude_code_tool_first_skill_exists_and_mentions_contract_lifecycle_guard() {
-        let skill = fs::read_to_string(
-            repo_root().join(".claude/skills/agent-spec-tool-first/SKILL.md"),
-        )
-        .unwrap();
+        let skill =
+            fs::read_to_string(repo_root().join(".claude/skills/agent-spec-tool-first/SKILL.md"))
+                .unwrap();
 
         assert!(skill.contains("agent-spec contract"));
         assert!(skill.contains("agent-spec lifecycle"));
@@ -1826,10 +1855,9 @@ Scenario: Contract alias
 
     #[test]
     fn test_claude_code_authoring_skill_exists_and_mentions_task_contract_sections() {
-        let skill = fs::read_to_string(
-            repo_root().join(".claude/skills/agent-spec-authoring/SKILL.md"),
-        )
-        .unwrap();
+        let skill =
+            fs::read_to_string(repo_root().join(".claude/skills/agent-spec-authoring/SKILL.md"))
+                .unwrap();
 
         assert!(skill.contains("Intent"));
         assert!(skill.contains("Decisions"));
@@ -1880,9 +1908,11 @@ Scenario: Registration request stays structured
         assert!(output.contains("Scenario: Registration request stays structured"));
         assert!(output.contains("  Test:"));
         assert!(output.contains("    Package: agent-spec"));
-        assert!(output.contains(
-            "    Filter: test_contract_output_preserves_step_tables_and_test_selectors"
-        ));
+        assert!(
+            output.contains(
+                "    Filter: test_contract_output_preserves_step_tables_and_test_selectors"
+            )
+        );
         assert!(output.contains("  When client submits the registration request:"));
         assert!(output.contains("| field | value |"));
         assert!(output.contains("| email | alice@example.com |"));
@@ -1915,10 +1945,9 @@ Scenario: Registration request stays structured
             repo_root().join("specs/roadmap/task-phase2-run-history-and-vcs-context.spec"),
         )
         .unwrap();
-        let phase3 = fs::read_to_string(
-            repo_root().join("specs/roadmap/task-phase3-spec-governance.spec"),
-        )
-        .unwrap();
+        let phase3 =
+            fs::read_to_string(repo_root().join("specs/roadmap/task-phase3-spec-governance.spec"))
+                .unwrap();
         let phase4 = fs::read_to_string(
             repo_root().join("specs/roadmap/task-phase4-ai-verification-expansion.spec"),
         )
@@ -1990,8 +2019,11 @@ Scenario: Registration request stays structured
             },
         };
 
-        let text =
-            crate::spec_report::format_explain(&input, &report, &crate::spec_report::OutputFormat::Text);
+        let text = crate::spec_report::format_explain(
+            &input,
+            &report,
+            &crate::spec_report::OutputFormat::Text,
+        );
 
         assert!(text.contains("Intent"));
         assert!(text.contains("Decisions"));
@@ -2069,12 +2101,8 @@ Scenario: Registration request stays structured
         assert!(trailers.iter().any(|t| t.starts_with("Spec-Name:")));
         assert!(trailers.iter().any(|t| t.starts_with("Spec-Passing:")));
         assert!(trailers.iter().any(|t| t.starts_with("Spec-Summary:")));
-        assert!(trailers
-            .iter()
-            .any(|t| t.contains("Spec-Passing: false")));
-        assert!(trailers
-            .iter()
-            .any(|t| t.contains("2/3 passed, 1 failed")));
+        assert!(trailers.iter().any(|t| t.contains("Spec-Passing: false")));
+        assert!(trailers.iter().any(|t| t.contains("2/3 passed, 1 failed")));
     }
 
     // === Phase 2 Tests ===
@@ -2102,8 +2130,14 @@ Scenario: Registration request stays structured
         assert!(!files.is_empty(), "should have at least one run log file");
 
         let content = fs::read_to_string(files[0].path()).unwrap();
-        assert!(content.contains("\"passing\""), "should contain verdict field");
-        assert!(content.contains("test-contract"), "should contain spec name");
+        assert!(
+            content.contains("\"passing\""),
+            "should contain verdict field"
+        );
+        assert!(
+            content.contains("test-contract"),
+            "should contain spec name"
+        );
         assert!(content.contains("summary"), "should contain summary");
 
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -2129,7 +2163,11 @@ Scenario: Registration request stays structured
                 vcs: None,
             };
             let json = serde_json::to_string_pretty(&entry).unwrap();
-            fs::write(runs_dir.join(format!("{}.json", 1700000000 + i as u64)), json).unwrap();
+            fs::write(
+                runs_dir.join(format!("{}.json", 1700000000 + i as u64)),
+                json,
+            )
+            .unwrap();
         }
 
         let history = super::read_run_log_history(&dir, "history-contract");
@@ -2204,10 +2242,7 @@ Scenario: Registration request stays structured
         ]);
         match cli.command {
             super::Commands::Lifecycle { adversarial, .. } => {
-                assert!(
-                    !adversarial,
-                    "adversarial should default to false"
-                );
+                assert!(!adversarial, "adversarial should default to false");
             }
             _ => panic!("expected Lifecycle command"),
         }
@@ -2314,7 +2349,10 @@ Scenario: Registration request stays structured
         ]);
         match cli.command {
             super::Commands::Lifecycle { layers, .. } => {
-                assert!(layers.is_none(), "layers should default to None (all layers)");
+                assert!(
+                    layers.is_none(),
+                    "layers should default to None (all layers)"
+                );
             }
             _ => panic!("expected Lifecycle command"),
         }
@@ -2376,7 +2414,11 @@ Scenario: Registration request stays structured
         };
 
         let filtered = super::filter_report_by_layers(report, &["boundary", "test"]);
-        assert_eq!(filtered.results.len(), 2, "should only keep boundary and test");
+        assert_eq!(
+            filtered.results.len(),
+            2,
+            "should only keep boundary and test"
+        );
         assert_eq!(filtered.summary.total, 2);
         assert_eq!(filtered.summary.uncertain, 0, "ai layer should be excluded");
     }
@@ -2386,11 +2428,8 @@ Scenario: Registration request stays structured
         use clap::Parser;
 
         // The command exists and parses
-        let cli = super::Cli::parse_from([
-            "agent-spec",
-            "measure-determinism",
-            "specs/project.spec",
-        ]);
+        let cli =
+            super::Cli::parse_from(["agent-spec", "measure-determinism", "specs/project.spec"]);
         match cli.command {
             super::Commands::MeasureDeterminism { spec, runs, .. } => {
                 assert!(spec.to_string_lossy().contains("project.spec"));
@@ -2400,11 +2439,8 @@ Scenario: Registration request stays structured
         }
 
         // Running it returns an error (experimental)
-        let result = super::cmd_measure_determinism(
-            Path::new("specs/project.spec"),
-            Path::new("."),
-            3,
-        );
+        let result =
+            super::cmd_measure_determinism(Path::new("specs/project.spec"), Path::new("."), 3);
         assert!(result.is_err(), "should fail as experimental");
         let err = result.unwrap_err().to_string();
         assert!(
@@ -2555,11 +2591,13 @@ Scenario: Registration request stays structured
         fs::write(
             runs_dir.join("1700000001.json"),
             serde_json::to_string_pretty(&entry1).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         fs::write(
             runs_dir.join("1700000002.json"),
             serde_json::to_string_pretty(&entry2).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let history = super::read_run_log_history(&dir, "jj-diff-contract");
         // The history should contain both runs
@@ -2597,7 +2635,8 @@ Scenario: Registration request stays structured
             fs::write(
                 runs_dir.join(format!("{}.json", 1700000010 + i as u64)),
                 json,
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         let history = super::read_run_log_history(&dir, "degrade-contract");

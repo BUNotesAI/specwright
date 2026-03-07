@@ -712,7 +712,10 @@ name: "单行绑定"
         match &doc.sections[0] {
             Section::AcceptanceCriteria { scenarios, .. } => {
                 let selector = scenarios[0].test_selector.as_ref().unwrap();
-                assert_eq!(selector.filter, "test_parse_shorthand_test_selector_as_filter_only");
+                assert_eq!(
+                    selector.filter,
+                    "test_parse_shorthand_test_selector_as_filter_only"
+                );
                 assert_eq!(selector.package, None);
             }
             other => panic!("expected AcceptanceCriteria, got {other:?}"),

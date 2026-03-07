@@ -10,10 +10,10 @@ use crate::spec_core::{
     ResolvedSpec, ScenarioResult, SpecResult, StepVerdict, Verdict, VerificationReport,
 };
 
+pub use ai_verifier::{AiBackend, AiVerifier, build_ai_request};
 pub use boundaries::BoundariesVerifier;
 pub use structural::StructuralVerifier;
 pub use test_verifier::TestVerifier;
-pub use ai_verifier::{AiBackend, AiVerifier, StubAiBackend, build_ai_request};
 
 /// AI verifier mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,7 +92,7 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::spec_core::{
-        ResolvedSpec, Scenario, ScenarioResult, Section, SpecDocument, SpecLevel, Span, SpecMeta,
+        ResolvedSpec, Scenario, ScenarioResult, Section, Span, SpecDocument, SpecLevel, SpecMeta,
         Step, StepKind, Verdict,
     };
 
@@ -106,7 +106,10 @@ mod tests {
             "first"
         }
 
-        fn verify(&self, _ctx: &VerificationContext) -> crate::spec_core::SpecResult<Vec<ScenarioResult>> {
+        fn verify(
+            &self,
+            _ctx: &VerificationContext,
+        ) -> crate::spec_core::SpecResult<Vec<ScenarioResult>> {
             Ok(vec![ScenarioResult {
                 scenario_name: "同一场景".into(),
                 verdict: Verdict::Pass,
@@ -122,7 +125,10 @@ mod tests {
             "second"
         }
 
-        fn verify(&self, _ctx: &VerificationContext) -> crate::spec_core::SpecResult<Vec<ScenarioResult>> {
+        fn verify(
+            &self,
+            _ctx: &VerificationContext,
+        ) -> crate::spec_core::SpecResult<Vec<ScenarioResult>> {
             Ok(vec![ScenarioResult {
                 scenario_name: "同一场景".into(),
                 verdict: Verdict::Uncertain,

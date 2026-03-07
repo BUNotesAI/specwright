@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
 use crate::spec_core::{
     BoundaryCategory, Constraint, ConstraintCategory, ResolvedSpec, Scenario, Section, SpecDocument,
 };
+use serde::{Deserialize, Serialize};
 
 /// Primary task contract projection for agent execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -58,12 +58,22 @@ pub fn get_vcs_context(repo_root: &Path) -> Option<VcsContext> {
 }
 
 fn get_jj_context(repo_root: &Path) -> Option<VcsContext> {
-    let change_ref = run_jj(repo_root, &[
-        "log", "-r", "@", "--no-graph", "-T", "change_id.short()",
-    ])?;
-    let operation_ref = run_jj(repo_root, &[
-        "op", "log", "--limit", "1", "--no-graph", "-T", "self.id().short()",
-    ]);
+    let change_ref = run_jj(
+        repo_root,
+        &["log", "-r", "@", "--no-graph", "-T", "change_id.short()"],
+    )?;
+    let operation_ref = run_jj(
+        repo_root,
+        &[
+            "op",
+            "log",
+            "--limit",
+            "1",
+            "--no-graph",
+            "-T",
+            "self.id().short()",
+        ],
+    );
     Some(VcsContext {
         vcs_type: VcsType::Jj,
         change_ref,
@@ -97,9 +107,10 @@ fn get_git_context(repo_root: &Path) -> Option<VcsContext> {
 /// Get the list of files changed between two jj operations.
 /// Returns None if jj is unavailable or the command fails.
 pub fn jj_diff_between_ops(repo_root: &Path, from_op: &str, to_op: &str) -> Option<Vec<String>> {
-    let output = run_jj(repo_root, &[
-        "diff", "--name-only", "--from", from_op, "--to", to_op,
-    ])?;
+    let output = run_jj(
+        repo_root,
+        &["diff", "--name-only", "--from", from_op, "--to", to_op],
+    )?;
     let files: Vec<String> = output
         .lines()
         .map(str::trim)
@@ -271,8 +282,14 @@ mod tests {
         assert!(ctx.is_some(), "should return VCS context in git repo");
         let ctx = ctx.unwrap();
         assert_eq!(ctx.vcs_type, VcsType::Git);
-        assert!(!ctx.change_ref.is_empty(), "change_ref should be non-empty short hash");
-        assert!(ctx.operation_ref.is_none(), "operation_ref should be None for git");
+        assert!(
+            !ctx.change_ref.is_empty(),
+            "change_ref should be non-empty short hash"
+        );
+        assert!(
+            ctx.operation_ref.is_none(),
+            "operation_ref should be None for git"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

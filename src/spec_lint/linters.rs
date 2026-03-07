@@ -741,15 +741,18 @@ Scenario: good path
             "should flag untestable term"
         );
         assert!(
-            report
-                .diagnostics
-                .iter()
-                .any(|d| d.rule == "unquantified"),
+            report.diagnostics.iter().any(|d| d.rule == "unquantified"),
             "should flag unquantified qualifier"
         );
-        assert!(report.quality_score.testability < 1.0, "testability penalized");
+        assert!(
+            report.quality_score.testability < 1.0,
+            "testability penalized"
+        );
         assert!(report.quality_score.overall > 0.0, "overall score positive");
-        assert!(report.quality_score.overall < 1.0, "overall score penalized");
+        assert!(
+            report.quality_score.overall < 1.0,
+            "overall score penalized"
+        );
     }
 
     #[test]
@@ -791,17 +794,13 @@ name: "Spec B"
         let diags = crate::spec_lint::cross_check(&[spec_a, spec_b]);
 
         assert!(
-            diags
-                .iter()
-                .any(|d| d.rule == "cross-check-boundary"),
+            diags.iter().any(|d| d.rule == "cross-check-boundary"),
             "should detect boundary conflict: {:?}",
             diags
         );
 
         assert!(
-            diags
-                .iter()
-                .any(|d| d.rule == "cross-check-decision"),
+            diags.iter().any(|d| d.rule == "cross-check-decision"),
             "should detect decision conflict: {:?}",
             diags
         );

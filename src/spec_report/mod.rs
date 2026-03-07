@@ -1,6 +1,3 @@
-
-
-
 use crate::spec_core::{LintReport, Severity, Verdict, VerificationReport};
 
 /// Output format.
@@ -173,10 +170,7 @@ fn format_lint_text(report: &LintReport) -> String {
 
 fn format_explain_text(input: &ExplainInput, report: &VerificationReport) -> String {
     let mut out = String::new();
-    out.push_str(&format!(
-        "=== Contract Review: {} ===\n\n",
-        input.name
-    ));
+    out.push_str(&format!("=== Contract Review: {} ===\n\n", input.name));
 
     out.push_str("Intent\n");
     out.push_str(&format!("  {}\n\n", input.intent));
@@ -505,7 +499,9 @@ fn format_lint_md(report: &LintReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spec_core::{Evidence, ScenarioResult, StepVerdict, VerificationReport, VerificationSummary};
+    use crate::spec_core::{
+        Evidence, ScenarioResult, StepVerdict, VerificationReport, VerificationSummary,
+    };
 
     #[test]
     fn test_format_verification_text() {

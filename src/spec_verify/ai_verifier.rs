@@ -28,7 +28,9 @@ impl AiBackend for StubAiBackend {
             model: self.name().into(),
             confidence: 0.0,
             verdict: Verdict::Uncertain,
-            reasoning: "ai verifier stub enabled; no model backend configured, manual review required".into(),
+            reasoning:
+                "ai verifier stub enabled; no model backend configured, manual review required"
+                    .into(),
         })
     }
 }
@@ -166,8 +168,8 @@ mod tests {
     use std::sync::Arc;
 
     use crate::spec_core::{
-        AiDecision, Evidence, ResolvedSpec, Scenario, Section, SpecDocument, SpecLevel, SpecMeta,
-        Span, Step, StepKind, Verdict,
+        AiDecision, Evidence, ResolvedSpec, Scenario, Section, Span, SpecDocument, SpecLevel,
+        SpecMeta, Step, StepKind, Verdict,
     };
 
     use super::{AiBackend, AiVerifier, StubAiBackend, build_ai_request};
@@ -324,7 +326,9 @@ mod tests {
 
         // Contract intent is populated from the spec's Intent section
         assert!(
-            request.contract_intent.contains("验证 AI 请求包含完整上下文"),
+            request
+                .contract_intent
+                .contains("验证 AI 请求包含完整上下文"),
             "contract_intent should contain the spec intent"
         );
 

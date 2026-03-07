@@ -65,9 +65,11 @@ pub fn match_section_header(line: &str) -> Option<SectionKind> {
         || lower.starts_with("boundary")
     {
         Some(SectionKind::Boundaries)
-    } else if lower.starts_with("验收标准") || lower.starts_with("acceptance criter") {
-        Some(SectionKind::AcceptanceCriteria)
-    } else if lower.starts_with("完成条件") || lower.starts_with("completion criter") {
+    } else if lower.starts_with("验收标准")
+        || lower.starts_with("acceptance criter")
+        || lower.starts_with("完成条件")
+        || lower.starts_with("completion criter")
+    {
         Some(SectionKind::AcceptanceCriteria)
     } else if lower.starts_with("排除范围") || lower.starts_with("out of scope") {
         Some(SectionKind::OutOfScope)
@@ -124,7 +126,10 @@ pub enum TestSelectorField {
 pub fn match_test_selector_field(line: &str) -> Option<(TestSelectorField, &str)> {
     let trimmed = line.trim();
 
-    if let Some(rest) = trimmed.strip_prefix("包:").or_else(|| trimmed.strip_prefix("包：")) {
+    if let Some(rest) = trimmed
+        .strip_prefix("包:")
+        .or_else(|| trimmed.strip_prefix("包："))
+    {
         return Some((TestSelectorField::Package, rest.trim()));
     }
     if let Some(rest) = trimmed
@@ -136,7 +141,10 @@ pub fn match_test_selector_field(line: &str) -> Option<(TestSelectorField, &str)
 
     let lower = trimmed.to_lowercase();
     if lower.starts_with("package:") {
-        return Some((TestSelectorField::Package, trimmed["package:".len()..].trim()));
+        return Some((
+            TestSelectorField::Package,
+            trimmed["package:".len()..].trim(),
+        ));
     }
     if lower.starts_with("filter:") {
         return Some((TestSelectorField::Filter, trimmed["filter:".len()..].trim()));

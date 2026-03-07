@@ -65,7 +65,8 @@ pub fn cross_check(docs: &[SpecDocument]) -> Vec<LintDiagnostic> {
     let mut diags = Vec::new();
 
     // Collect boundaries and decisions per spec
-    let mut spec_boundaries: Vec<(&str, Vec<(String, crate::spec_core::BoundaryCategory)>)> = Vec::new();
+    let mut spec_boundaries: Vec<(&str, Vec<(String, crate::spec_core::BoundaryCategory)>)> =
+        Vec::new();
     let mut spec_decisions: Vec<(&str, Vec<String>)> = Vec::new();
 
     for doc in docs {

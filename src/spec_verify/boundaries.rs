@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use crate::spec_core::{BoundaryCategory, Evidence, ScenarioResult, SpecResult, StepVerdict, Verdict};
+use crate::spec_core::{
+    BoundaryCategory, Evidence, ScenarioResult, SpecResult, StepVerdict, Verdict,
+};
 
 use super::{VerificationContext, Verifier};
 

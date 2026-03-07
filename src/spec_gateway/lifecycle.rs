@@ -7,8 +7,7 @@ use crate::spec_lint::LintPipeline;
 use crate::spec_report::OutputFormat;
 use crate::spec_verify::{
     AiBackend, AiMode, AiVerifier, BoundariesVerifier, StructuralVerifier, TestVerifier,
-    VerificationContext, Verifier,
-    run_verification,
+    VerificationContext, Verifier, run_verification,
 };
 
 use super::TaskContract;
@@ -332,9 +331,9 @@ impl std::fmt::Display for GateFailure {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use crate::spec_verify::AiMode;
     use std::fs;
+    use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     const SAMPLE: &str = r#"spec: task
@@ -620,10 +619,22 @@ inherits: project
         let gw = SpecGateway::load(root.join("task.spec")).unwrap();
         let contract = gw.plan();
 
-        assert!(contract.must.contains(&"所有公共 API 返回结构化错误".to_string()));
+        assert!(
+            contract
+                .must
+                .contains(&"所有公共 API 返回结构化错误".to_string())
+        );
         assert!(contract.must_not.contains(&"禁止使用 `panic!`".to_string()));
-        assert!(contract.decisions.contains(&"使用 `thiserror` 统一错误类型".to_string()));
-        assert!(contract.decisions.contains(&"返回值保持现有 JSON 格式".to_string()));
+        assert!(
+            contract
+                .decisions
+                .contains(&"使用 `thiserror` 统一错误类型".to_string())
+        );
+        assert!(
+            contract
+                .decisions
+                .contains(&"返回值保持现有 JSON 格式".to_string())
+        );
 
         let _ = fs::remove_dir_all(root);
     }
@@ -678,7 +689,10 @@ name: "Contract fidelity"
         assert_eq!(brief.must, contract.must);
         assert!(brief.must_not.contains(&"禁止使用 `.unwrap()`".to_string()));
         assert_eq!(brief.decided, contract.decisions);
-        assert_eq!(brief.scenario_names.len(), contract.completion_criteria.len());
+        assert_eq!(
+            brief.scenario_names.len(),
+            contract.completion_criteria.len()
+        );
     }
 
     #[test]
@@ -777,7 +791,10 @@ name: "AI skeleton"
             "host-backend"
         }
 
-        fn analyze(&self, _request: &crate::spec_core::AiRequest) -> SpecResult<crate::spec_core::AiDecision> {
+        fn analyze(
+            &self,
+            _request: &crate::spec_core::AiRequest,
+        ) -> SpecResult<crate::spec_core::AiDecision> {
             Ok(crate::spec_core::AiDecision {
                 model: self.name().into(),
                 confidence: 0.88,
@@ -796,17 +813,41 @@ name: "AI skeleton"
         let root = std::env::temp_dir().join(format!("agent-spec-gw-org-{stamp}"));
         fs::create_dir_all(&root).unwrap();
 
-        fs::write(root.join("org.spec"), "spec: org\nname: \"组织规则\"\n---\n\n## Constraints\n\n- No hardcoded credentials\n").unwrap();
+        fs::write(
+            root.join("org.spec"),
+            "spec: org\nname: \"组织规则\"\n---\n\n## Constraints\n\n- No hardcoded credentials\n",
+        )
+        .unwrap();
         fs::write(root.join("project.spec"), "spec: project\nname: \"项目规则\"\ninherits: org\n---\n\n## Constraints\n\n### Must\n- All public APIs return structured errors\n\n### Must NOT\n- 禁止使用 `panic!`\n\n## Decisions\n\n- Use thiserror for error types\n").unwrap();
         fs::write(root.join("task.spec"), "spec: task\nname: \"任务\"\ninherits: project\n---\n\n## Intent\n\n实现功能。\n\n## Completion Criteria\n\nScenario: happy path\n  Given valid input\n  When function is called\n  Then returns Ok\n").unwrap();
 
         let gw = SpecGateway::load(root.join("task.spec")).unwrap();
         let contract = gw.plan();
 
-        assert!(contract.must.iter().any(|c| c.contains("No hardcoded credentials")));
-        assert!(contract.must.iter().any(|c| c.contains("All public APIs return structured errors")));
-        assert!(contract.must_not.iter().any(|c| c.contains("禁止使用 `panic!`")));
-        assert!(contract.decisions.iter().any(|d| d.contains("Use thiserror")));
+        assert!(
+            contract
+                .must
+                .iter()
+                .any(|c| c.contains("No hardcoded credentials"))
+        );
+        assert!(
+            contract
+                .must
+                .iter()
+                .any(|c| c.contains("All public APIs return structured errors"))
+        );
+        assert!(
+            contract
+                .must_not
+                .iter()
+                .any(|c| c.contains("禁止使用 `panic!`"))
+        );
+        assert!(
+            contract
+                .decisions
+                .iter()
+                .any(|d| d.contains("Use thiserror"))
+        );
 
         let _ = fs::remove_dir_all(root);
     }
@@ -828,7 +869,9 @@ name: "AI host backend"
         )
         .unwrap();
 
-        let report = gw.verify_with_ai_backend(".", Arc::new(HostBackend)).unwrap();
+        let report = gw
+            .verify_with_ai_backend(".", Arc::new(HostBackend))
+            .unwrap();
         assert_eq!(report.summary.uncertain, 1);
         assert_eq!(report.results[0].verdict, Verdict::Uncertain);
     }
