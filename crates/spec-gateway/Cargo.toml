@@ -1,8 +1,11 @@
 [package]
 name = "spec-gateway"
+description = "Gateway API for agent-spec: 5-stage lifecycle (plan, gate, verify, decide, report)"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 spec-core.workspace = true

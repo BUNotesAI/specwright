@@ -14,14 +14,16 @@ members = [
 edition = "2024"
 version = "0.2.0"
 license = "MIT"
+repository = "https://github.com/ZhangHanDong/agent-spec"
+homepage = "https://github.com/ZhangHanDong/agent-spec"
 
 [workspace.dependencies]
-spec-core = { path = "crates/spec-core" }
-spec-parser = { path = "crates/spec-parser" }
-spec-lint = { path = "crates/spec-lint" }
-spec-verify = { path = "crates/spec-verify" }
-spec-report = { path = "crates/spec-report" }
-spec-gateway = { path = "crates/spec-gateway" }
+spec-core = { version = "0.2.0", path = "crates/spec-core" }
+spec-parser = { version = "0.2.0", path = "crates/spec-parser" }
+spec-lint = { version = "0.2.0", path = "crates/spec-lint" }
+spec-verify = { version = "0.2.0", path = "crates/spec-verify" }
+spec-report = { version = "0.2.0", path = "crates/spec-report" }
+spec-gateway = { version = "0.2.0", path = "crates/spec-gateway" }
 
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

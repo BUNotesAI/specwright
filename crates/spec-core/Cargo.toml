@@ -1,8 +1,11 @@
 [package]
 name = "spec-core"
+description = "Core types for agent-spec: AST, verdicts, verification reports"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 thiserror.workspace = true

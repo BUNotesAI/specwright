@@ -1,8 +1,11 @@
 [package]
 name = "agent-spec"
+description = "AI-native BDD/Spec verification tool for contract-driven agent coding"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 spec-core.workspace = true

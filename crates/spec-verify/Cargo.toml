@@ -1,8 +1,11 @@
 [package]
 name = "spec-verify"
+description = "Verification engine for agent-spec: structural, boundary, test, AI layers"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 spec-core.workspace = true

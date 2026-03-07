@@ -1,8 +1,11 @@
 [package]
 name = "spec-lint"
+description = "Linter for agent-spec contracts: vague verbs, testability, determinism"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 spec-core.workspace = true
