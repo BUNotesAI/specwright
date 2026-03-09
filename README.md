@@ -94,21 +94,48 @@ cargo run -q --bin agent-spec -- init --level task --lang en --name "User Regist
 
 Or study the examples in [`examples/`](examples).
 
-### Claude Code Skills
+### AI Agent Skills
 
-This repo also ships project-local Claude Code skills under [`.claude/skills/`](.claude/skills).
+This repo ships two agent skills under [`skills/`](skills):
 
-- `agent-spec-tool-first`: the default integration path for Claude Code. It tells Claude to use `agent-spec` as a CLI tool first and to drive tasks through `contract`, `lifecycle`, and `guard`.
-- `agent-spec-authoring`: the authoring path for writing or revising Task Contracts in the DSL.
+- **`agent-spec-tool-first`**: the default integration path — tells the agent to use `agent-spec` as a CLI tool and drive tasks through `contract`, `lifecycle`, and `guard`.
+- **`agent-spec-authoring`**: the authoring path — helps write or revise Task Contracts in the DSL.
 
-In practice, the intended Claude Code flow is:
+#### Install for Claude Code
+
+```bash
+# Copy to your global skills directory
+cp -r skills/agent-spec-tool-first ~/.claude/skills/
+cp -r skills/agent-spec-authoring ~/.claude/skills/
+```
+
+Or symlink for auto-updates:
+
+```bash
+ln -s "$(pwd)/skills/agent-spec-tool-first" ~/.claude/skills/
+ln -s "$(pwd)/skills/agent-spec-authoring" ~/.claude/skills/
+```
+
+#### Install for Codex
+
+The equivalent guidance for Codex lives in [`AGENTS.md`](AGENTS.md). Copy it to your project root:
+
+```bash
+cp AGENTS.md /path/to/your/project/
+```
+
+#### Install for Cursor
+
+Copy [`.cursorrules`](.cursorrules) to your project root.
+
+#### Workflow
 
 1. Use `agent-spec-tool-first` to inspect the target spec and render `agent-spec contract`.
 2. Implement code against the rendered Task Contract.
 3. Run `agent-spec lifecycle` for the task-level gate.
 4. Run `agent-spec guard` for repo-level validation when needed.
 
-This keeps the main integration mode tool-first. Library embedding remains available for advanced Rust-host integration, but it is not the default path for Claude Code.
+This keeps the main integration mode tool-first. Library embedding remains available for advanced Rust-host integration, but it is not the default path.
 
 ### 2. Render the contract for agent execution
 
@@ -370,12 +397,7 @@ Future work lives in `specs/roadmap/`. These are real Task Contracts but they ar
 
 ### Using AI agents to contribute
 
-If you use Claude Code, Codex, Cursor, or another AI coding agent, the project ships integration files that teach the agent the Contract-driven workflow:
-
-```bash
-# Install agent-spec skills into your agent's configuration
-npx skills add ZhangHanDong/agent-spec
-```
+If you use Claude Code, Codex, Cursor, or another AI coding agent, install the skills from the [`skills/`](skills) directory (see [AI Agent Skills](#ai-agent-skills) above).
 
 The `agent-spec-tool-first` skill tells the agent to read the Contract first, implement within its Boundaries, run `lifecycle` to verify, and retry on failure without modifying the spec. The `agent-spec-authoring` skill helps the agent draft or revise Task Contracts in the DSL.
 
