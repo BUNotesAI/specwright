@@ -442,10 +442,11 @@ section { padding: var(--section-gap) 0; }
 /*  Skills section                                     */
 /* ═══════════════════════════════════════════════════ */
 .skills-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
   margin-top: 48px;
 }
-@media (max-width: 768px) { .skills-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1024px) { .skills-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .skills-grid { grid-template-columns: 1fr; } }
 .skill-card {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: 12px; padding: 28px; transition: border-color 0.2s;
@@ -461,6 +462,7 @@ section { padding: var(--section-gap) 0; }
 }
 .skill-tag-workflow { background: rgba(167,139,250,0.15); color: var(--purple); }
 .skill-tag-author { background: rgba(74,222,128,0.15); color: var(--green); }
+.skill-tag-estimate { background: rgba(232,168,69,0.15); color: var(--accent); }
 .skill-card p { font-size: 14px; color: var(--text); line-height: 1.6; }
 .skills-install {
   margin-top: 36px; text-align: center;
@@ -672,10 +674,10 @@ footer a:hover { text-decoration: underline; }
     <div class="skills-install reveal">
       <div class="skills-install-box" id="skills-copy" title="Click to copy">
         <span class="cmd-prompt">$</span>
-        <span class="cmd-text">npx skills add ZhangHanDong/agent-spec</span>
+        <span class="cmd-text">./install-skills.sh</span>
         <span class="copy-hint">click to copy</span>
       </div>
-      <div class="skills-install-note">Installs agent-spec skills into your project's agent configuration files</div>
+      <div class="skills-install-note">Installs agent-spec CLI + all 3 skills into ~/.claude/skills/ with one command</div>
     </div>
 
     <div class="skills-grid reveal">
@@ -695,6 +697,15 @@ footer a:hover { text-decoration: underline; }
           The spec writing path. Teaches the Agent how to draft and revise Task Contracts
           in the DSL — four elements structure, bilingual keywords, test selectors,
           step tables, and the "exception paths ≥ happy paths" principle.
+        </p>
+      </div>
+      <div class="skill-card">
+        <h3>agent-spec-estimate</h3>
+        <div class="skill-tag skill-tag-estimate">estimation</div>
+        <p>
+          The estimation path. Maps Task Contract elements — scenarios, decisions,
+          boundaries — to round-based effort estimates with risk coefficients.
+          Produces breakdown tables, wallclock projections, and confidence levels.
         </p>
       </div>
     </div>
@@ -1111,7 +1122,9 @@ footer a:hover { text-decoration: underline; }
     </div>
 
     <div class="install-block reveal">
-      <span class="comment"># Install</span><br>
+      <span class="comment"># Install CLI + Skills (one command)</span><br>
+      <span class="cmd">git clone https://github.com/ZhangHanDong/agent-spec && cd agent-spec && ./install-skills.sh</span><br><br>
+      <span class="comment"># Or install CLI only</span><br>
       <span class="cmd">cargo install agent-spec</span><br><br>
       <span class="comment"># Create a task contract</span><br>
       <span class="cmd">agent-spec init --level task --name "User Registration"</span><br><br>
@@ -1139,7 +1152,7 @@ footer a:hover { text-decoration: underline; }
     <p style="margin-top:8px;">
       <a href="https://github.com/ZhangHanDong/agent-spec">GitHub</a> ·
       <a href="https://github.com/ZhangHanDong/agent-spec/tree/main/examples">Examples</a> ·
-      <a href="https://github.com/ZhangHanDong/agent-spec/tree/main/.claude/skills">Claude Code Skills</a>
+      <a href="https://github.com/ZhangHanDong/agent-spec/tree/main/skills">Skills</a>
     </p>
   </div>
 </footer>
@@ -1196,7 +1209,7 @@ document.querySelectorAll('.lang-btn').forEach(btn => {
 const skillsCopy = document.getElementById('skills-copy');
 if (skillsCopy) {
   skillsCopy.addEventListener('click', () => {
-    const cmd = 'npx skills add ZhangHanDong/agent-spec';
+    const cmd = './install-skills.sh';
     navigator.clipboard.writeText(cmd).then(() => {
       skillsCopy.classList.add('copied');
       const hint = skillsCopy.querySelector('.copy-hint');
