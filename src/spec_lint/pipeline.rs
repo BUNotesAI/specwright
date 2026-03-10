@@ -30,6 +30,8 @@ impl LintPipeline {
         p.add(Box::new(super::linters::ExplicitTestBindingLinter));
         p.add(Box::new(super::linters::ScenarioPresenceLinter));
         p.add(Box::new(super::linters::SycophancyLinter));
+        p.add(Box::new(super::linters::DecisionCoverageLinter));
+        p.add(Box::new(super::linters::ErrorPathLinter));
         p
     }
 

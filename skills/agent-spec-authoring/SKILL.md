@@ -139,6 +139,7 @@ Already-decided choices. Not aspirational. Not options to explore.
 - Only choices that are **already fixed** — not "we should consider..."
 - Include specific technologies, versions, parameters
 - Agent follows these without questioning — they're not open for debate
+- **Every decision should be covered by at least one scenario** — lint warns if a decision has no matching scenario (checked by `decision-coverage` linter via backtick identifiers and keywords)
 
 ### 3. Boundaries — What to Touch, What Not to Touch
 
@@ -173,7 +174,7 @@ Triple constraint: Allowed, Forbidden, Out-of-scope.
 
 BDD scenarios with explicit test bindings.
 
-**Critical principle: Exception scenarios >= happy path scenarios.**
+**Critical principle: Exception scenarios >= happy path scenarios.** Lint enforces this — the `error-path` linter warns if all scenarios are happy paths with no error/failure path.
 
 ```spec
 ## Completion Criteria

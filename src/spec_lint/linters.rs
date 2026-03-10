@@ -1,4 +1,6 @@
-use crate::spec_core::{LintDiagnostic, Section, Severity, SpecDocument, SpecLevel, StepKind};
+use crate::spec_core::{
+    LintDiagnostic, Section, Severity, Span, SpecDocument, SpecLevel, StepKind,
+};
 
 use super::pipeline::SpecLinter;
 
@@ -615,6 +617,236 @@ fn find_sycophancy_phrase(text: &str) -> Option<String> {
     None
 }
 
+// =============================================================================
+// 10. DecisionCoverageLinter - checks if decisions are covered by scenarios
+// =============================================================================
+
+pub struct DecisionCoverageLinter;
+
+impl SpecLinter for DecisionCoverageLinter {
+    fn name(&self) -> &str {
+        "decision-coverage"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        let mut diags = Vec::new();
+
+        // Only check task-level specs (decisions in project specs are inherited)
+        if doc.meta.level != SpecLevel::Task {
+            return diags;
+        }
+
+        // Collect all step text from scenarios
+        let all_step_text: Vec<&str> = doc
+            .sections
+            .iter()
+            .filter_map(|s| match s {
+                Section::AcceptanceCriteria { scenarios, .. } => Some(
+                    scenarios
+                        .iter()
+                        .flat_map(|sc| sc.steps.iter().map(|st| st.text.as_str())),
+                ),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+
+        // Also collect scenario names (decisions are often reflected in scenario names)
+        let scenario_names: Vec<&str> = doc
+            .sections
+            .iter()
+            .filter_map(|s| match s {
+                Section::AcceptanceCriteria { scenarios, .. } => {
+                    Some(scenarios.iter().map(|sc| sc.name.as_str()))
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect();
+
+        for section in &doc.sections {
+            if let Section::Decisions { items, span } = section {
+                for (i, decision) in items.iter().enumerate() {
+                    let keywords = extract_decision_keywords(decision);
+                    if keywords.is_empty() {
+                        continue;
+                    }
+
+                    let covered_by_step = keywords.iter().any(|kw| {
+                        all_step_text
+                            .iter()
+                            .any(|step| step.to_lowercase().contains(&kw.to_lowercase()))
+                    });
+
+                    let covered_by_name = keywords.iter().any(|kw| {
+                        scenario_names
+                            .iter()
+                            .any(|name| name.to_lowercase().contains(&kw.to_lowercase()))
+                    });
+
+                    if !covered_by_step && !covered_by_name {
+                        diags.push(LintDiagnostic {
+                            rule: "decision-coverage".into(),
+                            severity: Severity::Warning,
+                            message: format!(
+                                "decision '{}' has no matching scenario",
+                                truncate(decision, 60),
+                            ),
+                            span: Span::new(span.start_line + i + 1, 0, span.start_line + i + 1, 0),
+                            suggestion: Some(
+                                "add a scenario that verifies this decision is implemented correctly".into(),
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+
+        diags
+    }
+}
+
+/// Extract meaningful keywords from a decision text, filtering common verbs and articles.
+fn extract_decision_keywords(text: &str) -> Vec<String> {
+    let stop_words = [
+        // Chinese
+        "的", "是", "在", "了", "和", "与", "或", "为", "被", "将", "不", "应", "必须", "使用",
+        "所有", "每个", "通过", "可以", "需要", "这个", "那个", "一个", // English
+        "a", "the", "is", "are", "must", "should", "all", "be", "to", "in", "of", "and", "or",
+        "not", "no", "with", "for", "by", "use", "using", "this", "that", "when", "if", "then",
+        "will", "does", "do", "has", "have", "can",
+    ];
+
+    // Extract backtick-quoted identifiers first (highest signal)
+    let mut keywords: Vec<String> = Vec::new();
+    let mut in_backtick = false;
+    let mut current = String::new();
+    for c in text.chars() {
+        if c == '`' {
+            if in_backtick && !current.is_empty() {
+                keywords.push(current.clone());
+                current.clear();
+            }
+            in_backtick = !in_backtick;
+        } else if in_backtick {
+            current.push(c);
+        }
+    }
+
+    // Also extract regular words (lower priority)
+    let words: Vec<String> = text
+        .split(|c: char| c.is_whitespace() || c == ',' || c == '、' || c == '。' || c == '`')
+        .filter(|w| {
+            let w_lower = w.to_lowercase();
+            w.len() > 2 && !stop_words.iter().any(|sw| w_lower == *sw)
+        })
+        .map(String::from)
+        .collect();
+
+    keywords.extend(words);
+    keywords
+}
+
+// =============================================================================
+// 11. ErrorPathLinter - checks if scenarios include error/failure paths
+// =============================================================================
+
+pub struct ErrorPathLinter;
+
+const ERROR_PATH_INDICATORS_ZH: &[&str] = &[
+    "错误",
+    "失败",
+    "拒绝",
+    "异常",
+    "超时",
+    "不存在",
+    "无效",
+    "禁止",
+    "返回错误",
+    "命令失败",
+    "返回 error",
+    "isError",
+];
+
+const ERROR_PATH_INDICATORS_EN: &[&str] = &[
+    "error",
+    "fail",
+    "reject",
+    "invalid",
+    "forbidden",
+    "timeout",
+    "not found",
+    "not exist",
+    "denied",
+    "unauthorized",
+    "4xx",
+    "5xx",
+    "non-2xx",
+    "panic",
+    "abort",
+];
+
+impl SpecLinter for ErrorPathLinter {
+    fn name(&self) -> &str {
+        "error-path"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        let mut diags = Vec::new();
+
+        if doc.meta.level != SpecLevel::Task {
+            return diags;
+        }
+
+        for section in &doc.sections {
+            if let Section::AcceptanceCriteria { scenarios, span } = section {
+                if scenarios.is_empty() {
+                    continue;
+                }
+
+                let has_error_scenario = scenarios.iter().any(|sc| {
+                    let name_lower = sc.name.to_lowercase();
+                    let has_error_name = ERROR_PATH_INDICATORS_ZH
+                        .iter()
+                        .any(|ind| sc.name.contains(ind))
+                        || ERROR_PATH_INDICATORS_EN
+                            .iter()
+                            .any(|ind| name_lower.contains(ind));
+
+                    let has_error_step = sc.steps.iter().any(|step| {
+                        let text_lower = step.text.to_lowercase();
+                        ERROR_PATH_INDICATORS_ZH
+                            .iter()
+                            .any(|ind| step.text.contains(ind))
+                            || ERROR_PATH_INDICATORS_EN
+                                .iter()
+                                .any(|ind| text_lower.contains(ind))
+                    });
+
+                    has_error_name || has_error_step
+                });
+
+                if !has_error_scenario {
+                    diags.push(LintDiagnostic {
+                        rule: "error-path".into(),
+                        severity: Severity::Warning,
+                        message: format!(
+                            "no error/failure path scenarios found ({} scenarios are all happy paths)",
+                            scenarios.len()
+                        ),
+                        span: *span,
+                        suggestion: Some(
+                            "add at least one scenario that tests error handling (e.g., invalid input, network failure, malformed data)".into(),
+                        ),
+                    });
+                }
+            }
+        }
+
+        diags
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -900,6 +1132,140 @@ Describe the task.
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].severity, Severity::Error);
         assert!(diags[0].message.contains("missing an Acceptance Criteria"));
+    }
+
+    // ── DecisionCoverageLinter tests ────────────────────────────────
+
+    #[test]
+    fn test_decision_coverage_warns_on_uncovered_decision() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- 使用 `BTreeMap` 确保输出顺序确定性。
+- 本地源优先从 `source.path` 读取 registry。
+
+## 验收标准
+
+场景: 输出是确定性的
+  测试: output_is_deterministic
+  假设 已构建注册表
+  当 运行 build 命令
+  那么 输出使用 BTreeMap 排序
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = DecisionCoverageLinter.lint(&doc);
+        // "BTreeMap" is covered by the scenario, but "source.path" / "本地源" is NOT
+        assert!(
+            diags.len() >= 1,
+            "should warn about uncovered 'source.path' decision, got {} diags",
+            diags.len()
+        );
+        assert!(diags.iter().any(|d| d.rule == "decision-coverage"));
+    }
+
+    #[test]
+    fn test_decision_coverage_passes_when_all_covered() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- 使用 `BTreeMap` 确保输出顺序确定性。
+
+## 验收标准
+
+场景: 输出是确定性的
+  测试: output_is_deterministic
+  假设 已构建注册表
+  当 运行 build 命令
+  那么 输出使用 BTreeMap 排序
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = DecisionCoverageLinter.lint(&doc);
+        assert!(diags.is_empty(), "all decisions covered, got: {:?}", diags);
+    }
+
+    // ── ErrorPathLinter tests ────────────────────────────────────────
+
+    #[test]
+    fn test_error_path_warns_on_all_happy_paths() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 验收标准
+
+场景: 成功创建用户
+  测试: create_user_success
+  假设 数据库可用
+  当 提交有效用户数据
+  那么 用户被创建
+
+场景: 成功查询用户
+  测试: query_user_success
+  假设 用户已存在
+  当 查询用户列表
+  那么 返回用户数据
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = ErrorPathLinter.lint(&doc);
+        assert_eq!(diags.len(), 1, "should warn about missing error paths");
+        assert_eq!(diags[0].rule, "error-path");
+        assert!(diags[0].message.contains("happy paths"));
+    }
+
+    #[test]
+    fn test_error_path_passes_with_error_scenario() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 验收标准
+
+场景: 成功创建用户
+  测试: create_user_success
+  假设 数据库可用
+  当 提交有效用户数据
+  那么 用户被创建
+
+场景: 无效数据返回错误
+  测试: create_user_invalid_error
+  假设 数据库可用
+  当 提交无效用户数据
+  那么 返回错误消息
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = ErrorPathLinter.lint(&doc);
+        assert!(diags.is_empty(), "has error scenario, should pass");
+    }
+
+    #[test]
+    fn test_error_path_detects_english_error_indicators() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## Completion Criteria
+
+Scenario: successful operation
+  Test: op_success
+  Given a valid input
+  When the operation runs
+  Then it returns 200
+
+Scenario: rejects invalid input
+  Test: op_rejects_invalid
+  Given an invalid input
+  When the operation runs
+  Then it returns an error response
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = ErrorPathLinter.lint(&doc);
+        assert!(diags.is_empty(), "has 'error' in step text, should pass");
     }
 
     #[test]
