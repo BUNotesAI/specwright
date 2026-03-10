@@ -140,6 +140,7 @@ Already-decided choices. Not aspirational. Not options to explore.
 - Include specific technologies, versions, parameters
 - Agent follows these without questioning — they're not open for debate
 - **Every decision should be covered by at least one scenario** — lint warns if a decision has no matching scenario (checked by `decision-coverage` linter via backtick identifiers and keywords)
+- **Avoid universal claims without proportional coverage** — if a decision says "all entry points" or "every binary", lint (`universal-claim`) requires 2+ scenarios to verify each instance
 
 ### 3. Boundaries — What to Touch, What Not to Touch
 
@@ -169,6 +170,7 @@ Triple constraint: Allowed, Forbidden, Out-of-scope.
 - Path globs (`crates/auth/**`) are **mechanically enforced** by BoundariesVerifier
 - Natural language prohibitions are checked by lint but not file-path enforced
 - Out of Scope prevents scope creep — Agent knows what NOT to attempt
+- **If Boundaries list 2+ entry points** (e.g. `bin/cli.rs`, `bin/server.rs`), lint (`boundary-entry-point`) warns if scenarios don't reference each one — shared logic across entry points needs separate verification
 
 ### 4. Completion Criteria — Deterministic Pass/Fail
 

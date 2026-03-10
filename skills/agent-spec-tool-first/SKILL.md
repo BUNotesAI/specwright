@@ -92,7 +92,7 @@ agent-spec parse specs/user-registration.spec
 agent-spec lint specs/user-registration.spec --min-score 0.7
 ```
 
-Catches: malformed structure, zero-scenario acceptance sections, vague verbs, unquantified constraints, non-deterministic wording, missing test selectors, sycophancy bias, uncovered constraints, uncovered decisions (decision-coverage), missing error paths (error-path).
+Catches: malformed structure, zero-scenario acceptance sections, vague verbs, unquantified constraints, non-deterministic wording, missing test selectors, sycophancy bias, uncovered constraints, uncovered decisions (decision-coverage), missing error paths (error-path), universal claims with insufficient scenarios (universal-claim), boundary entry points without matching scenarios (boundary-entry-point).
 
 **Required self-checks before coding:**
 - `agent-spec parse` must show the expected section count and a non-zero scenario count for task specs.

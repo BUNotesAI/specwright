@@ -32,6 +32,8 @@ impl LintPipeline {
         p.add(Box::new(super::linters::SycophancyLinter));
         p.add(Box::new(super::linters::DecisionCoverageLinter));
         p.add(Box::new(super::linters::ErrorPathLinter));
+        p.add(Box::new(super::linters::UniversalClaimLinter));
+        p.add(Box::new(super::linters::BoundaryEntryPointLinter));
         p
     }
 

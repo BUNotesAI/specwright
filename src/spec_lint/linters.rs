@@ -847,6 +847,257 @@ impl SpecLinter for ErrorPathLinter {
     }
 }
 
+// =============================================================================
+// 12. UniversalClaimLinter - decisions/constraints with universal quantifiers
+//     must be backed by proportional scenario coverage
+// =============================================================================
+
+pub struct UniversalClaimLinter;
+
+/// Patterns that indicate a universal claim (must apply to ALL instances).
+const UNIVERSAL_ZH: &[&str] = &[
+    "所有入口",
+    "每个入口",
+    "所有二进制",
+    "每个二进制",
+    "所有 bin",
+    "每个 bin",
+    "所有模块",
+    "每个模块",
+    "所有调用方",
+    "每个调用方",
+    "所有实现",
+    "每个实现",
+    "统一行为",
+    "行为一致",
+    "保持一致",
+];
+
+const UNIVERSAL_EN: &[&str] = &[
+    "all entry points",
+    "every entry point",
+    "all binaries",
+    "every binary",
+    "all callers",
+    "every caller",
+    "all implementations",
+    "every implementation",
+    "all modules",
+    "every module",
+    "consistent behavior",
+    "consistent behaviour",
+    "behave identically",
+    "behave consistently",
+];
+
+impl SpecLinter for UniversalClaimLinter {
+    fn name(&self) -> &str {
+        "universal-claim"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        let mut diags = Vec::new();
+
+        if doc.meta.level != SpecLevel::Task {
+            return diags;
+        }
+
+        let scenario_count: usize = doc
+            .sections
+            .iter()
+            .filter_map(|s| match s {
+                Section::AcceptanceCriteria { scenarios, .. } => Some(scenarios.len()),
+                _ => None,
+            })
+            .sum();
+
+        // Check Decisions for universal claims
+        for section in &doc.sections {
+            if let Section::Decisions { items, span } = section {
+                for (i, decision) in items.iter().enumerate() {
+                    if let Some(claim) = find_universal_claim(decision)
+                        && scenario_count < 2
+                    {
+                        diags.push(LintDiagnostic {
+                            rule: "universal-claim".into(),
+                            severity: Severity::Warning,
+                            message: format!(
+                                "decision claims '{}' but only {} scenario(s) exist — universal claims need multiple scenarios to verify each instance",
+                                claim, scenario_count
+                            ),
+                            span: Span::new(
+                                span.start_line + i + 1,
+                                0,
+                                span.start_line + i + 1,
+                                0,
+                            ),
+                            suggestion: Some(
+                                "add scenarios for each entry point / implementation that the universal claim covers".into(),
+                            ),
+                        });
+                    }
+                }
+            }
+
+            if let Section::Constraints { items, .. } = section {
+                for c in items {
+                    if let Some(claim) = find_universal_claim(&c.text)
+                        && scenario_count < 2
+                    {
+                        diags.push(LintDiagnostic {
+                            rule: "universal-claim".into(),
+                            severity: Severity::Warning,
+                            message: format!(
+                                "constraint claims '{}' but only {} scenario(s) exist — universal claims need multiple scenarios",
+                                claim, scenario_count
+                            ),
+                            span: c.span,
+                            suggestion: Some(
+                                "add scenarios for each instance that the universal claim covers".into(),
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+
+        diags
+    }
+}
+
+fn find_universal_claim(text: &str) -> Option<String> {
+    let lower = text.to_lowercase();
+    for &p in UNIVERSAL_ZH {
+        if text.contains(p) {
+            return Some(p.to_string());
+        }
+    }
+    for &p in UNIVERSAL_EN {
+        if lower.contains(p) {
+            return Some(p.to_string());
+        }
+    }
+    None
+}
+
+// =============================================================================
+// 13. BoundaryEntryPointLinter - warns when Boundaries list multiple entry
+//     points (bin/, main.rs) but scenarios don't reference each one
+// =============================================================================
+
+pub struct BoundaryEntryPointLinter;
+
+/// Patterns that indicate an entry point file in Boundaries.
+const ENTRY_POINT_PATTERNS: &[&str] = &[
+    "bin/",
+    "main.rs",
+    "main.py",
+    "main.ts",
+    "main.go",
+    "index.ts",
+    "index.js",
+    "cli.rs",
+    "server.rs",
+];
+
+impl SpecLinter for BoundaryEntryPointLinter {
+    fn name(&self) -> &str {
+        "boundary-entry-point"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        let mut diags = Vec::new();
+
+        if doc.meta.level != SpecLevel::Task {
+            return diags;
+        }
+
+        // Collect entry point paths from Boundaries
+        let mut entry_points: Vec<(String, Span)> = Vec::new();
+        for section in &doc.sections {
+            if let Section::Boundaries { items, .. } = section {
+                for boundary in items {
+                    if boundary.category == crate::spec_core::BoundaryCategory::Allow {
+                        let text_lower = boundary.text.to_lowercase();
+                        if ENTRY_POINT_PATTERNS.iter().any(|p| text_lower.contains(p)) {
+                            entry_points.push((boundary.text.clone(), boundary.span));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Only warn when there are 2+ entry points
+        if entry_points.len() < 2 {
+            return diags;
+        }
+
+        // Collect all scenario step text and names
+        let all_scenario_text: Vec<String> = doc
+            .sections
+            .iter()
+            .filter_map(|s| match s {
+                Section::AcceptanceCriteria { scenarios, .. } => Some(
+                    scenarios
+                        .iter()
+                        .flat_map(|sc| {
+                            let mut texts = vec![sc.name.to_lowercase()];
+                            texts.extend(sc.steps.iter().map(|st| st.text.to_lowercase()));
+                            texts
+                        })
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+
+        // Check which entry points are referenced in scenarios
+        for (ep_text, ep_span) in &entry_points {
+            // Extract the filename or last path segment
+            let filename = ep_text
+                .rsplit('/')
+                .next()
+                .unwrap_or(ep_text)
+                .trim_end_matches('*')
+                .trim_end_matches('.');
+            let filename_lower = filename.to_lowercase();
+
+            // Also try the stem without extension
+            let stem = filename.split('.').next().unwrap_or(filename);
+            let stem_lower = stem.to_lowercase();
+
+            if filename_lower.is_empty() && stem_lower.is_empty() {
+                continue;
+            }
+
+            let referenced = all_scenario_text.iter().any(|text| {
+                (!filename_lower.is_empty() && text.contains(&filename_lower))
+                    || (!stem_lower.is_empty()
+                        && stem_lower.len() > 2
+                        && text.contains(&stem_lower))
+            });
+
+            if !referenced {
+                diags.push(LintDiagnostic {
+                    rule: "boundary-entry-point".into(),
+                    severity: Severity::Warning,
+                    message: format!(
+                        "entry point '{}' is in Boundaries but no scenario references it — shared logic across entry points needs separate verification",
+                        ep_text
+                    ),
+                    span: *ep_span,
+                    suggestion: Some(
+                        "add a scenario that tests behavior through this specific entry point, or extract shared logic into a common function tested once".into(),
+                    ),
+                });
+            }
+        }
+
+        diags
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1266,6 +1517,180 @@ Scenario: rejects invalid input
         let doc = parse_spec_from_str(input).unwrap();
         let diags = ErrorPathLinter.lint(&doc);
         assert!(diags.is_empty(), "has 'error' in step text, should pass");
+    }
+
+    // ── UniversalClaimLinter tests ─────────────────────────────────
+
+    #[test]
+    fn test_universal_claim_warns_single_scenario_for_all_entry_points() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- 所有入口点必须使用相同的合并逻辑
+
+## 验收标准
+
+场景: CLI 合并正确
+  测试: cli_merge
+  假设 有多个源
+  当 CLI 执行搜索
+  那么 返回合并结果
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = UniversalClaimLinter.lint(&doc);
+        assert_eq!(diags.len(), 1, "should warn: universal claim + 1 scenario");
+        assert_eq!(diags[0].rule, "universal-claim");
+        assert!(diags[0].message.contains("所有入口"));
+    }
+
+    #[test]
+    fn test_universal_claim_passes_with_multiple_scenarios() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## Decisions
+
+- All entry points must use the same merge logic
+
+## Completion Criteria
+
+Scenario: CLI merges correctly
+  Test: cli_merge
+  Given multiple sources
+  When CLI runs search
+  Then merged results returned
+
+Scenario: MCP merges correctly
+  Test: mcp_merge
+  Given multiple sources
+  When MCP server runs search
+  Then merged results returned
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = UniversalClaimLinter.lint(&doc);
+        assert!(
+            diags.is_empty(),
+            "2 scenarios for universal claim should pass, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn test_universal_claim_ignores_non_universal_decisions() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## Decisions
+
+- Use BTreeMap for deterministic output
+
+## Completion Criteria
+
+Scenario: output is sorted
+  Test: sorted_output
+  Given a registry
+  When build runs
+  Then output is deterministic
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = UniversalClaimLinter.lint(&doc);
+        assert!(diags.is_empty(), "no universal claim, should pass");
+    }
+
+    // ── BoundaryEntryPointLinter tests ──────────────────────────────
+
+    #[test]
+    fn test_boundary_entry_point_warns_uncovered_entry() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## Boundaries
+
+### Allowed Changes
+- src/bin/chub.rs
+- src/bin/chub_mcp.rs
+
+## Completion Criteria
+
+Scenario: CLI search works
+  Test: cli_search
+  Given a registry
+  When chub search runs
+  Then results returned
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = BoundaryEntryPointLinter.lint(&doc);
+        assert_eq!(
+            diags.len(),
+            1,
+            "should warn about chub_mcp.rs not covered, got: {:?}",
+            diags
+        );
+        assert!(diags[0].message.contains("chub_mcp"));
+    }
+
+    #[test]
+    fn test_boundary_entry_point_passes_all_covered() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## Boundaries
+
+### Allowed Changes
+- src/bin/chub.rs
+- src/bin/chub_mcp.rs
+
+## Completion Criteria
+
+Scenario: CLI search works
+  Test: cli_search
+  Given a registry
+  When chub search runs
+  Then results returned
+
+Scenario: MCP search works via chub_mcp
+  Test: mcp_search
+  Given a registry
+  When chub_mcp handles search tool call
+  Then results returned
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = BoundaryEntryPointLinter.lint(&doc);
+        assert!(diags.is_empty(), "both entry points covered, should pass");
+    }
+
+    #[test]
+    fn test_boundary_entry_point_ignores_single_entry() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## Boundaries
+
+### Allowed Changes
+- src/main.rs
+- src/lib.rs
+
+## Completion Criteria
+
+Scenario: app works
+  Test: app_works
+  Given valid config
+  When app starts
+  Then it runs
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = BoundaryEntryPointLinter.lint(&doc);
+        // src/lib.rs is not an entry point pattern, so only 1 entry point (main.rs)
+        // Single entry point should not trigger warning
+        assert!(diags.is_empty(), "single entry point should not warn");
     }
 
     #[test]
