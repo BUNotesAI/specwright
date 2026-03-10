@@ -1274,12 +1274,10 @@ fn cmd_init(level: &str, name: Option<&str>, lang: &str) -> Result<(), Box<dyn s
     };
 
     let spec_name = name.unwrap_or("unnamed");
-    let is_zh = lang == "zh" || lang == "both";
-
-    let template = if is_zh {
-        generate_template_zh(spec_level, spec_name)
-    } else {
-        generate_template_en(spec_level, spec_name)
+    let template = match lang {
+        "zh" => generate_template_zh(spec_level, spec_name),
+        "both" => generate_template_both(spec_level, spec_name),
+        _ => generate_template_en(spec_level, spec_name),
     };
 
     let filename = format!("{spec_name}.spec");
@@ -1362,6 +1360,90 @@ tags: []
 ## 排除范围
 
 - 不在本任务范围内的功能
+"#
+        ),
+    }
+}
+
+fn generate_template_both(level: &str, name: &str) -> String {
+    match level {
+        "org" => format!(
+            r#"spec: org
+name: "{name}"
+---
+
+## Constraints
+
+- Describe organization-wide constraints here.
+- 在此描述组织级约束。
+"#
+        ),
+        "project" => format!(
+            r#"spec: project
+name: "{name}"
+inherits: org
+---
+
+## Intent
+
+Describe the core project goal here.
+在此描述项目的核心目标。
+
+## Constraints
+
+- Add project-level constraints here.
+- 在此添加项目级约束。
+"#
+        ),
+        _ => format!(
+            r#"spec: task
+name: "{name}"
+inherits: project
+tags: []
+---
+
+## Intent
+
+Describe the task goal and context here.
+在此描述任务目标和背景。
+
+## Decisions
+
+- List the technical choices that are already decided.
+- 在此写明已经确定的技术选择。
+
+## Boundaries
+
+### Allowed Changes
+- List the files or modules that may be modified.
+- 在此列出允许修改的文件或模块。
+
+### Forbidden
+- List the things the agent must not do.
+- 在此列出禁止做的事情。
+
+## Completion Criteria
+
+Scenario: Happy path
+  Test:
+    Package: your-package
+    Filter: test_happy_path
+  Given a precondition
+  When the user performs an action
+  Then the expected result occurs
+
+场景: 异常路径
+  测试:
+    包: your-package
+    过滤: test_error_path
+  假设 前置条件
+  当 用户执行异常操作
+  那么 系统返回错误
+
+## Out of Scope
+
+- Features not in scope for this task.
+- 不在本任务范围内的功能。
 "#
         ),
     }
@@ -1579,7 +1661,8 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        GitChangeScope, RunLogEntry, build_stamp_trailers, parse_ai_mode, render_brief_output,
+        GitChangeScope, RunLogEntry, build_stamp_trailers, generate_template_both,
+        generate_template_en, generate_template_zh, parse_ai_mode, render_brief_output,
         render_contract_output, resolve_command_change_paths, resolve_guard_change_paths, vcs,
     };
 
@@ -1847,6 +1930,7 @@ Scenario: Contract alias
             fs::read_to_string(repo_root().join(".claude/skills/agent-spec-tool-first/SKILL.md"))
                 .unwrap();
 
+        assert!(skill.contains("agent-spec parse"));
         assert!(skill.contains("agent-spec contract"));
         assert!(skill.contains("agent-spec lifecycle"));
         assert!(skill.contains("agent-spec guard"));
@@ -1864,6 +1948,30 @@ Scenario: Contract alias
         assert!(skill.contains("Boundaries"));
         assert!(skill.contains("Completion Criteria"));
         assert!(skill.contains("Test:` selector"));
+        assert!(skill.contains("agent-spec parse"));
+        assert!(skill.contains("Hard Syntax Rules"));
+    }
+
+    #[test]
+    fn test_generated_task_templates_parse_for_zh_en_and_both() {
+        for lang in [
+            generate_template_zh("task", "模板"),
+            generate_template_en("task", "Template"),
+            generate_template_both("task", "Bilingual"),
+        ] {
+            let doc = crate::spec_parser::parse_spec_from_str(&lang).unwrap();
+            let scenario_count = doc
+                .sections
+                .iter()
+                .filter_map(|section| match section {
+                    crate::spec_core::Section::AcceptanceCriteria { scenarios, .. } => {
+                        Some(scenarios.len())
+                    }
+                    _ => None,
+                })
+                .sum::<usize>();
+            assert!(scenario_count > 0, "task template should contain scenarios");
+        }
     }
 
     #[test]

@@ -63,6 +63,14 @@ fn parse_body(lines: &[&str], offset: usize) -> SpecResult<Vec<Section>> {
                 section_lines.clear();
             }
             current_section = Some((kind, abs_line));
+        } else if matches!(markdown_heading_level(line), Some(1 | 2)) {
+            let header = line.trim().trim_start_matches('#').trim();
+            return Err(SpecError::Parse {
+                message: format!(
+                    "unknown top-level section header '{header}' - use only Intent/Constraints/Decisions/Boundaries/Acceptance Criteria/Out of Scope"
+                ),
+                span: Span::line(abs_line),
+            });
         } else if current_section.is_some() {
             section_lines.push((abs_line, line));
         }
@@ -75,6 +83,15 @@ fn parse_body(lines: &[&str], offset: usize) -> SpecResult<Vec<Section>> {
     }
 
     Ok(sections)
+}
+
+fn markdown_heading_level(line: &str) -> Option<usize> {
+    let trimmed = line.trim_start();
+    let level = trimmed.chars().take_while(|&ch| ch == '#').count();
+    if level == 0 || level == trimmed.len() {
+        return None;
+    }
+    Some(level)
 }
 
 fn build_section(
@@ -727,6 +744,63 @@ name: "单行绑定"
         let input = "## Intent\nSome content\n";
         let result = parse_spec_from_str(input);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unknown_top_level_section_header_is_rejected() {
+        let input = r#"spec: task
+name: "未知章节"
+---
+
+## Intent
+
+Describe the task.
+
+## Milestones
+
+- phase 1
+"#;
+
+        let err = parse_spec_from_str(input).unwrap_err();
+        match err {
+            SpecError::Parse { message, span } => {
+                assert!(message.contains("unknown top-level section header"));
+                assert_eq!(span.start_line, 9);
+            }
+            other => panic!("expected parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_markdown_heading_scenarios_and_test_selectors_are_accepted() {
+        let input = r#"spec: task
+name: "Markdown Scenario"
+---
+
+## Completion Criteria
+
+### Scenario: Happy path
+  ### Test: test_markdown_heading_scenarios_and_test_selectors_are_accepted
+  Given valid input
+  When parser reads the scenario
+  Then the scenario is preserved
+"#;
+
+        let doc = parse_spec_from_str(input).unwrap();
+        match &doc.sections[0] {
+            Section::AcceptanceCriteria { scenarios, .. } => {
+                assert_eq!(scenarios.len(), 1);
+                assert_eq!(scenarios[0].name, "Happy path");
+                assert_eq!(
+                    scenarios[0]
+                        .test_selector
+                        .as_ref()
+                        .map(|selector| selector.filter.as_str()),
+                    Some("test_markdown_heading_scenarios_and_test_selectors_are_accepted")
+                );
+            }
+            other => panic!("expected AcceptanceCriteria, got {other:?}"),
+        }
     }
 
     #[test]

@@ -88,10 +88,16 @@ agent-spec init --level task --lang zh --name "用户注册API"
 Check Contract quality before handing to Agent. Like "code review" but for the Contract itself.
 
 ```bash
+agent-spec parse specs/user-registration.spec
 agent-spec lint specs/user-registration.spec --min-score 0.7
 ```
 
-Catches: vague verbs, unquantified constraints, non-deterministic wording, missing test selectors, sycophancy bias, uncovered constraints.
+Catches: malformed structure, zero-scenario acceptance sections, vague verbs, unquantified constraints, non-deterministic wording, missing test selectors, sycophancy bias, uncovered constraints.
+
+**Required self-checks before coding:**
+- `agent-spec parse` must show the expected section count and a non-zero scenario count for task specs.
+- If `Acceptance Criteria: 0 scenarios` appears, stop and rewrite the spec before running `contract` or `lifecycle`.
+- The parser accepts Markdown-heading forms like `### Scenario:` and `### Test:` for compatibility, but authoring should still emit bare `Scenario:` / `场景:` and `Test:` / `测试:` lines by default. Do not invent extra top-level sections like `## Milestones`.
 
 Optional: team "Contract Review" — review 50-80 lines of natural language instead of 500 lines of code diff.
 

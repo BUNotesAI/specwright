@@ -20,6 +20,36 @@ tags: [tag1, tag2]   # Optional, for filtering
 | Acceptance Criteria | `## 验收标准` / `## 完成条件` | `## Acceptance Criteria` / `## Completion Criteria` |
 | Out of Scope | `## 排除范围` | `## Out of Scope` |
 
+## Invalid Near-Misses
+
+These look plausible to a general-purpose LLM, but should not be emitted:
+
+```spec
+## Intent / 意图
+## Completion Criteria / 完成标准
+## Milestones
+## Quality
+## Architecture
+```
+
+Use one supported header language per line and only the supported top-level sections.
+
+## Parser Accepts But Authoring Should Avoid By Default
+
+The parser accepts these compatibility forms, but the authoring style should still prefer bare DSL lines:
+
+```spec
+### Scenario: Happy path
+### Test: test_happy_path
+```
+
+Prefer:
+
+```spec
+Scenario: Happy path
+  Test: test_happy_path
+```
+
 ## Complete Task Contract Example
 
 ```spec
@@ -93,6 +123,17 @@ tags: [api, auth]
 ```
 
 **Note**: 1 happy path + 3 exception paths. Exception scenarios >= happy path is the core authoring principle.
+
+## Mandatory Validation
+
+After drafting a spec, run:
+
+```bash
+agent-spec parse specs/task.spec
+agent-spec lint specs/task.spec --min-score 0.7
+```
+
+If `parse` reports `0 scenarios`, the spec is not ready for `contract`, `lifecycle`, or `guard`.
 
 ## Boundary Sub-Headers
 

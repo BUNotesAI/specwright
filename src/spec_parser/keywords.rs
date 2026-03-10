@@ -80,7 +80,7 @@ pub fn match_section_header(line: &str) -> Option<SectionKind> {
 
 /// Scenario header recognition.
 pub fn match_scenario_header(line: &str) -> Option<&str> {
-    let trimmed = line.trim();
+    let trimmed = line.trim().trim_start_matches('#').trim();
 
     if let Some(rest) = trimmed
         .strip_prefix("场景:")
@@ -99,7 +99,7 @@ pub fn match_scenario_header(line: &str) -> Option<&str> {
 
 /// Scenario-level test selector binding.
 pub fn match_test_selector(line: &str) -> Option<&str> {
-    let trimmed = line.trim();
+    let trimmed = line.trim().trim_start_matches('#').trim();
 
     if let Some(rest) = trimmed
         .strip_prefix("测试:")
@@ -124,7 +124,7 @@ pub enum TestSelectorField {
 
 /// Structured fields under a `Test:` / `测试:` selector block.
 pub fn match_test_selector_field(line: &str) -> Option<(TestSelectorField, &str)> {
-    let trimmed = line.trim();
+    let trimmed = line.trim().trim_start_matches('#').trim();
 
     if let Some(rest) = trimmed
         .strip_prefix("包:")
@@ -226,6 +226,18 @@ mod tests {
     }
 
     #[test]
+    fn test_scenario_header_accepts_markdown_heading() {
+        assert_eq!(
+            match_scenario_header("### Scenario: Full refund"),
+            Some("Full refund")
+        );
+        assert_eq!(
+            match_scenario_header("### 场景: 全额退款"),
+            Some("全额退款")
+        );
+    }
+
+    #[test]
     fn test_extract_params() {
         let params = extract_params(r#"金额为 "100.00" 元的交易 "TXN-001""#);
         assert_eq!(params, vec!["100.00", "TXN-001"]);
@@ -258,6 +270,18 @@ mod tests {
     }
 
     #[test]
+    fn test_match_test_selector_accepts_markdown_heading() {
+        assert_eq!(
+            match_test_selector("### Test: test_parse_contract"),
+            Some("test_parse_contract")
+        );
+        assert_eq!(
+            match_test_selector("### 测试: test_parse_contract"),
+            Some("test_parse_contract")
+        );
+    }
+
+    #[test]
     fn test_match_test_selector_field_chinese() {
         assert_eq!(
             match_test_selector_field("  包: spec-parser"),
@@ -277,6 +301,18 @@ mod tests {
         );
         assert_eq!(
             match_test_selector_field("  Filter: test_parse_contract"),
+            Some((TestSelectorField::Filter, "test_parse_contract"))
+        );
+    }
+
+    #[test]
+    fn test_match_test_selector_field_accepts_markdown_heading() {
+        assert_eq!(
+            match_test_selector_field("### Package: spec-parser"),
+            Some((TestSelectorField::Package, "spec-parser"))
+        );
+        assert_eq!(
+            match_test_selector_field("### 过滤: test_parse_contract"),
             Some((TestSelectorField::Filter, "test_parse_contract"))
         );
     }

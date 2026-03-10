@@ -470,7 +470,67 @@ impl SpecLinter for ExplicitTestBindingLinter {
 }
 
 // =============================================================================
-// 8. SycophancyLinter
+// 8. ScenarioPresenceLinter
+// =============================================================================
+
+pub struct ScenarioPresenceLinter;
+
+impl SpecLinter for ScenarioPresenceLinter {
+    fn name(&self) -> &str {
+        "scenario-presence"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        if doc.meta.level != SpecLevel::Task {
+            return Vec::new();
+        }
+
+        let acceptance_sections: Vec<_> = doc
+            .sections
+            .iter()
+            .filter_map(|section| match section {
+                Section::AcceptanceCriteria { scenarios, span } => Some((scenarios, span)),
+                _ => None,
+            })
+            .collect();
+
+        if acceptance_sections.is_empty() {
+            return vec![LintDiagnostic {
+                rule: "scenario-presence".into(),
+                severity: Severity::Error,
+                message: "task spec is missing an Acceptance Criteria / Completion Criteria section"
+                    .into(),
+                span: crate::spec_core::Span::line(0),
+                suggestion: Some(
+                    "add `## 验收标准` / `## Completion Criteria` with at least one `场景:` / `Scenario:` block".into(),
+                ),
+            }];
+        }
+
+        let scenario_count = acceptance_sections
+            .iter()
+            .map(|(scenarios, _)| scenarios.len())
+            .sum::<usize>();
+
+        if scenario_count == 0 {
+            return vec![LintDiagnostic {
+                rule: "scenario-presence".into(),
+                severity: Severity::Error,
+                message:
+                    "task spec has an Acceptance Criteria section but no parseable scenarios".into(),
+                span: *acceptance_sections[0].1,
+                suggestion: Some(
+                    "write scenarios using bare `场景:` / `Scenario:` lines, or run `agent-spec parse` to inspect the AST".into(),
+                ),
+            }];
+        }
+
+        Vec::new()
+    }
+}
+
+// =============================================================================
+// 9. SycophancyLinter
 // =============================================================================
 
 pub struct SycophancyLinter;
@@ -823,5 +883,37 @@ name: "test"
         let doc = parse_spec_from_str(input).unwrap();
         let diags = ExplicitTestBindingLinter.lint(&doc);
         assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn test_scenario_presence_linter_requires_acceptance_criteria() {
+        let input = r#"spec: task
+name: "missing scenarios"
+---
+
+## Intent
+
+Describe the task.
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = ScenarioPresenceLinter.lint(&doc);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].severity, Severity::Error);
+        assert!(diags[0].message.contains("missing an Acceptance Criteria"));
+    }
+
+    #[test]
+    fn test_scenario_presence_linter_rejects_empty_acceptance_criteria() {
+        let input = r#"spec: task
+name: "empty scenarios"
+---
+
+## Completion Criteria
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = ScenarioPresenceLinter.lint(&doc);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].severity, Severity::Error);
+        assert!(diags[0].message.contains("no parseable scenarios"));
     }
 }

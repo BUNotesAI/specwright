@@ -56,6 +56,13 @@ Writing a Contract is the **highest-value human activity** in the agent-spec wor
 | Acceptance Criteria | `## 验收标准` / `## 完成条件` | `## Acceptance Criteria` / `## Completion Criteria` | BDD scenarios |
 | Out of Scope | `## 排除范围` | `## Out of Scope` | Explicitly excluded items |
 
+## Hard Syntax Rules
+
+- Use exactly one supported section header per line. Good: `## Intent` or `## 意图`. Bad: `## Intent / 意图`.
+- Write scenarios as bare DSL lines under the acceptance section. Good: `Scenario:` / `场景:`. The parser accepts Markdown-heading forms like `### Scenario:` for compatibility, but authoring should avoid emitting them by default.
+- Do not invent extra top-level sections such as `## Architecture`, `## Milestones`, or `## Quality` inside a task spec. Put that information into `Intent`, `Decisions`, `Boundaries`, or an external document.
+- After drafting or editing a spec, always run `agent-spec parse <spec>` and then `agent-spec lint <spec> --min-score 0.7`.
+
 ## Documentation
 
 Refer to the local files for authoring patterns and examples:
@@ -67,6 +74,20 @@ Refer to the local files for authoring patterns and examples:
 1. Read `./references/patterns.md` for authoring patterns
 2. If file read fails: Inform user "references/patterns.md is missing, answering from SKILL.md patterns"
 3. Still answer based on SKILL.md patterns + built-in knowledge
+
+## Required Self-Check
+
+After writing or editing a spec:
+
+```bash
+agent-spec parse specs/task.spec
+agent-spec lint specs/task.spec --min-score 0.7
+```
+
+Do not hand a spec to an agent if:
+- `agent-spec parse` shows `Acceptance Criteria: 0 scenarios`
+- lint reports missing explicit test selectors
+- lint score is below threshold
 
 ## Before Writing a Contract
 
@@ -99,6 +120,7 @@ One focused paragraph. Not a feature list — a clear statement of purpose.
 - Focus on "what to do and why"
 - Mention context (what already exists, where this fits)
 - Keep it to 2-4 sentences
+- Do not combine bilingual section labels on the same header line
 
 ### 2. Decisions — Fixed Technical Choices
 
