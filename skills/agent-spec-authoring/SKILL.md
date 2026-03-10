@@ -89,6 +89,25 @@ Do not hand a spec to an agent if:
 - lint reports missing explicit test selectors
 - lint score is below threshold
 
+## Behavior Surface Checklist
+
+When authoring a contract for CLI tools, MCP servers, protocols, or parity rewrites,
+do not stop at the main happy path. Check these observable surfaces explicitly:
+
+- stdout vs stderr behavior
+- `--json` or machine-readable output
+- `-o/--output` and file side effects
+- local vs remote behavior
+- warm cache vs cold start
+- fallback / precedence order
+- partial failure vs hard failure
+- on-disk state changes and persisted files
+
+If the task is a rewrite, migration, or parity effort, treat this as mandatory.
+Do not hand the contract to an agent until these observable behaviors are either:
+- covered by scenarios, or
+- explicitly declared out of scope
+
 ## Before Writing a Contract
 
 Not every task needs a Contract. Ask yourself:
@@ -210,6 +229,19 @@ BDD scenarios with explicit test bindings.
 ```
 
 This forces you to think through edge cases **before coding begins**. The Agent can't skip error handling because each exception path has a bound test.
+
+## Rewrite / Parity Contracts
+
+For rewrite, migration, and parity tasks, write a behavior matrix before writing scenarios.
+At minimum, ask whether the contract covers:
+
+- command x output mode
+- local x remote
+- warm cache x cold start
+- success x partial failure x hard failure
+- CLI x MCP entry points, if both are user-visible
+
+If these dimensions matter to the task, they should appear in scenarios, not only in Decisions.
 
 ## Spec File Structure
 

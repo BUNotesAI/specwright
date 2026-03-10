@@ -434,6 +434,15 @@ fn render_scenario(out: &mut String, scenario: &Scenario) {
             out.push_str(&format!("    Package: {package}\n"));
         }
         out.push_str(&format!("    Filter: {}\n", selector.filter));
+        if let Some(level) = &selector.level {
+            out.push_str(&format!("    Level: {level}\n"));
+        }
+        if let Some(test_double) = &selector.test_double {
+            out.push_str(&format!("    Test Double: {test_double}\n"));
+        }
+        if let Some(targets) = &selector.targets {
+            out.push_str(&format!("    Targets: {targets}\n"));
+        }
     }
 
     for step in &scenario.steps {

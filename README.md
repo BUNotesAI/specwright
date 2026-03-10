@@ -102,6 +102,15 @@ This repo ships three agent skills under [`skills/`](skills):
 - **`agent-spec-authoring`**: the authoring path — helps write or revise Task Contracts in the DSL.
 - **`agent-spec-estimate`**: the estimation path — maps Task Contract elements (scenarios, decisions, boundaries) to round-based effort estimates.
 
+For rewrite/parity work, the authoring path should explicitly bind observable behavior before coding:
+
+- command x output mode
+- local x remote
+- warm cache x cold start
+- success x partial failure x hard failure
+
+See [`examples/rewrite-parity-contract.spec`](examples/rewrite-parity-contract.spec) for a concrete parity-oriented contract.
+
 #### One-line install (CLI + skills)
 
 ```bash
@@ -145,6 +154,8 @@ Copy [`.cursorrules`](.cursorrules) to your project root.
 2. Implement code against the rendered Task Contract.
 3. Run `agent-spec lifecycle` for the task-level gate.
 4. Run `agent-spec guard` for repo-level validation when needed.
+
+Before step 2, if the task is a rewrite, migration, or parity effort, use the tool-first workflow to review which observable behaviors are still unbound. If stdout/stderr, `--json`, `-o/--output`, local/remote, cache state, or fallback order are only described in prose, go back to authoring mode and add scenarios first.
 
 This keeps the main integration mode tool-first. Library embedding remains available for advanced Rust-host integration, but it is not the default path.
 

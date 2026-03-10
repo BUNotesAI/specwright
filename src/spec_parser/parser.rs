@@ -262,6 +262,9 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<Vec<Scenario>> {
                 match field {
                     TestSelectorField::Package => draft.package = Some(value.to_string()),
                     TestSelectorField::Filter => draft.filter = Some(value.to_string()),
+                    TestSelectorField::Level => draft.level = Some(value.to_string()),
+                    TestSelectorField::TestDouble => draft.test_double = Some(value.to_string()),
+                    TestSelectorField::Targets => draft.targets = Some(value.to_string()),
                 }
                 continue;
             }
@@ -308,6 +311,9 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<Vec<Scenario>> {
 struct TestSelectorDraft {
     package: Option<String>,
     filter: Option<String>,
+    level: Option<String>,
+    test_double: Option<String>,
+    targets: Option<String>,
 }
 
 fn finalize_test_selector(
@@ -328,6 +334,9 @@ fn finalize_test_selector(
     Ok(Some(TestSelector {
         filter,
         package: draft.package,
+        level: draft.level,
+        test_double: draft.test_double,
+        targets: draft.targets,
     }))
 }
 
@@ -708,6 +717,111 @@ name: "结构化绑定"
         assert!(json.contains("\"spec-parser\""));
         assert!(json.contains("\"filter\""));
         assert!(json.contains("test_parse_structured_test_selector_block"));
+    }
+
+    #[test]
+    fn test_parse_scenario_verification_metadata_fields() {
+        let input = r#"spec: task
+name: "验证元数据"
+---
+
+## 完成条件
+
+场景: 结构化验证强度
+  测试:
+    包: agent-spec
+    过滤: test_parse_scenario_verification_metadata_fields
+    层级: integration
+    替身: local_http_stub
+    命中: commands/update
+  假设 某个场景声明验证元数据
+  当 parser 解析该场景
+  那么 AST 中保留这些字段
+"#;
+
+        let doc = parse_spec_from_str(input).unwrap();
+        match &doc.sections[0] {
+            Section::AcceptanceCriteria { scenarios, .. } => {
+                let selector = scenarios[0].test_selector.as_ref().unwrap();
+                assert_eq!(selector.package.as_deref(), Some("agent-spec"));
+                assert_eq!(selector.filter, "test_parse_scenario_verification_metadata_fields");
+                assert_eq!(selector.level.as_deref(), Some("integration"));
+                assert_eq!(selector.test_double.as_deref(), Some("local_http_stub"));
+                assert_eq!(selector.targets.as_deref(), Some("commands/update"));
+            }
+            other => panic!("expected AcceptanceCriteria, got {other:?}"),
+        }
+
+        let json = serde_json::to_string_pretty(&doc).unwrap();
+        assert!(json.contains("\"level\""));
+        assert!(json.contains("\"test_double\""));
+        assert!(json.contains("\"targets\""));
+    }
+
+    #[test]
+    fn test_parse_english_verification_metadata_fields() {
+        let input = r#"spec: task
+name: "verification metadata"
+---
+
+## Completion Criteria
+
+Scenario: verification metadata
+  Test:
+    Package: agent-spec
+    Filter: test_parse_english_verification_metadata_fields
+    Level: integration
+    Test Double: local_http_stub
+    Targets: commands/update
+  Given a scenario declares verification metadata
+  When the parser reads it
+  Then the AST keeps the metadata
+"#;
+
+        let doc = parse_spec_from_str(input).unwrap();
+        match &doc.sections[0] {
+            Section::AcceptanceCriteria { scenarios, .. } => {
+                let selector = scenarios[0].test_selector.as_ref().unwrap();
+                assert_eq!(selector.level.as_deref(), Some("integration"));
+                assert_eq!(selector.test_double.as_deref(), Some("local_http_stub"));
+                assert_eq!(selector.targets.as_deref(), Some("commands/update"));
+            }
+            other => panic!("expected AcceptanceCriteria, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_existing_specs_without_verification_metadata_remain_valid() {
+        let input = r#"spec: task
+name: "legacy selector"
+---
+
+## Completion Criteria
+
+Scenario: legacy selector
+  Test:
+    Package: agent-spec
+    Filter: test_existing_specs_without_verification_metadata_remain_valid
+  Given a legacy spec
+  When the parser reads it
+  Then the selector remains valid
+"#;
+
+        let doc = parse_spec_from_str(input).unwrap();
+        match &doc.sections[0] {
+            Section::AcceptanceCriteria { scenarios, .. } => {
+                let selector = scenarios[0].test_selector.as_ref().unwrap();
+                assert_eq!(selector.package.as_deref(), Some("agent-spec"));
+                assert_eq!(
+                    selector.filter,
+                    "test_existing_specs_without_verification_metadata_remain_valid"
+                );
+                assert_eq!(selector.level, None);
+                assert_eq!(selector.test_double, None);
+                assert_eq!(selector.targets, None);
+            }
+            other => panic!("expected AcceptanceCriteria, got {other:?}"),
+        }
     }
 
     #[test]

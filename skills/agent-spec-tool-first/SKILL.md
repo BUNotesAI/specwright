@@ -92,12 +92,22 @@ agent-spec parse specs/user-registration.spec
 agent-spec lint specs/user-registration.spec --min-score 0.7
 ```
 
-Catches: malformed structure, zero-scenario acceptance sections, vague verbs, unquantified constraints, non-deterministic wording, missing test selectors, sycophancy bias, uncovered constraints, uncovered decisions (decision-coverage), missing error paths (error-path), universal claims with insufficient scenarios (universal-claim), boundary entry points without matching scenarios (boundary-entry-point).
+Catches: malformed structure, zero-scenario acceptance sections, vague verbs, unquantified constraints, non-deterministic wording, missing test selectors, sycophancy bias, uncovered constraints, uncovered decisions (decision-coverage), unbound observable behavior decisions (observable-decision-coverage), uncovered output modes (output-mode-coverage), unverified precedence/fallback chains (precedence-fallback-coverage), weak mock-only I/O error scenarios (external-io-error-strength), missing verification-strength metadata on I/O scenarios (verification-metadata-suggestion), missing error paths (error-path), universal claims with insufficient scenarios (universal-claim), boundary entry points without matching scenarios (boundary-entry-point).
 
 **Required self-checks before coding:**
 - `agent-spec parse` must show the expected section count and a non-zero scenario count for task specs.
 - If `Acceptance Criteria: 0 scenarios` appears, stop and rewrite the spec before running `contract` or `lifecycle`.
 - The parser accepts Markdown-heading forms like `### Scenario:` and `### Test:` for compatibility, but authoring should still emit bare `Scenario:` / `场景:` and `Test:` / `测试:` lines by default. Do not invent extra top-level sections like `## Milestones`.
+
+**Unbound Observable Behavior review:**
+- After `parse + lint`, ask which stdout, stderr, file, network, cache, and persisted-state behaviors are still unbound.
+- If the task is a rewrite, migration, or parity effort, also ask whether the contract covers:
+  - command x output mode
+  - local x remote
+  - warm cache x cold start
+  - fallback / precedence order
+  - partial failure vs hard failure
+- If any of these surfaces are still only described in prose, switch back to authoring mode and add scenarios before coding.
 
 Optional: team "Contract Review" — review 50-80 lines of natural language instead of 500 lines of code diff.
 

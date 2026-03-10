@@ -109,9 +109,27 @@ fn format_verification_text(report: &VerificationReport) -> String {
                     ));
                 }
                 crate::spec_core::Evidence::TestOutput {
-                    test_name, passed, ..
+                    test_name,
+                    passed,
+                    package,
+                    level,
+                    test_double,
+                    targets,
+                    ..
                 } => {
                     out.push_str(&format!("    > test '{test_name}': passed={passed}\n"));
+                    if let Some(package) = package {
+                        out.push_str(&format!("      package={package}\n"));
+                    }
+                    if let Some(level) = level {
+                        out.push_str(&format!("      level={level}\n"));
+                    }
+                    if let Some(test_double) = test_double {
+                        out.push_str(&format!("      test_double={test_double}\n"));
+                    }
+                    if let Some(targets) = targets {
+                        out.push_str(&format!("      targets={targets}\n"));
+                    }
                 }
                 crate::spec_core::Evidence::AiAnalysis {
                     model,
@@ -222,6 +240,31 @@ fn format_explain_text(input: &ExplainInput, report: &VerificationReport) -> Str
             Verdict::Uncertain => "[????]",
         };
         out.push_str(&format!("  {icon} {}\n", result.scenario_name));
+        for ev in &result.evidence {
+            if let crate::spec_core::Evidence::TestOutput {
+                test_name,
+                package,
+                level,
+                test_double,
+                targets,
+                ..
+            } = ev
+            {
+                out.push_str(&format!("    test: {test_name}\n"));
+                if let Some(package) = package {
+                    out.push_str(&format!("    package: {package}\n"));
+                }
+                if let Some(level) = level {
+                    out.push_str(&format!("    level: {level}\n"));
+                }
+                if let Some(test_double) = test_double {
+                    out.push_str(&format!("    test double: {test_double}\n"));
+                }
+                if let Some(targets) = targets {
+                    out.push_str(&format!("    targets: {targets}\n"));
+                }
+            }
+        }
     }
 
     out
@@ -286,6 +329,31 @@ fn format_explain_md(input: &ExplainInput, report: &VerificationReport) -> Strin
             Verdict::Uncertain => "❓",
         };
         out.push_str(&format!("- {icon} {}\n", result.scenario_name));
+        for ev in &result.evidence {
+            if let crate::spec_core::Evidence::TestOutput {
+                test_name,
+                package,
+                level,
+                test_double,
+                targets,
+                ..
+            } = ev
+            {
+                out.push_str(&format!("  - test: `{test_name}`\n"));
+                if let Some(package) = package {
+                    out.push_str(&format!("    - package: `{package}`\n"));
+                }
+                if let Some(level) = level {
+                    out.push_str(&format!("    - level: `{level}`\n"));
+                }
+                if let Some(test_double) = test_double {
+                    out.push_str(&format!("    - test double: `{test_double}`\n"));
+                }
+                if let Some(targets) = targets {
+                    out.push_str(&format!("    - targets: `{targets}`\n"));
+                }
+            }
+        }
     }
 
     out
@@ -317,9 +385,27 @@ pub fn format_orchestrator_json(input: &ExplainInput, report: &VerificationRepor
             "pass_rate": report.summary.pass_rate(),
         },
         "results": report.results.iter().map(|r| {
+            let test_output = r.evidence.iter().find_map(|ev| match ev {
+                crate::spec_core::Evidence::TestOutput {
+                    test_name,
+                    package,
+                    level,
+                    test_double,
+                    targets,
+                    ..
+                } => Some(serde_json::json!({
+                    "test_name": test_name,
+                    "package": package,
+                    "level": level,
+                    "test_double": test_double,
+                    "targets": targets,
+                })),
+                _ => None,
+            });
             serde_json::json!({
                 "scenario_name": r.scenario_name,
                 "verdict": format!("{:?}", r.verdict).to_lowercase(),
+                "test_binding": test_output,
             })
         }).collect::<Vec<_>>(),
     });
@@ -566,6 +652,41 @@ mod tests {
     }
 
     #[test]
+    fn test_format_verification_text_includes_test_binding_metadata() {
+        let report = VerificationReport {
+            spec_name: "verify-meta".into(),
+            results: vec![ScenarioResult {
+                scenario_name: "http path".into(),
+                verdict: Verdict::Pass,
+                step_results: vec![],
+                evidence: vec![Evidence::TestOutput {
+                    test_name: "test_http_path".into(),
+                    stdout: String::new(),
+                    passed: true,
+                    package: Some("agent-spec".into()),
+                    level: Some("integration".into()),
+                    test_double: Some("local_http_stub".into()),
+                    targets: Some("commands/update".into()),
+                }],
+                duration_ms: 5,
+            }],
+            summary: VerificationSummary {
+                total: 1,
+                passed: 1,
+                failed: 0,
+                skipped: 0,
+                uncertain: 0,
+            },
+        };
+
+        let text = format_verification(&report, &OutputFormat::Text);
+        assert!(text.contains("package=agent-spec"));
+        assert!(text.contains("level=integration"));
+        assert!(text.contains("test_double=local_http_stub"));
+        assert!(text.contains("targets=commands/update"));
+    }
+
+    #[test]
     fn test_report_json_exposes_contract_and_verification_summary_for_orchestrators() {
         let input = ExplainInput {
             name: "Orchestrator Test".into(),
@@ -583,7 +704,15 @@ mod tests {
                 scenario_name: "happy path".into(),
                 verdict: Verdict::Pass,
                 step_results: vec![],
-                evidence: vec![],
+                evidence: vec![Evidence::TestOutput {
+                    test_name: "test_happy_path".into(),
+                    stdout: String::new(),
+                    passed: true,
+                    package: Some("agent-spec".into()),
+                    level: Some("integration".into()),
+                    test_double: Some("fixture_fs".into()),
+                    targets: Some("spec_gateway/brief".into()),
+                }],
                 duration_ms: 5,
             }],
             summary: VerificationSummary {
@@ -610,6 +739,14 @@ mod tests {
         assert_eq!(parsed["verification"]["summary"]["passed"], 1);
         assert!(parsed["verification"]["summary"]["pass_rate"].is_number());
         assert!(parsed["verification"]["results"].is_array());
+        assert_eq!(
+            parsed["verification"]["results"][0]["test_binding"]["level"],
+            "integration"
+        );
+        assert_eq!(
+            parsed["verification"]["results"][0]["test_binding"]["test_double"],
+            "fixture_fs"
+        );
     }
 
     #[test]

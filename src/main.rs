@@ -1953,6 +1953,43 @@ Scenario: Contract alias
     }
 
     #[test]
+    fn test_authoring_skill_includes_behavior_surface_checklist() {
+        let skill =
+            fs::read_to_string(repo_root().join(".claude/skills/agent-spec-authoring/SKILL.md"))
+                .unwrap();
+
+        assert!(skill.contains("Behavior Surface Checklist"));
+        assert!(skill.contains("stdout vs stderr behavior"));
+        assert!(skill.contains("`--json`"));
+        assert!(skill.contains("`-o/--output`"));
+        assert!(skill.contains("warm cache vs cold start"));
+    }
+
+    #[test]
+    fn test_tool_first_skill_mentions_unbound_observable_behavior_review_step() {
+        let skill =
+            fs::read_to_string(repo_root().join(".claude/skills/agent-spec-tool-first/SKILL.md"))
+                .unwrap();
+
+        assert!(skill.contains("Unbound Observable Behavior review"));
+        assert!(skill.contains("command x output mode"));
+        assert!(skill.contains("local x remote"));
+        assert!(skill.contains("fallback / precedence order"));
+    }
+
+    #[test]
+    fn test_rewrite_parity_example_spec_exists_and_covers_behavior_matrix() {
+        let example =
+            fs::read_to_string(repo_root().join("examples/rewrite-parity-contract.spec")).unwrap();
+
+        assert!(example.contains("local source -> cache -> bundled content -> remote fetch"));
+        assert!(example.contains("Scenario: human mode returns doc content from cached remote source"));
+        assert!(example.contains("Scenario: json mode returns structured payload"));
+        assert!(example.contains("Scenario: cold start falls back to bundled content before remote fetch"));
+        assert!(example.contains("Scenario: remote fetch failure returns a stable error"));
+    }
+
+    #[test]
     fn test_generated_task_templates_parse_for_zh_en_and_both() {
         for lang in [
             generate_template_zh("task", "模板"),
@@ -1985,6 +2022,16 @@ Scenario: Contract alias
     }
 
     #[test]
+    fn test_readme_documents_rewrite_parity_contract_authoring_guidance() {
+        let readme = fs::read_to_string(repo_root().join("README.md")).unwrap();
+
+        assert!(readme.contains("rewrite/parity"));
+        assert!(readme.contains("examples/rewrite-parity-contract.spec"));
+        assert!(readme.contains("command x output mode"));
+        assert!(readme.contains("local x remote"));
+    }
+
+    #[test]
     fn test_contract_output_preserves_step_tables_and_test_selectors() {
         let gw = crate::spec_gateway::SpecGateway::from_input(
             r#"spec: task
@@ -2001,6 +2048,9 @@ Scenario: Registration request stays structured
   Test:
     Package: agent-spec
     Filter: test_contract_output_preserves_step_tables_and_test_selectors
+    Level: integration
+    Test Double: fixture_fs
+    Targets: spec_gateway/brief
   Given no user with email "alice@example.com" exists
   When client submits the registration request:
     | field    | value             |
@@ -2021,9 +2071,45 @@ Scenario: Registration request stays structured
                 "    Filter: test_contract_output_preserves_step_tables_and_test_selectors"
             )
         );
+        assert!(output.contains("    Level: integration"));
+        assert!(output.contains("    Test Double: fixture_fs"));
+        assert!(output.contains("    Targets: spec_gateway/brief"));
         assert!(output.contains("  When client submits the registration request:"));
         assert!(output.contains("| field | value |"));
         assert!(output.contains("| email | alice@example.com |"));
+    }
+
+    #[test]
+    fn test_contract_and_json_output_preserve_verification_metadata() {
+        let input = r#"spec: task
+name: "Verification Metadata"
+---
+
+## Completion Criteria
+
+Scenario: verification metadata stays visible
+  Test:
+    Package: agent-spec
+    Filter: test_contract_and_json_output_preserve_verification_metadata
+    Level: integration
+    Test Double: fixture_fs
+    Targets: spec_gateway/brief
+  Given a structured selector
+  When contract output is rendered
+  Then metadata stays visible
+"#;
+
+        let gw = crate::spec_gateway::SpecGateway::from_input(input).unwrap();
+        let json = gw.ast_json();
+        let contract = render_contract_output(&gw, "text").unwrap();
+
+        assert!(json.contains("\"level\""));
+        assert!(json.contains("\"integration\""));
+        assert!(json.contains("\"test_double\""));
+        assert!(json.contains("\"targets\""));
+        assert!(contract.contains("    Level: integration"));
+        assert!(contract.contains("    Test Double: fixture_fs"));
+        assert!(contract.contains("    Targets: spec_gateway/brief"));
     }
 
     #[test]

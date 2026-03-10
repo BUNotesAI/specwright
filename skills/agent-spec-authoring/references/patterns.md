@@ -50,6 +50,20 @@ Scenario: Happy path
   Test: test_happy_path
 ```
 
+## Rewrite / Parity Checklist
+
+For rewrite, migration, and parity contracts, start from observable behavior, not modules.
+
+Check whether the spec covers:
+
+- command x output mode
+- local x remote
+- warm cache x cold start
+- success x partial failure x hard failure
+- CLI x MCP entry points when both are public
+
+If these dimensions matter and are only mentioned in Decisions, the contract is not ready yet.
+
 ## Complete Task Contract Example
 
 ```spec
@@ -123,6 +137,10 @@ tags: [api, auth]
 ```
 
 **Note**: 1 happy path + 3 exception paths. Exception scenarios >= happy path is the core authoring principle.
+
+## Rewrite / Parity Example
+
+See [`examples/rewrite-parity-contract.spec`](../../../examples/rewrite-parity-contract.spec) for a compatibility-oriented contract that binds output modes, cache state, source type, and failure paths.
 
 ## Mandatory Validation
 

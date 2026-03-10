@@ -254,9 +254,27 @@ impl SpecGateway {
                             out.push_str(&format!("  > {file}:{line}: `{content}`\n"));
                         }
                         crate::spec_core::Evidence::TestOutput {
-                            test_name, passed, ..
+                            test_name,
+                            passed,
+                            package,
+                            level,
+                            test_double,
+                            targets,
+                            ..
                         } => {
                             out.push_str(&format!("  > test `{test_name}`: passed={passed}\n"));
+                            if let Some(package) = package {
+                                out.push_str(&format!("    package={package}\n"));
+                            }
+                            if let Some(level) = level {
+                                out.push_str(&format!("    level={level}\n"));
+                            }
+                            if let Some(test_double) = test_double {
+                                out.push_str(&format!("    test_double={test_double}\n"));
+                            }
+                            if let Some(targets) = targets {
+                                out.push_str(&format!("    targets={targets}\n"));
+                            }
                         }
                         crate::spec_core::Evidence::AiAnalysis {
                             model,

@@ -31,6 +31,11 @@ impl LintPipeline {
         p.add(Box::new(super::linters::ScenarioPresenceLinter));
         p.add(Box::new(super::linters::SycophancyLinter));
         p.add(Box::new(super::linters::DecisionCoverageLinter));
+        p.add(Box::new(super::linters::ObservableDecisionCoverageLinter));
+        p.add(Box::new(super::linters::OutputModeCoverageLinter));
+        p.add(Box::new(super::linters::PrecedenceFallbackCoverageLinter));
+        p.add(Box::new(super::linters::ExternalIoErrorStrengthLinter));
+        p.add(Box::new(super::linters::VerificationMetadataSuggestionLinter));
         p.add(Box::new(super::linters::ErrorPathLinter));
         p.add(Box::new(super::linters::UniversalClaimLinter));
         p.add(Box::new(super::linters::BoundaryEntryPointLinter));

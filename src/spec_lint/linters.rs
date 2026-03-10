@@ -1,6 +1,8 @@
 use crate::spec_core::{
-    LintDiagnostic, Section, Severity, Span, SpecDocument, SpecLevel, StepKind,
+    LintDiagnostic, Scenario, Section, Severity, Span, SpecDocument, SpecLevel, StepKind,
+    TestSelector,
 };
+use std::collections::HashSet;
 
 use super::pipeline::SpecLinter;
 
@@ -748,6 +750,399 @@ fn extract_decision_keywords(text: &str) -> Vec<String> {
 }
 
 // =============================================================================
+// 10b. ObservableDecisionCoverageLinter - behavioral decisions need explicit
+//      scenario coverage, not just structural mention overlap
+// =============================================================================
+
+pub struct ObservableDecisionCoverageLinter;
+
+const OBSERVABLE_DECISION_KEYWORDS: &[&str] = &[
+    "stdout",
+    "stderr",
+    "--json",
+    "-o",
+    "--output",
+    "output",
+    "fallback",
+    "precedence",
+    "priority",
+    "cache",
+    "local",
+    "remote",
+    "bundle",
+    "timeout",
+    "env",
+    "force",
+    "冷启动",
+    "缓存",
+    "本地",
+    "远端",
+    "远程",
+    "回退",
+    "优先",
+    "顺序",
+    "输出",
+    "环境变量",
+    "超时",
+];
+
+impl SpecLinter for ObservableDecisionCoverageLinter {
+    fn name(&self) -> &str {
+        "observable-decision-coverage"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        if doc.meta.level != SpecLevel::Task {
+            return Vec::new();
+        }
+
+        let scenario_text = collect_all_scenario_text(doc);
+        let mut diags = Vec::new();
+
+        for section in &doc.sections {
+            if let Section::Decisions { items, span } = section {
+                for (i, decision) in items.iter().enumerate() {
+                    if !contains_observable_keyword(decision) {
+                        continue;
+                    }
+
+                    let keywords = extract_decision_keywords(decision);
+                    let covered = keywords.iter().any(|kw| text_set_contains(&scenario_text, kw));
+
+                    if !covered {
+                        diags.push(LintDiagnostic {
+                            rule: "observable-decision-coverage".into(),
+                            severity: Severity::Warning,
+                            message: format!(
+                                "behavioral decision '{}' lacks an explicit scenario covering its observable behavior",
+                                truncate(decision, 60),
+                            ),
+                            span: Span::new(span.start_line + i + 1, 0, span.start_line + i + 1, 0),
+                            suggestion: Some(
+                                "add a scenario that verifies the user-visible behavior for this decision (stdout/stderr, json, output files, fallback, precedence, cache, timeout, or env handling)".into(),
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+
+        diags
+    }
+}
+
+// =============================================================================
+// 10c. OutputModeCoverageLinter - when specs mention multiple output modes,
+//      scenarios must cover them explicitly
+// =============================================================================
+
+pub struct OutputModeCoverageLinter;
+
+impl SpecLinter for OutputModeCoverageLinter {
+    fn name(&self) -> &str {
+        "output-mode-coverage"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        if doc.meta.level != SpecLevel::Task {
+            return Vec::new();
+        }
+
+        let mut required_modes = Vec::new();
+        let mut spans = Vec::new();
+        for section in &doc.sections {
+            match section {
+                Section::Intent { content, span } => {
+                    required_modes.extend(detect_output_modes(content));
+                    spans.push(*span);
+                }
+                Section::Constraints { items, .. } => {
+                    for item in items {
+                        required_modes.extend(detect_output_modes(&item.text));
+                        spans.push(item.span);
+                    }
+                }
+                Section::Decisions { items, span } => {
+                    for (i, item) in items.iter().enumerate() {
+                        required_modes.extend(detect_output_modes(item));
+                        spans.push(Span::new(span.start_line + i + 1, 0, span.start_line + i + 1, 0));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        dedup_strings(&mut required_modes);
+        if required_modes.is_empty() {
+            return Vec::new();
+        }
+
+        let scenario_text = collect_all_scenario_text(doc);
+        let missing: Vec<String> = required_modes
+            .into_iter()
+            .filter(|mode| !scenario_covers_output_mode(&scenario_text, mode))
+            .collect();
+
+        if missing.is_empty() {
+            return Vec::new();
+        }
+
+        let span = spans.first().copied().unwrap_or_else(|| Span::line(0));
+        vec![LintDiagnostic {
+            rule: "output-mode-coverage".into(),
+            severity: Severity::Warning,
+            message: format!(
+                "spec mentions output behavior but missing explicit scenario coverage for mode(s): {}",
+                missing.join(", ")
+            ),
+            span,
+            suggestion: Some(
+                "add scenarios that verify each mentioned mode, such as human output, JSON output, file output, and stdout/stderr cleanliness".into(),
+            ),
+        }]
+    }
+}
+
+// =============================================================================
+// 10d. PrecedenceFallbackCoverageLinter - ordered behavior must be verified
+// =============================================================================
+
+pub struct PrecedenceFallbackCoverageLinter;
+
+impl SpecLinter for PrecedenceFallbackCoverageLinter {
+    fn name(&self) -> &str {
+        "precedence-fallback-coverage"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        if doc.meta.level != SpecLevel::Task {
+            return Vec::new();
+        }
+
+        let scenario_text = collect_all_scenario_text(doc);
+        let mut diags = Vec::new();
+
+        for section in &doc.sections {
+            match section {
+                Section::Decisions { items, span } => {
+                    for (i, item) in items.iter().enumerate() {
+                        if let Some(chain_terms) = extract_ordered_behavior_terms(item)
+                            && !ordered_behavior_is_covered(&scenario_text, &chain_terms)
+                        {
+                            diags.push(LintDiagnostic {
+                                rule: "precedence-fallback-coverage".into(),
+                                severity: Severity::Warning,
+                                message: format!(
+                                    "ordered behavior '{}' has no scenario that verifies the precedence/fallback chain",
+                                    truncate(item, 60),
+                                ),
+                                span: Span::new(
+                                    span.start_line + i + 1,
+                                    0,
+                                    span.start_line + i + 1,
+                                    0,
+                                ),
+                                suggestion: Some(
+                                    "add a scenario that exercises the documented precedence or fallback order".into(),
+                                ),
+                            });
+                        }
+                    }
+                }
+                Section::Constraints { items, .. } => {
+                    for item in items {
+                        if let Some(chain_terms) = extract_ordered_behavior_terms(&item.text)
+                            && !ordered_behavior_is_covered(&scenario_text, &chain_terms)
+                        {
+                            diags.push(LintDiagnostic {
+                                rule: "precedence-fallback-coverage".into(),
+                                severity: Severity::Warning,
+                                message: format!(
+                                    "ordered behavior '{}' has no scenario that verifies the precedence/fallback chain",
+                                    truncate(&item.text, 60),
+                                ),
+                                span: item.span,
+                                suggestion: Some(
+                                    "add a scenario that exercises the documented precedence or fallback order".into(),
+                                ),
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        diags
+    }
+}
+
+// =============================================================================
+// 10e. ExternalIoErrorStrengthLinter - high-risk I/O error scenarios should
+//      avoid mock-only verification unless a realistic boundary is also named
+// =============================================================================
+
+pub struct ExternalIoErrorStrengthLinter;
+
+const EXTERNAL_IO_TERMS: &[&str] = &[
+    "http",
+    "network",
+    "registry.json",
+    "bundle.tar.gz",
+    "bundle",
+    "filesystem",
+    "file system",
+    "disk",
+    "path",
+    "stdio",
+    "protocol",
+    "json-rpc",
+    "4xx",
+    "5xx",
+    "non-2xx",
+    "timeout",
+    "网络",
+    "文件系统",
+    "磁盘",
+    "路径",
+    "协议",
+    "超时",
+    "4xx/5xx",
+];
+
+const WEAK_IO_TERMS: &[&str] = &[
+    "mock",
+    "mock-only",
+    "inject",
+    "injected",
+    "closure",
+    "stub only",
+    "模拟",
+    "注入",
+    "闭包",
+];
+
+const STRONG_IO_TERMS: &[&str] = &[
+    "fixture",
+    "temp dir",
+    "temporary directory",
+    "local stub",
+    "stub server",
+    "http stub",
+    "filesystem fixture",
+    "real bytes",
+    "真实",
+    "临时目录",
+    "本地 stub",
+    "本地替身",
+    "fixture 文件",
+];
+
+impl SpecLinter for ExternalIoErrorStrengthLinter {
+    fn name(&self) -> &str {
+        "external-io-error-strength"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        if doc.meta.level != SpecLevel::Task {
+            return Vec::new();
+        }
+
+        let mut diags = Vec::new();
+        for section in &doc.sections {
+            if let Section::AcceptanceCriteria { scenarios, .. } = section {
+                for scenario in scenarios {
+                    let scenario_text = scenario_text_blob(scenario);
+                    if !contains_any_term(&scenario_text, EXTERNAL_IO_TERMS)
+                        || !contains_any_term(&scenario_text, ERROR_PATH_INDICATORS_EN)
+                            && !contains_any_term(&scenario_text, ERROR_PATH_INDICATORS_ZH)
+                    {
+                        continue;
+                    }
+
+                    let selector_label = scenario
+                        .test_selector
+                        .as_ref()
+                        .map(TestSelector::label)
+                        .unwrap_or_default();
+                    let combined = if selector_label.is_empty() {
+                        scenario_text.clone()
+                    } else {
+                        format!("{scenario_text} {selector_label}")
+                    };
+
+                    if contains_any_term(&combined, WEAK_IO_TERMS)
+                        && !contains_any_term(&combined, STRONG_IO_TERMS)
+                    {
+                        diags.push(LintDiagnostic {
+                            rule: "external-io-error-strength".into(),
+                            severity: Severity::Warning,
+                            message: format!(
+                                "scenario '{}' describes external I/O failure handling but appears to rely on mock-only verification",
+                                scenario.name
+                            ),
+                            span: scenario.span,
+                            suggestion: Some(
+                                "prefer a local HTTP stub, fixture filesystem, temporary directory, or another realistic boundary in the scenario/test selector".into(),
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+        diags
+    }
+}
+
+pub struct VerificationMetadataSuggestionLinter;
+
+impl SpecLinter for VerificationMetadataSuggestionLinter {
+    fn name(&self) -> &str {
+        "verification-metadata-suggestion"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        if doc.meta.level != SpecLevel::Task {
+            return Vec::new();
+        }
+
+        let mut diags = Vec::new();
+        for section in &doc.sections {
+            if let Section::AcceptanceCriteria { scenarios, .. } = section {
+                for scenario in scenarios {
+                    let text = scenario_text_blob(scenario);
+                    if !contains_any_term(&text, EXTERNAL_IO_TERMS) {
+                        continue;
+                    }
+
+                    let missing_metadata = scenario.test_selector.as_ref().is_none_or(|selector| {
+                        selector.level.is_none()
+                            && selector.test_double.is_none()
+                            && selector.targets.is_none()
+                    });
+
+                    if missing_metadata {
+                        diags.push(LintDiagnostic {
+                            rule: "verification-metadata-suggestion".into(),
+                            severity: Severity::Warning,
+                            message: format!(
+                                "scenario '{}' covers external I/O behavior without verification-strength metadata",
+                                scenario.name
+                            ),
+                            span: scenario.span,
+                            suggestion: Some(
+                                "add `Level:` / `层级:`, `Test Double:` / `替身:`, or `Targets:` / `命中:` to clarify test strength".into(),
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+        diags
+    }
+}
+
+// =============================================================================
 // 11. ErrorPathLinter - checks if scenarios include error/failure paths
 // =============================================================================
 
@@ -978,6 +1373,152 @@ fn find_universal_claim(text: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn collect_all_scenario_text(doc: &SpecDocument) -> Vec<String> {
+    doc.sections
+        .iter()
+        .filter_map(|s| match s {
+            Section::AcceptanceCriteria { scenarios, .. } => Some(
+                scenarios
+                    .iter()
+                    .flat_map(|scenario| {
+                        let mut texts = vec![scenario.name.to_lowercase()];
+                        texts.extend(scenario.steps.iter().map(|step| step.text.to_lowercase()));
+                        texts
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+fn contains_observable_keyword(text: &str) -> bool {
+    contains_any_term(text, OBSERVABLE_DECISION_KEYWORDS)
+}
+
+fn contains_any_term(text: &str, terms: &[&str]) -> bool {
+    let lower = text.to_lowercase();
+    terms.iter().any(|term| {
+        let t = term.to_lowercase();
+        lower.contains(&t)
+    })
+}
+
+fn text_set_contains(texts: &[String], term: &str) -> bool {
+    let lower = term.to_lowercase();
+    texts.iter().any(|text| text.contains(&lower))
+}
+
+fn detect_output_modes(text: &str) -> Vec<String> {
+    let lower = text.to_lowercase();
+    let mut modes = Vec::new();
+
+    if lower.contains("--json")
+        || text.contains("JSON 输出")
+        || lower.contains("json output")
+        || lower.contains("json mode")
+        || text.contains("JSON 模式")
+    {
+        modes.push("json".to_string());
+    }
+    if lower.contains("-o") || lower.contains("--output") || lower.contains("写文件") || lower.contains("write to file") {
+        modes.push("file-output".to_string());
+    }
+    if lower.contains("stdout") {
+        modes.push("stdout".to_string());
+    }
+    if lower.contains("stderr") {
+        modes.push("stderr".to_string());
+    }
+    if lower.contains("human output") || text.contains("人类模式") || text.contains("默认输出") {
+        modes.push("human".to_string());
+    }
+
+    dedup_strings(&mut modes);
+    modes
+}
+
+fn scenario_covers_output_mode(scenario_text: &[String], mode: &str) -> bool {
+    match mode {
+        "json" => scenario_text.iter().any(|text| text.contains("--json") || text.contains("json")),
+        "file-output" => scenario_text.iter().any(|text| {
+            text.contains("-o")
+                || text.contains("--output")
+                || text.contains("写文件")
+                || text.contains("write to file")
+                || text.contains("output path")
+        }),
+        "stdout" => scenario_text.iter().any(|text| text.contains("stdout")),
+        "stderr" => scenario_text.iter().any(|text| text.contains("stderr")),
+        "human" => scenario_text.iter().any(|text| {
+            text.contains("human output") || text.contains("人类模式") || text.contains("默认输出")
+        }),
+        _ => false,
+    }
+}
+
+fn dedup_strings(values: &mut Vec<String>) {
+    let mut seen = HashSet::new();
+    values.retain(|value| seen.insert(value.clone()));
+}
+
+fn extract_ordered_behavior_terms(text: &str) -> Option<Vec<String>> {
+    let lower = text.to_lowercase();
+    if text.contains("->") {
+        let terms: Vec<String> = text
+            .split("->")
+            .map(str::trim)
+            .filter(|segment| !segment.is_empty())
+            .map(|segment| segment.to_lowercase())
+            .collect();
+        if terms.len() >= 2 {
+            return Some(terms);
+        }
+    }
+
+    let has_order_language = lower.contains("fallback")
+        || lower.contains("precedence")
+        || lower.contains("priority")
+        || lower.contains("prefer")
+        || text.contains("回退")
+        || text.contains("优先")
+        || text.contains("顺序");
+
+    if has_order_language {
+        let keywords = extract_decision_keywords(text);
+        let filtered: Vec<String> = keywords
+            .into_iter()
+            .filter(|kw| kw.len() > 2)
+            .take(4)
+            .collect();
+        if filtered.len() >= 2 {
+            return Some(filtered);
+        }
+    }
+
+    None
+}
+
+fn ordered_behavior_is_covered(scenario_text: &[String], chain_terms: &[String]) -> bool {
+    scenario_text.iter().any(|text| {
+        let matches = chain_terms.iter().filter(|term| text.contains(*term)).count();
+        matches >= 2
+            || text.contains("fallback")
+            || text.contains("precedence")
+            || text.contains("priority")
+            || text.contains("回退")
+            || text.contains("优先")
+            || text.contains("顺序")
+    })
+}
+
+fn scenario_text_blob(scenario: &Scenario) -> String {
+    let mut parts = vec![scenario.name.clone()];
+    parts.extend(scenario.steps.iter().map(|step| step.text.clone()));
+    parts.join(" ").to_lowercase()
 }
 
 // =============================================================================
@@ -1438,6 +1979,146 @@ name: "test"
         let doc = parse_spec_from_str(input).unwrap();
         let diags = DecisionCoverageLinter.lint(&doc);
         assert!(diags.is_empty(), "all decisions covered, got: {:?}", diags);
+    }
+
+    #[test]
+    fn test_observable_decision_coverage_warns_when_behavioral_decisions_lack_scenarios() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- `--json` 模式下 stdout 只能输出 JSON，fallback 顺序必须保持稳定。
+
+## 验收标准
+
+场景: 默认输出可用
+  测试: human_output_works
+  假设 用户运行默认命令
+  当 输出结果
+  那么 人类模式返回文本
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = ObservableDecisionCoverageLinter.lint(&doc);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].rule, "observable-decision-coverage");
+    }
+
+    #[test]
+    fn test_output_mode_coverage_warns_when_json_or_output_flags_are_uncovered() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- `get --json` 返回结构化输出，`-o/--output` 用于写文件。
+
+## 验收标准
+
+场景: 默认 human 输出可用
+  测试: human_output_works
+  假设 用户运行默认命令
+  当 输出结果
+  那么 返回默认 human 输出
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = OutputModeCoverageLinter.lint(&doc);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].rule, "output-mode-coverage");
+        assert!(diags[0].message.contains("json"));
+        assert!(diags[0].message.contains("file-output"));
+    }
+
+    #[test]
+    fn test_precedence_fallback_coverage_warns_when_ordered_behavior_has_no_scenario() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- 读取顺序为 `local -> cache -> remote`。
+
+## 验收标准
+
+场景: 远端读取成功
+  测试: remote_read_success
+  假设 用户请求内容
+  当 运行读取命令
+  那么 返回文档内容
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = PrecedenceFallbackCoverageLinter.lint(&doc);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].rule, "precedence-fallback-coverage");
+    }
+
+    #[test]
+    fn test_external_io_error_strength_warns_on_weak_mock_only_http_scenarios() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 验收标准
+
+场景: HTTP 4xx 返回错误
+  测试: mock_only_http_error
+  假设 通过注入 mock closure 模拟 404 HTTP 响应
+  当 运行 update
+  那么 返回 HTTP error
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = ExternalIoErrorStrengthLinter.lint(&doc);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].rule, "external-io-error-strength");
+    }
+
+    #[test]
+    fn test_behavior_completeness_linters_do_not_flag_plain_implementation_choices() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- 使用 `BTreeMap` 和 `serde_json`。
+- 目录结构维持 `src/**` 和 `specs/**`。
+
+## 验收标准
+
+场景: 输出是确定性的
+  测试: output_is_deterministic
+  假设 已构建注册表
+  当 运行 build 命令
+  那么 输出使用 BTreeMap 排序
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        assert!(ObservableDecisionCoverageLinter.lint(&doc).is_empty());
+        assert!(OutputModeCoverageLinter.lint(&doc).is_empty());
+        assert!(PrecedenceFallbackCoverageLinter.lint(&doc).is_empty());
+        assert!(ExternalIoErrorStrengthLinter.lint(&doc).is_empty());
+    }
+
+    #[test]
+    fn test_lint_suggests_verification_metadata_for_external_io_scenarios() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 验收标准
+
+场景: HTTP 4xx 返回错误
+  测试: update_http_error
+  假设 远端 HTTP 请求返回 404
+  当 运行 update
+  那么 返回 HTTP error
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = VerificationMetadataSuggestionLinter.lint(&doc);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].rule, "verification-metadata-suggestion");
     }
 
     // ── ErrorPathLinter tests ────────────────────────────────────────

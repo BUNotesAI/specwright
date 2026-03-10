@@ -120,6 +120,9 @@ pub fn match_test_selector(line: &str) -> Option<&str> {
 pub enum TestSelectorField {
     Package,
     Filter,
+    Level,
+    TestDouble,
+    Targets,
 }
 
 /// Structured fields under a `Test:` / `测试:` selector block.
@@ -138,6 +141,24 @@ pub fn match_test_selector_field(line: &str) -> Option<(TestSelectorField, &str)
     {
         return Some((TestSelectorField::Filter, rest.trim()));
     }
+    if let Some(rest) = trimmed
+        .strip_prefix("层级:")
+        .or_else(|| trimmed.strip_prefix("层级："))
+    {
+        return Some((TestSelectorField::Level, rest.trim()));
+    }
+    if let Some(rest) = trimmed
+        .strip_prefix("替身:")
+        .or_else(|| trimmed.strip_prefix("替身："))
+    {
+        return Some((TestSelectorField::TestDouble, rest.trim()));
+    }
+    if let Some(rest) = trimmed
+        .strip_prefix("命中:")
+        .or_else(|| trimmed.strip_prefix("命中："))
+    {
+        return Some((TestSelectorField::Targets, rest.trim()));
+    }
 
     let lower = trimmed.to_lowercase();
     if lower.starts_with("package:") {
@@ -148,6 +169,18 @@ pub fn match_test_selector_field(line: &str) -> Option<(TestSelectorField, &str)
     }
     if lower.starts_with("filter:") {
         return Some((TestSelectorField::Filter, trimmed["filter:".len()..].trim()));
+    }
+    if lower.starts_with("level:") {
+        return Some((TestSelectorField::Level, trimmed["level:".len()..].trim()));
+    }
+    if lower.starts_with("test double:") {
+        return Some((
+            TestSelectorField::TestDouble,
+            trimmed["test double:".len()..].trim(),
+        ));
+    }
+    if lower.starts_with("targets:") {
+        return Some((TestSelectorField::Targets, trimmed["targets:".len()..].trim()));
     }
 
     None
@@ -258,6 +291,34 @@ mod tests {
         assert_eq!(
             match_test_selector("  测试：test_parse_contract"),
             Some("test_parse_contract")
+        );
+    }
+
+    #[test]
+    fn test_match_test_selector_fields_support_verification_metadata() {
+        assert_eq!(
+            match_test_selector_field("  层级: integration"),
+            Some((TestSelectorField::Level, "integration"))
+        );
+        assert_eq!(
+            match_test_selector_field("  替身: local_http_stub"),
+            Some((TestSelectorField::TestDouble, "local_http_stub"))
+        );
+        assert_eq!(
+            match_test_selector_field("  命中: commands/update"),
+            Some((TestSelectorField::Targets, "commands/update"))
+        );
+        assert_eq!(
+            match_test_selector_field("  Level: integration"),
+            Some((TestSelectorField::Level, "integration"))
+        );
+        assert_eq!(
+            match_test_selector_field("  Test Double: local_http_stub"),
+            Some((TestSelectorField::TestDouble, "local_http_stub"))
+        );
+        assert_eq!(
+            match_test_selector_field("  Targets: commands/update"),
+            Some((TestSelectorField::Targets, "commands/update"))
         );
     }
 

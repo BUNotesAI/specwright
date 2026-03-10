@@ -119,6 +119,12 @@ pub struct TestSelector {
     pub filter: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_double: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub targets: Option<String>,
 }
 
 impl TestSelector {
@@ -126,6 +132,9 @@ impl TestSelector {
         Self {
             filter: filter.into(),
             package: None,
+            level: None,
+            test_double: None,
+            targets: None,
         }
     }
 

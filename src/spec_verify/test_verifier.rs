@@ -107,6 +107,10 @@ impl Verifier for TestVerifier {
                     test_name: selector_label,
                     stdout: combined,
                     passed: output.status.success(),
+                    package: binding.selector.package.clone(),
+                    level: binding.selector.level.clone(),
+                    test_double: binding.selector.test_double.clone(),
+                    targets: binding.selector.targets.clone(),
                 }],
                 duration_ms,
             });
@@ -351,6 +355,9 @@ fn helper() {}
         let selector = TestSelector {
             package: Some("spec-parser".into()),
             filter: "test_parse_structured_test_selector_block".into(),
+            level: None,
+            test_double: None,
+            targets: None,
         };
 
         let args = build_cargo_test_args(&selector);
