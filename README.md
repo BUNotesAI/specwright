@@ -102,7 +102,15 @@ This repo ships three agent skills under [`skills/`](skills):
 - **`agent-spec-authoring`**: the authoring path — helps write or revise Task Contracts in the DSL.
 - **`agent-spec-estimate`**: the estimation path — maps Task Contract elements (scenarios, decisions, boundaries) to round-based effort estimates.
 
-#### Install for Claude Code
+#### One-line install (CLI + skills)
+
+```bash
+./install-skills.sh
+```
+
+This installs the `agent-spec` CLI via `cargo install` (if not already present) and copies all three skills to `~/.claude/skills/`.
+
+#### Manual install for Claude Code
 
 ```bash
 # Copy to your global skills directory

@@ -22,6 +22,17 @@ You are an expert at writing agent-spec Task Contracts. Help users by:
 - **Debugging specs**: Fix lint warnings, improve quality scores
 - **Self-hosting**: Maintain specs for the agent-spec project itself
 
+## IMPORTANT: CLI Prerequisite Check
+
+**Before running any `agent-spec` command, Claude MUST check:**
+
+```bash
+command -v agent-spec || cargo install agent-spec
+```
+
+If `agent-spec` is not installed, inform the user:
+> `agent-spec` CLI not found. Install with: `cargo install agent-spec`
+
 ## Core Philosophy
 
 A Contract is **not a vague Issue** — it's a precise specification that shifts the review point:

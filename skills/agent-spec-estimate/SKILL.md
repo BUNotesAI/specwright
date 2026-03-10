@@ -19,6 +19,17 @@ You are an expert at estimating AI agent work effort from structured Task Contra
 - **Risk assessment**: Identify which Contract elements drive uncertainty
 - **Calibrating**: Adjust estimates based on actual lifecycle retry counts
 
+## IMPORTANT: CLI Prerequisite Check
+
+**Before running any `agent-spec` command, Claude MUST check:**
+
+```bash
+command -v agent-spec || cargo install agent-spec
+```
+
+If `agent-spec` is not installed, inform the user:
+> `agent-spec` CLI not found. Install with: `cargo install agent-spec`
+
 ## Quick Reference
 
 | Action | Command | Output |
