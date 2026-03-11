@@ -269,6 +269,7 @@ fn find_workspace_root(paths: &[PathBuf]) -> Option<PathBuf> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use std::path::PathBuf;
 

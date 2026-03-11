@@ -270,13 +270,64 @@ Toward:
 
 - "Does this spec actually bind the observable behavior that matters?"
 
+## Addendum: Round 4 Findings (2026-03-11)
+
+A fourth review round on `chub-rs` exposed three additional failure classes
+not covered by the original proposal:
+
+### A5. Flag Combination Coverage
+
+When a CLI command has multiple flags that affect output behavior (`-o`, `--json`,
+`--full`, multi-ID), per-flag testing misses interaction bugs. For example:
+
+- `get a -o out.md` passes (single ID writes file correctly)
+- `get a b -o out.md` fails (multi-ID overwrites file, losing first result)
+
+Implemented as linter #14: `flag-combination-coverage`. Warns when 2+ output-affecting
+flags are mentioned in decisions but no scenario tests a combination of them.
+
+### A6. Platform Decision Tagging
+
+When rewriting from one platform to another (JS → Rust), decisions may reference
+platform-specific concepts (npm, dist/, bundled dist) without marking them as
+platform-dependent. This creates phantom requirements that persist through reviews.
+
+Implemented as linter #15: `platform-decision-tag`. Flags untagged references to
+npm, pip, cargo install, dist/, etc. Suggests adding `[JS-only]`, `[platform-specific]`,
+or explicit "not applicable" markers.
+
+### A7. Architectural Invariants
+
+Some behaviors depend on processing patterns, not per-feature logic. For example,
+JS collects all results into an array then handles output in one pass, while a
+naive Rust port might process-and-output per-item. This architectural difference
+is invisible to single-item tests but breaks on combinations.
+
+This is not yet implemented as a linter (hard to detect mechanically), but is
+documented in the behavior surface checklist in `agent-spec-authoring`.
+
+## Implementation Status
+
+| Item | Status |
+|------|--------|
+| Skill updates (Phase 1) | Done — behavior surface checklist added |
+| `observable-decision-coverage` (Phase 2) | Done — linter #10b |
+| `output-mode-coverage` (Phase 2) | Done — linter #10c |
+| `precedence-fallback-coverage` (Phase 2) | Done — linter #10d |
+| `external-io-error-strength` (Phase 2) | Done — linter #10e |
+| `verification-metadata-suggestion` (Phase 2) | Done — linter #10f |
+| `flag-combination-coverage` (Addendum) | Done — linter #14 |
+| `platform-decision-tag` (Addendum) | Done — linter #15 |
+| Scenario metadata (Phase 3) | Done — parser supports Level/TestDouble/Targets |
+| Rewrite/parity template (Phase 1) | Done — `--template rewrite-parity` in CLI |
+| Promote warnings to errors (Phase 4) | Pending |
+
 ## Practical Next Step
 
-The smallest useful next step is:
+The remaining high-value items are:
 
-1. update the two core skills
-2. add the behavior-surface checklist
-3. implement `observable-decision-coverage` as a warning linter
-4. create one parity-template example contract
-
-That gives immediate leverage without forcing a full DSL redesign.
+1. create a rewrite/parity example contract as a template
+2. promote `flag-combination-coverage` and `platform-decision-tag` from Info/Warning
+   to Warning/Error after real-world usage stabilizes
+3. consider an `architectural-invariant` linter if a mechanical detection heuristic
+   can be found (collect-then-output vs per-item-output patterns)

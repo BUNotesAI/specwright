@@ -47,9 +47,9 @@ jobs:
       - name: Format
         run: cargo fmt --check
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test
-        run: cargo test
+        run: cargo test --quiet
 
   contract-guard:
     name: Contract Verification

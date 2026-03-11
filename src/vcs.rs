@@ -137,6 +137,7 @@ fn run_jj(repo_root: &Path, args: &[&str]) -> Option<String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::fs;

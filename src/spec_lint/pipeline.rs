@@ -35,10 +35,14 @@ impl LintPipeline {
         p.add(Box::new(super::linters::OutputModeCoverageLinter));
         p.add(Box::new(super::linters::PrecedenceFallbackCoverageLinter));
         p.add(Box::new(super::linters::ExternalIoErrorStrengthLinter));
-        p.add(Box::new(super::linters::VerificationMetadataSuggestionLinter));
+        p.add(Box::new(
+            super::linters::VerificationMetadataSuggestionLinter,
+        ));
         p.add(Box::new(super::linters::ErrorPathLinter));
         p.add(Box::new(super::linters::UniversalClaimLinter));
         p.add(Box::new(super::linters::BoundaryEntryPointLinter));
+        p.add(Box::new(super::linters::FlagCombinationCoverageLinter));
+        p.add(Box::new(super::linters::PlatformDecisionTagLinter));
         p
     }
 

@@ -163,6 +163,7 @@ pub fn build_ai_request(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;

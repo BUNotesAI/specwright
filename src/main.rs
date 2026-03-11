@@ -79,6 +79,9 @@ enum Commands {
         /// Language: zh, en, both
         #[arg(long, default_value = "zh")]
         lang: String,
+        /// Template profile: standard, rewrite-parity
+        #[arg(long, default_value = "standard")]
+        template: String,
     },
     /// Run full lifecycle: lint -> verify -> report (for CI/agent use)
     Lifecycle {
@@ -234,7 +237,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             ai_mode,
             format,
         } => cmd_verify(&spec, &code, &change, &change_scope, &ai_mode, &format),
-        Commands::Init { level, name, lang } => cmd_init(&level, name.as_deref(), &lang),
+        Commands::Init {
+            level,
+            name,
+            lang,
+            template,
+        } => cmd_init(&level, name.as_deref(), &lang, &template),
         Commands::Lifecycle {
             spec,
             code,
@@ -1266,7 +1274,23 @@ fi
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-fn cmd_init(level: &str, name: Option<&str>, lang: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_init(
+    level: &str,
+    name: Option<&str>,
+    lang: &str,
+    template: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let output_dir = std::env::current_dir()?;
+    cmd_init_at(&output_dir, level, name, lang, template)
+}
+
+fn cmd_init_at(
+    output_dir: &Path,
+    level: &str,
+    name: Option<&str>,
+    lang: &str,
+    template: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let spec_level = match level {
         "org" => "org",
         "project" => "project",
@@ -1274,15 +1298,19 @@ fn cmd_init(level: &str, name: Option<&str>, lang: &str) -> Result<(), Box<dyn s
     };
 
     let spec_name = name.unwrap_or("unnamed");
-    let template = match lang {
-        "zh" => generate_template_zh(spec_level, spec_name),
-        "both" => generate_template_both(spec_level, spec_name),
+    let template = match (lang, template) {
+        ("zh", "rewrite-parity") => generate_rewrite_parity_template_zh(spec_name),
+        ("both", "rewrite-parity") => generate_rewrite_parity_template_both(spec_name),
+        (_, "rewrite-parity") => generate_rewrite_parity_template_en(spec_name),
+        ("zh", _) => generate_template_zh(spec_level, spec_name),
+        ("both", _) => generate_template_both(spec_level, spec_name),
         _ => generate_template_en(spec_level, spec_name),
     };
 
     let filename = format!("{spec_name}.spec");
-    std::fs::write(&filename, &template)?;
-    println!("created {filename}");
+    let output_path = output_dir.join(&filename);
+    std::fs::write(&output_path, &template)?;
+    println!("created {}", output_path.display());
 
     Ok(())
 }
@@ -1449,6 +1477,184 @@ Scenario: Happy path
     }
 }
 
+fn generate_rewrite_parity_template_zh(name: &str) -> String {
+    format!(
+        r#"spec: task
+name: "{name}"
+inherits: project
+tags: [rewrite, parity]
+---
+
+## 意图
+
+将 `<待重写系统或命令>` 的可观察行为迁移到新实现，并在编码前绑定关键行为矩阵。
+
+## 已定决策
+
+- 兼容性基线以 `<上游实现 / 现有 CLI / 现有 MCP>` 的可观察行为为准
+- 在写代码前先梳理行为矩阵：命令 x 输出模式、local x remote、warm cache x cold start、成功 x 部分失败 x 硬失败
+- 所有 stdout/stderr、`--json`、`-o/--output`、fallback / precedence order 都必须落成显式场景
+- 对外部 I/O 行为优先使用本地 stub 或 fixture 验证，不依赖真实网络或真实 HOME
+
+## 边界
+
+### 允许修改
+- 在此列出允许修改的适配层、运行时层和测试文件
+
+### 禁止做
+- 不要把兼容性要求只写成 prose；必须绑定到 Completion Criteria
+- 不要用新的用户可见行为替换现有行为，除非本任务明确声明要改 contract
+
+## 完成条件
+
+场景: 人类模式保持兼容输出
+  测试:
+    包: your-package
+    过滤: test_human_mode_parity
+    层级: cli
+    替身: fixture_cache
+    命中: src/commands/get.rs, tests/cli_get.rs
+  假设 `<命令>` 从已缓存内容读取结果
+  当 用户以默认人类模式执行命令
+  那么 stdout 与兼容性基线保持一致
+  而且 stderr 不包含额外噪音
+
+场景: JSON 模式返回稳定结构
+  测试:
+    包: your-package
+    过滤: test_json_mode_parity
+    层级: cli
+    替身: fixture_cache
+    命中: src/commands/get.rs
+  假设 `<命令>` 以 `--json` 模式运行
+  当 用户请求同一份内容
+  那么 stdout 只包含稳定 JSON
+  而且 省略字段策略与兼容性基线一致
+
+场景: 冷启动遵守 fallback 顺序
+  测试:
+    包: your-package
+    过滤: test_cold_start_fallback_order
+    层级: integration
+    替身: local_http_stub
+    命中: src/core/cache.rs, src/core/registry.rs
+  假设 本地正文缓存为空
+  当 系统解析 `<local source -> cache -> bundled content -> remote fetch>` 的读取路径
+  那么 每一步 fallback 顺序都可观察且稳定
+
+场景: 远端失败返回稳定错误
+  测试:
+    包: your-package
+    过滤: test_remote_fetch_failure_contract
+    层级: integration
+    替身: local_http_stub
+    命中: src/core/cache.rs, src/commands/update.rs
+  假设 远端返回非 2xx 或超时
+  当 系统执行远端读取或刷新
+  那么 返回稳定错误
+  而且 不写入损坏缓存或错误 freshness 元数据
+
+## 排除范围
+
+- 本任务未明确声明的新增功能
+- 只为通过测试而修改兼容性基线本身
+"#
+    )
+}
+
+fn generate_rewrite_parity_template_both(name: &str) -> String {
+    format!(
+        r#"spec: task
+name: "{name}"
+inherits: project
+tags: [rewrite, parity]
+---
+
+## Intent
+
+Port the observable behavior of `<system under rewrite>` to the new implementation and bind the key behavior matrix before coding.
+在编码前将 `<待重写系统或命令>` 的可观察行为迁移到新实现，并绑定关键行为矩阵。
+
+## Decisions
+
+- Treat `<upstream implementation / existing CLI / existing MCP>` as the compatibility baseline.
+- 将 `<上游实现 / 现有 CLI / 现有 MCP>` 作为兼容性基线。
+- Cover the behavior matrix before coding: command x output mode, local x remote, warm cache x cold start, success x partial failure x hard failure.
+- 在编码前覆盖行为矩阵：命令 x 输出模式、local x remote、warm cache x cold start、成功 x 部分失败 x 硬失败。
+- Bind stdout/stderr, `--json`, `-o/--output`, and fallback / precedence order as explicit scenarios.
+- 将 stdout/stderr、`--json`、`-o/--output`、fallback / precedence order 写成显式场景。
+
+## Boundaries
+
+### Allowed Changes
+- List the adapters, runtime modules, and tests that may change.
+- 在此列出允许修改的适配层、运行时层和测试文件。
+
+### Forbidden
+- Do not leave compatibility requirements as prose-only notes.
+- 不要把兼容性要求只写成 prose。
+- Do not replace current user-visible behavior unless this task explicitly changes the contract.
+- 不要在任务未声明时改写用户可见行为。
+
+## Completion Criteria
+
+Scenario: human mode keeps parity output
+  Test:
+    Package: your-package
+    Filter: test_human_mode_parity
+    Level: cli
+    Test Double: fixture_cache
+    Targets: src/commands/get.rs, tests/cli_get.rs
+  Given `<command>` reads from cached content
+  When the user runs it in default human mode
+  Then stdout stays compatible with the baseline
+  And stderr does not contain extra noise
+
+场景: JSON 模式返回稳定结构
+  测试:
+    包: your-package
+    过滤: test_json_mode_parity
+    层级: cli
+    替身: fixture_cache
+    命中: src/commands/get.rs
+  假设 `<命令>` 以 `--json` 模式运行
+  当 用户请求同一份内容
+  那么 stdout 只包含稳定 JSON
+  而且 省略字段策略与兼容性基线一致
+
+Scenario: cold start follows fallback order
+  Test:
+    Package: your-package
+    Filter: test_cold_start_fallback_order
+    Level: integration
+    Test Double: local_http_stub
+    Targets: src/core/cache.rs, src/core/registry.rs
+  Given local content cache is empty
+  When the system resolves `<local source -> cache -> bundled content -> remote fetch>`
+  Then each fallback step is observable and stable
+
+场景: 远端失败返回稳定错误
+  测试:
+    包: your-package
+    过滤: test_remote_fetch_failure_contract
+    层级: integration
+    替身: local_http_stub
+    命中: src/core/cache.rs, src/commands/update.rs
+  假设 远端返回非 2xx 或超时
+  当 系统执行远端读取或刷新
+  那么 返回稳定错误
+  而且 不写入损坏缓存或错误 freshness 元数据
+
+## Out of Scope
+
+- New features not explicitly declared by this task.
+- 本任务未明确声明的新增功能。
+- Changing the compatibility baseline itself just to make tests pass.
+- 不要为了通过测试而修改兼容性基线本身。
+"#
+    )
+}
+
 fn format_non_passing_summary(summary: &crate::spec_core::VerificationSummary) -> String {
     format!(
         "verification not passing: {} failed, {} skipped, {} uncertain",
@@ -1532,6 +1738,91 @@ Scenario: Error path
 "#
         ),
     }
+}
+
+fn generate_rewrite_parity_template_en(name: &str) -> String {
+    format!(
+        r#"spec: task
+name: "{name}"
+inherits: project
+tags: [rewrite, parity]
+---
+
+## Intent
+
+Port the observable behavior of `<system under rewrite>` to the new implementation and bind the key behavior matrix before coding.
+
+## Decisions
+
+- Treat `<upstream implementation / existing CLI / existing MCP>` as the compatibility baseline
+- Cover the behavior matrix before coding: command x output mode, local x remote, warm cache x cold start, success x partial failure x hard failure
+- Bind stdout/stderr, `--json`, `-o/--output`, and fallback / precedence order as explicit scenarios
+- Prefer local stubs or fixtures for external I/O verification instead of real network or real HOME state
+
+## Boundaries
+
+### Allowed Changes
+- List the adapters, runtime modules, and tests that may change
+
+### Forbidden
+- Do not leave compatibility requirements as prose-only notes
+- Do not replace current user-visible behavior unless this task explicitly changes the contract
+
+## Completion Criteria
+
+Scenario: human mode keeps parity output
+  Test:
+    Package: your-package
+    Filter: test_human_mode_parity
+    Level: cli
+    Test Double: fixture_cache
+    Targets: src/commands/get.rs, tests/cli_get.rs
+  Given `<command>` reads from cached content
+  When the user runs it in default human mode
+  Then stdout stays compatible with the baseline
+  And stderr does not contain extra noise
+
+Scenario: json mode returns a stable payload
+  Test:
+    Package: your-package
+    Filter: test_json_mode_parity
+    Level: cli
+    Test Double: fixture_cache
+    Targets: src/commands/get.rs
+  Given `<command>` runs with `--json`
+  When the user requests the same content
+  Then stdout contains stable JSON only
+  And field omission rules stay compatible with the baseline
+
+Scenario: cold start follows fallback order
+  Test:
+    Package: your-package
+    Filter: test_cold_start_fallback_order
+    Level: integration
+    Test Double: local_http_stub
+    Targets: src/core/cache.rs, src/core/registry.rs
+  Given local content cache is empty
+  When the system resolves `<local source -> cache -> bundled content -> remote fetch>`
+  Then each fallback step is observable and stable
+
+Scenario: remote failure returns a stable error
+  Test:
+    Package: your-package
+    Filter: test_remote_fetch_failure_contract
+    Level: integration
+    Test Double: local_http_stub
+    Targets: src/core/cache.rs, src/commands/update.rs
+  Given the remote endpoint returns non-2xx or times out
+  When the system performs a remote read or refresh
+  Then it returns a stable error
+  And it does not write corrupt cache or incorrect freshness metadata
+
+## Out of Scope
+
+- New features not explicitly declared by this task
+- Changing the compatibility baseline itself just to make tests pass
+"#
+    )
 }
 
 fn format_level(level: crate::spec_core::SpecLevel) -> &'static str {
@@ -1654,16 +1945,20 @@ fn cmd_resolve_ai(
 }
 
 #[cfg(test)]
+#[allow(clippy::collapsible_if, clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    use clap::Parser;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        GitChangeScope, RunLogEntry, build_stamp_trailers, generate_template_both,
-        generate_template_en, generate_template_zh, parse_ai_mode, render_brief_output,
-        render_contract_output, resolve_command_change_paths, resolve_guard_change_paths, vcs,
+        GitChangeScope, RunLogEntry, build_stamp_trailers, cmd_init_at,
+        generate_rewrite_parity_template_both, generate_rewrite_parity_template_en,
+        generate_rewrite_parity_template_zh, generate_template_both, generate_template_en,
+        generate_template_zh, parse_ai_mode, render_brief_output, render_contract_output,
+        resolve_command_change_paths, resolve_guard_change_paths, vcs,
     };
 
     const SAMPLE: &str = r#"spec: task
@@ -1983,9 +2278,14 @@ Scenario: Contract alias
             fs::read_to_string(repo_root().join("examples/rewrite-parity-contract.spec")).unwrap();
 
         assert!(example.contains("local source -> cache -> bundled content -> remote fetch"));
-        assert!(example.contains("Scenario: human mode returns doc content from cached remote source"));
+        assert!(
+            example.contains("Scenario: human mode returns doc content from cached remote source")
+        );
         assert!(example.contains("Scenario: json mode returns structured payload"));
-        assert!(example.contains("Scenario: cold start falls back to bundled content before remote fetch"));
+        assert!(
+            example
+                .contains("Scenario: cold start falls back to bundled content before remote fetch")
+        );
         assert!(example.contains("Scenario: remote fetch failure returns a stable error"));
     }
 
@@ -1995,6 +2295,9 @@ Scenario: Contract alias
             generate_template_zh("task", "模板"),
             generate_template_en("task", "Template"),
             generate_template_both("task", "Bilingual"),
+            generate_rewrite_parity_template_zh("重写模板"),
+            generate_rewrite_parity_template_en("Rewrite Template"),
+            generate_rewrite_parity_template_both("Bilingual Rewrite"),
         ] {
             let doc = crate::spec_parser::parse_spec_from_str(&lang).unwrap();
             let scenario_count = doc
@@ -2009,6 +2312,81 @@ Scenario: Contract alias
                 .sum::<usize>();
             assert!(scenario_count > 0, "task template should contain scenarios");
         }
+    }
+
+    #[test]
+    fn test_rewrite_parity_init_templates_include_behavior_matrix_and_verification_metadata() {
+        for template in [
+            generate_rewrite_parity_template_zh("重写模板"),
+            generate_rewrite_parity_template_en("Rewrite Template"),
+            generate_rewrite_parity_template_both("Bilingual Rewrite"),
+        ] {
+            assert!(
+                template.contains("command x output mode") || template.contains("命令 x 输出模式")
+            );
+            assert!(
+                template.contains("local x remote")
+                    || template
+                        .contains("local source -> cache -> bundled content -> remote fetch")
+            );
+            assert!(template.contains("Level:") || template.contains("层级:"));
+            assert!(template.contains("Test Double:") || template.contains("替身:"));
+            assert!(template.contains("Targets:") || template.contains("命中:"));
+        }
+    }
+
+    #[test]
+    fn test_init_command_writes_rewrite_parity_template_file() {
+        let dir = make_temp_dir("agent-spec-init-rewrite-parity");
+        cmd_init_at(
+            &dir,
+            "task",
+            Some("cli-parity-contract"),
+            "en",
+            "rewrite-parity",
+        )
+        .unwrap();
+        let content = fs::read_to_string(dir.join("cli-parity-contract.spec")).unwrap();
+        let parsed = crate::spec_parser::parse_spec_from_str(&content).unwrap();
+
+        assert!(content.contains("tags: [rewrite, parity]"));
+        assert!(content.contains("command x output mode"));
+        assert!(content.contains("Test Double:"));
+        assert!(content.contains("Targets:"));
+        assert!(parsed.sections.iter().any(|section| matches!(
+            section,
+            crate::spec_core::Section::AcceptanceCriteria { .. }
+        )));
+
+        let cli = super::Cli::parse_from([
+            "agent-spec",
+            "init",
+            "--level",
+            "task",
+            "--template",
+            "rewrite-parity",
+            "--lang",
+            "en",
+            "--name",
+            "cli-parity-contract",
+        ]);
+
+        match cli.command {
+            super::Commands::Init {
+                level,
+                lang,
+                template,
+                name,
+            } => {
+                assert_eq!(level, "task");
+                assert_eq!(lang, "en");
+                assert_eq!(template, "rewrite-parity");
+                assert_eq!(name.as_deref(), Some("cli-parity-contract"));
+            }
+            _ => panic!("expected init command"),
+        }
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -2029,6 +2407,7 @@ Scenario: Contract alias
         assert!(readme.contains("examples/rewrite-parity-contract.spec"));
         assert!(readme.contains("command x output mode"));
         assert!(readme.contains("local x remote"));
+        assert!(readme.contains("--template rewrite-parity"));
     }
 
     #[test]

@@ -180,7 +180,10 @@ pub fn match_test_selector_field(line: &str) -> Option<(TestSelectorField, &str)
         ));
     }
     if lower.starts_with("targets:") {
-        return Some((TestSelectorField::Targets, trimmed["targets:".len()..].trim()));
+        return Some((
+            TestSelectorField::Targets,
+            trimmed["targets:".len()..].trim(),
+        ));
     }
 
     None
@@ -220,6 +223,7 @@ pub fn extract_params(text: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

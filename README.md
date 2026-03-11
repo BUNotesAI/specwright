@@ -92,6 +92,12 @@ Start from a template:
 cargo run -q --bin agent-spec -- init --level task --lang en --name "User Registration API"
 ```
 
+For rewrite/parity tasks, start from the parity-aware task template:
+
+```bash
+cargo run -q --bin agent-spec -- init --level task --template rewrite-parity --lang en --name "CLI Parity Contract"
+```
+
 Or study the examples in [`examples/`](examples).
 
 ### AI Agent Skills

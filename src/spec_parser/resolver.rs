@@ -137,6 +137,7 @@ fn extract_decisions(doc: &SpecDocument) -> Vec<String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::spec_core::SpecLevel;

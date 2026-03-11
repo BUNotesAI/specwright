@@ -361,6 +361,7 @@ fn parse_table_row(line: &str) -> Option<Vec<String>> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::spec_core::StepKind;
@@ -744,7 +745,10 @@ name: "验证元数据"
             Section::AcceptanceCriteria { scenarios, .. } => {
                 let selector = scenarios[0].test_selector.as_ref().unwrap();
                 assert_eq!(selector.package.as_deref(), Some("agent-spec"));
-                assert_eq!(selector.filter, "test_parse_scenario_verification_metadata_fields");
+                assert_eq!(
+                    selector.filter,
+                    "test_parse_scenario_verification_metadata_fields"
+                );
                 assert_eq!(selector.level.as_deref(), Some("integration"));
                 assert_eq!(selector.test_double.as_deref(), Some("local_http_stub"));
                 assert_eq!(selector.targets.as_deref(), Some("commands/update"));

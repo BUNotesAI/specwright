@@ -94,6 +94,7 @@ Do not hand a spec to an agent if:
 When authoring a contract for CLI tools, MCP servers, protocols, or parity rewrites,
 do not stop at the main happy path. Check these observable surfaces explicitly:
 
+### Observable Behavior
 - stdout vs stderr behavior
 - `--json` or machine-readable output
 - `-o/--output` and file side effects
@@ -103,10 +104,30 @@ do not stop at the main happy path. Check these observable surfaces explicitly:
 - partial failure vs hard failure
 - on-disk state changes and persisted files
 
+### Flag Combinations (lint: `flag-combination-coverage`)
+- Multi-value parameters (multi-ID, batch) combined with output flags
+- Single vs multiple entry behavior for `-o`, `--full`, `--json`
+- If your command has 2+ output-affecting flags, add at least one scenario that tests a combination
+
+### Platform-Specific Decisions (lint: `platform-decision-tag`)
+- When copying decisions from a reference implementation, tag platform-specific terms
+- Use markers like `[JS-only]`, `[platform-specific]`, or `不适用` to flag phantom requirements
+- The linter flags untagged references to npm, pip, cargo install, dist/, bundled dist, etc.
+
+### Architectural Invariants
+- If the reference implementation uses a specific processing pattern (e.g., "collect all results then output once"), state this as a decision — per-item vs batch output are architecturally different
+- These invariants are invisible to per-feature tests but break on combinations
+
 If the task is a rewrite, migration, or parity effort, treat this as mandatory.
 Do not hand the contract to an agent until these observable behaviors are either:
 - covered by scenarios, or
 - explicitly declared out of scope
+
+For these tasks, prefer starting from the parity-aware scaffold instead of the generic task template:
+
+```bash
+agent-spec init --level task --template rewrite-parity --lang en --name "CLI Parity Contract"
+```
 
 ## Before Writing a Contract
 

@@ -583,6 +583,7 @@ fn format_lint_md(report: &LintReport) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::spec_core::{

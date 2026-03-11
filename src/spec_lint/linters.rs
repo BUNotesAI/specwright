@@ -807,7 +807,9 @@ impl SpecLinter for ObservableDecisionCoverageLinter {
                     }
 
                     let keywords = extract_decision_keywords(decision);
-                    let covered = keywords.iter().any(|kw| text_set_contains(&scenario_text, kw));
+                    let covered = keywords
+                        .iter()
+                        .any(|kw| text_set_contains(&scenario_text, kw));
 
                     if !covered {
                         diags.push(LintDiagnostic {
@@ -865,7 +867,12 @@ impl SpecLinter for OutputModeCoverageLinter {
                 Section::Decisions { items, span } => {
                     for (i, item) in items.iter().enumerate() {
                         required_modes.extend(detect_output_modes(item));
-                        spans.push(Span::new(span.start_line + i + 1, 0, span.start_line + i + 1, 0));
+                        spans.push(Span::new(
+                            span.start_line + i + 1,
+                            0,
+                            span.start_line + i + 1,
+                            0,
+                        ));
                     }
                 }
                 _ => {}
@@ -1424,7 +1431,11 @@ fn detect_output_modes(text: &str) -> Vec<String> {
     {
         modes.push("json".to_string());
     }
-    if lower.contains("-o") || lower.contains("--output") || lower.contains("写文件") || lower.contains("write to file") {
+    if lower.contains("-o")
+        || lower.contains("--output")
+        || lower.contains("写文件")
+        || lower.contains("write to file")
+    {
         modes.push("file-output".to_string());
     }
     if lower.contains("stdout") {
@@ -1433,7 +1444,8 @@ fn detect_output_modes(text: &str) -> Vec<String> {
     if lower.contains("stderr") {
         modes.push("stderr".to_string());
     }
-    if lower.contains("human output") || text.contains("人类模式") || text.contains("默认输出") {
+    if lower.contains("human output") || text.contains("人类模式") || text.contains("默认输出")
+    {
         modes.push("human".to_string());
     }
 
@@ -1443,7 +1455,9 @@ fn detect_output_modes(text: &str) -> Vec<String> {
 
 fn scenario_covers_output_mode(scenario_text: &[String], mode: &str) -> bool {
     match mode {
-        "json" => scenario_text.iter().any(|text| text.contains("--json") || text.contains("json")),
+        "json" => scenario_text
+            .iter()
+            .any(|text| text.contains("--json") || text.contains("json")),
         "file-output" => scenario_text.iter().any(|text| {
             text.contains("-o")
                 || text.contains("--output")
@@ -1504,7 +1518,10 @@ fn extract_ordered_behavior_terms(text: &str) -> Option<Vec<String>> {
 
 fn ordered_behavior_is_covered(scenario_text: &[String], chain_terms: &[String]) -> bool {
     scenario_text.iter().any(|text| {
-        let matches = chain_terms.iter().filter(|term| text.contains(*term)).count();
+        let matches = chain_terms
+            .iter()
+            .filter(|term| text.contains(*term))
+            .count();
         matches >= 2
             || text.contains("fallback")
             || text.contains("precedence")
@@ -1639,7 +1656,269 @@ impl SpecLinter for BoundaryEntryPointLinter {
     }
 }
 
+// =============================================================================
+// 14. FlagCombinationCoverageLinter - when a CLI command has multiple flags
+//     that affect output behavior, require scenarios covering key combinations
+//     (e.g., multi-ID + -o, single-ID + --full + -o)
+// =============================================================================
+
+pub struct FlagCombinationCoverageLinter;
+
+/// CLI flags that affect output behavior and should be tested in combination.
+const COMBINATION_FLAGS_ZH: &[(&str, &[&str])] = &[
+    ("多 ID", &["多个", "多 ID", "batch", "多条目"]),
+    (
+        "-o/--output",
+        &["-o", "--output", "写文件", "写入文件", "输出到文件"],
+    ),
+    ("--full", &["--full", "全部文件", "所有文件"]),
+    ("--json", &["--json", "JSON 模式", "JSON 输出"]),
+];
+
+const COMBINATION_FLAGS_EN: &[(&str, &[&str])] = &[
+    ("multi-ID", &["multiple", "multi", "batch", "ids..."]),
+    (
+        "-o/--output",
+        &["-o", "--output", "write to file", "output path"],
+    ),
+    ("--full", &["--full", "all files", "full mode"]),
+    ("--json", &["--json", "json mode", "json output"]),
+];
+
+impl SpecLinter for FlagCombinationCoverageLinter {
+    fn name(&self) -> &str {
+        "flag-combination-coverage"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        if doc.meta.level != SpecLevel::Task {
+            return Vec::new();
+        }
+
+        let mut diags = Vec::new();
+
+        // Detect which flags are mentioned in decisions/constraints
+        let mut mentioned_flags: Vec<String> = Vec::new();
+        let mut decision_span: Option<Span> = None;
+
+        for section in &doc.sections {
+            let texts: Vec<&str> = match section {
+                Section::Decisions { items, span } => {
+                    decision_span = Some(*span);
+                    items.iter().map(|s| s.as_str()).collect()
+                }
+                Section::Constraints { items, .. } => {
+                    items.iter().map(|c| c.text.as_str()).collect()
+                }
+                _ => continue,
+            };
+
+            for text in texts {
+                let lower = text.to_lowercase();
+                for (flag_name, indicators) in COMBINATION_FLAGS_ZH
+                    .iter()
+                    .chain(COMBINATION_FLAGS_EN.iter())
+                {
+                    if indicators
+                        .iter()
+                        .any(|ind| lower.contains(&ind.to_lowercase()))
+                    {
+                        let name = flag_name.to_string();
+                        if !mentioned_flags.contains(&name) {
+                            mentioned_flags.push(name);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Only check when 2+ flags are mentioned
+        if mentioned_flags.len() < 2 {
+            return diags;
+        }
+
+        // Check if scenarios cover any combination (2+ flags in same scenario)
+        let scenarios = collect_scenario_texts_per_scenario(doc);
+        let has_combination_scenario = scenarios.iter().any(|texts| {
+            let mut flags_in_scenario = 0;
+            for flag_name in &mentioned_flags {
+                let indicators = get_flag_indicators(flag_name);
+                if indicators.iter().any(|ind| {
+                    texts
+                        .iter()
+                        .any(|t| t.to_lowercase().contains(&ind.to_lowercase()))
+                }) {
+                    flags_in_scenario += 1;
+                }
+            }
+            flags_in_scenario >= 2
+        });
+
+        if !has_combination_scenario {
+            let span = decision_span.unwrap_or(Span::line(0));
+            diags.push(LintDiagnostic {
+                rule: "flag-combination-coverage".into(),
+                severity: Severity::Warning,
+                message: format!(
+                    "decisions mention {} output-affecting flags ({}) but no scenario tests a combination of 2+ flags together",
+                    mentioned_flags.len(),
+                    mentioned_flags.join(", ")
+                ),
+                span,
+                suggestion: Some(
+                    "add scenarios that test flag combinations (e.g., multi-ID + -o, single entry + --full + -o) — individual flag tests miss interaction bugs".into(),
+                ),
+            });
+        }
+
+        diags
+    }
+}
+
+/// Collect scenario texts grouped by scenario (not flattened).
+fn collect_scenario_texts_per_scenario(doc: &SpecDocument) -> Vec<Vec<String>> {
+    doc.sections
+        .iter()
+        .filter_map(|s| match s {
+            Section::AcceptanceCriteria { scenarios, .. } => Some(
+                scenarios
+                    .iter()
+                    .map(|sc| {
+                        let mut texts = vec![sc.name.clone()];
+                        texts.extend(sc.steps.iter().map(|st| st.text.clone()));
+                        texts
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+/// Get all indicator strings for a flag name (both languages).
+fn get_flag_indicators(flag_name: &str) -> Vec<String> {
+    let mut indicators = Vec::new();
+    for (name, inds) in COMBINATION_FLAGS_ZH
+        .iter()
+        .chain(COMBINATION_FLAGS_EN.iter())
+    {
+        if *name == flag_name {
+            indicators.extend(inds.iter().map(|s| s.to_string()));
+        }
+    }
+    indicators
+}
+
+// =============================================================================
+// 15. PlatformDecisionTagLinter - detects decisions that reference platform-
+//     specific concepts (npm, pip, cargo, bundled dist, etc.) without explicit
+//     platform tags, warning about phantom requirements in parity rewrites
+// =============================================================================
+
+pub struct PlatformDecisionTagLinter;
+
+/// Platform-specific terms that may indicate a decision copied from a reference
+/// implementation without considering if it applies to the current platform.
+const PLATFORM_SPECIFIC_TERMS: &[(&str, &str)] = &[
+    ("npm", "Node.js/npm"),
+    ("node_modules", "Node.js"),
+    ("dist/", "npm/bundled"),
+    ("bundled dist", "npm/bundled"),
+    ("package.json", "Node.js"),
+    ("pip", "Python/pip"),
+    ("site-packages", "Python"),
+    ("__pycache__", "Python"),
+    ("setup.py", "Python"),
+    ("cargo install", "Rust/cargo"),
+    ("crate.io", "Rust/cargo"),
+    ("gem install", "Ruby"),
+    ("nuget", ".NET"),
+    ("maven", "Java"),
+    ("go install", "Go"),
+    ("apt-get", "Debian/Ubuntu"),
+    ("brew install", "macOS/Homebrew"),
+];
+
+/// Tags that indicate the author is aware of the platform dependency.
+const PLATFORM_AWARENESS_MARKERS: &[&str] = &[
+    "[js-only]",
+    "[node-only]",
+    "[npm-only]",
+    "[python-only]",
+    "[rust-only]",
+    "[platform-specific]",
+    "[不适用]",
+    "[JS 特有]",
+    "[Node 特有]",
+    "[Python 特有]",
+    "[Rust 特有]",
+    "[平台特有]",
+    "不实现",
+    "not applicable",
+    "n/a",
+    "skipped",
+    "跳过",
+];
+
+impl SpecLinter for PlatformDecisionTagLinter {
+    fn name(&self) -> &str {
+        "platform-decision-tag"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        if doc.meta.level != SpecLevel::Task {
+            return Vec::new();
+        }
+
+        let mut diags = Vec::new();
+
+        for section in &doc.sections {
+            if let Section::Decisions { items, span } = section {
+                for (i, decision) in items.iter().enumerate() {
+                    let lower = decision.to_lowercase();
+
+                    // Check if the decision references a platform-specific term
+                    let platform_match = PLATFORM_SPECIFIC_TERMS
+                        .iter()
+                        .find(|(term, _)| lower.contains(&term.to_lowercase()));
+
+                    if let Some((term, platform)) = platform_match {
+                        // Check if the author has already tagged it
+                        let is_tagged = PLATFORM_AWARENESS_MARKERS
+                            .iter()
+                            .any(|marker| lower.contains(&marker.to_lowercase()));
+
+                        if !is_tagged {
+                            diags.push(LintDiagnostic {
+                                rule: "platform-decision-tag".into(),
+                                severity: Severity::Info,
+                                message: format!(
+                                    "decision references '{}' ({}), which may be platform-specific — if this is a parity rewrite, mark with [platform-specific] or state whether it applies",
+                                    term, platform
+                                ),
+                                span: Span::new(
+                                    span.start_line + i + 1,
+                                    0,
+                                    span.start_line + i + 1,
+                                    0,
+                                ),
+                                suggestion: Some(format!(
+                                    "add a platform tag like [JS-only] or explicitly state that {platform} behavior is not applicable in the current platform"
+                                )),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        diags
+    }
+}
+
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::len_zero, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::spec_parser::parse_spec_from_str;
@@ -2372,6 +2651,169 @@ Scenario: app works
         // src/lib.rs is not an entry point pattern, so only 1 entry point (main.rs)
         // Single entry point should not trigger warning
         assert!(diags.is_empty(), "single entry point should not warn");
+    }
+
+    // ── FlagCombinationCoverageLinter tests ────────────────────────
+
+    #[test]
+    fn test_flag_combination_warns_when_multiple_flags_but_no_combo_scenario() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- `get -o` 用于写文件，`--json` 返回结构化输出。
+- 多 ID 时合并所有内容写入单文件。
+
+## 验收标准
+
+场景: 单 ID -o 写文件
+  测试: single_id_output
+  假设 存在一个条目
+  当 运行 get -o out.md
+  那么 文件被写入
+
+场景: JSON 模式输出
+  测试: json_output
+  假设 存在一个条目
+  当 运行 get --json
+  那么 返回 JSON
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = FlagCombinationCoverageLinter.lint(&doc);
+        assert_eq!(
+            diags.len(),
+            1,
+            "should warn: 3 flags but no combo scenario, got: {:?}",
+            diags
+        );
+        assert_eq!(diags[0].rule, "flag-combination-coverage");
+    }
+
+    #[test]
+    fn test_flag_combination_passes_when_combo_scenario_exists() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- `get -o` 用于写文件，`--json` 返回结构化输出。
+- 多 ID 时合并所有内容写入单文件。
+
+## 验收标准
+
+场景: 单 ID -o 写文件
+  测试: single_id_output
+  假设 存在一个条目
+  当 运行 get -o out.md
+  那么 文件被写入
+
+场景: 多 ID -o 合并写入
+  测试: multi_id_output
+  假设 存在多个条目
+  当 运行 get a b -o combined.md
+  那么 合并内容写入单文件
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = FlagCombinationCoverageLinter.lint(&doc);
+        assert!(
+            diags.is_empty(),
+            "combo scenario exists (多 ID + -o), should pass, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn test_flag_combination_ignores_single_flag_specs() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- 使用 BTreeMap 确保输出顺序。
+
+## 验收标准
+
+场景: 输出有序
+  测试: ordered_output
+  假设 已构建注册表
+  当 运行 build
+  那么 输出是确定性的
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = FlagCombinationCoverageLinter.lint(&doc);
+        assert!(
+            diags.is_empty(),
+            "single flag should not trigger, got: {:?}",
+            diags
+        );
+    }
+
+    // ── PlatformDecisionTagLinter tests ─────────────────────────────
+
+    #[test]
+    fn test_platform_tag_warns_on_untagged_npm_reference() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- 读取顺序为 local source -> 本地缓存 -> npm bundled dist -> 远端下载。
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = PlatformDecisionTagLinter.lint(&doc);
+        assert_eq!(
+            diags.len(),
+            1,
+            "should warn about untagged npm reference, got: {:?}",
+            diags
+        );
+        assert_eq!(diags[0].rule, "platform-decision-tag");
+        assert!(diags[0].message.contains("npm"));
+    }
+
+    #[test]
+    fn test_platform_tag_passes_when_tagged() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- 读取顺序为 local source -> 本地缓存 -> 远端下载。
+  （chub-rs 不实现 npm bundled dist 路径，这是 JS 特有 的包分发机制。）
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = PlatformDecisionTagLinter.lint(&doc);
+        assert!(
+            diags.is_empty(),
+            "tagged with 不实现, should pass, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn test_platform_tag_ignores_non_platform_decisions() {
+        let input = r#"spec: task
+name: "test"
+---
+
+## 决策
+
+- 使用 BTreeMap 和 serde_json。
+- 搜索优先使用预构建 BM25 index。
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = PlatformDecisionTagLinter.lint(&doc);
+        assert!(
+            diags.is_empty(),
+            "no platform terms, should pass, got: {:?}",
+            diags
+        );
     }
 
     #[test]

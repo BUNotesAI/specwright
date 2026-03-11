@@ -347,6 +347,7 @@ impl std::fmt::Display for GateFailure {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::spec_verify::AiMode;

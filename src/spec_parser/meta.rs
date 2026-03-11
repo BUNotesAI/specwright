@@ -74,6 +74,7 @@ pub fn parse_meta(lines: &[&str]) -> Result<SpecMeta, String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
