@@ -1,7 +1,7 @@
 # agent-spec Contract Guard — GitHub Actions Workflow
 #
 # This workflow runs agent-spec's contract verification on every pull request.
-# It checks that all .spec files in specs/ pass lint and verification against
+# It checks that all .spec/.spec.md files in specs/ pass lint and verification against
 # the PR's changed files, then posts a Contract review summary to the PR.
 #
 # Prerequisites:
@@ -29,7 +29,7 @@ concurrency:
 env:
   # Minimum quality score for spec lint (0.0 - 1.0)
   MIN_SCORE: "0.6"
-  # Directory containing .spec files
+  # Directory containing .spec/.spec.md files
   SPEC_DIR: "specs"
   # Code directory to verify against
   CODE_DIR: "."
@@ -113,10 +113,11 @@ jobs:
           PASS_COUNT=0
           FAIL_COUNT=0
 
-          for spec in "$SPEC_DIR"/*.spec; do
+          for spec in "$SPEC_DIR"/*.spec "$SPEC_DIR"/*.spec.md; do
             [ -f "$spec" ] || continue
             SPEC_COUNT=$((SPEC_COUNT + 1))
-            SPEC_NAME=$(basename "$spec" .spec)
+            SPEC_NAME=$(basename "$spec" .spec.md)
+            SPEC_NAME=$(basename "$SPEC_NAME" .spec)
 
             # Run explain and capture output
             EXPLAIN_OUTPUT=$(agent-spec explain "$spec" \
@@ -153,7 +154,7 @@ jobs:
             if [ "$FAIL_COUNT" -eq 0 ] && [ "$SPEC_COUNT" -gt 0 ]; then
               echo "**✅ All ${SPEC_COUNT} contract(s) passed.**"
             elif [ "$SPEC_COUNT" -eq 0 ]; then
-              echo "**ℹ️ No .spec files found in \`${SPEC_DIR}/\`.**"
+              echo "**ℹ️ No .spec/.spec.md files found in \`${SPEC_DIR}/\`.**"
             else
               echo "**❌ ${FAIL_COUNT} of ${SPEC_COUNT} contract(s) failed.**"
             fi

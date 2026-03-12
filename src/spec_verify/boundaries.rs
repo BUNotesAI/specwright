@@ -140,6 +140,7 @@ fn looks_like_path_boundary(text: &str) -> bool {
         || trimmed.ends_with(".js")
         || trimmed.ends_with(".py")
         || trimmed.ends_with(".spec")
+        || trimmed.ends_with(".spec.md")
 }
 
 fn normalize_change_paths(paths: &[PathBuf], workspace_root: Option<&Path>) -> Vec<String> {

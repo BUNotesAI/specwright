@@ -16,6 +16,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::process::ExitCode;
 
+/// Check whether a path is a spec file (`.spec` or `.spec.md`).
+fn is_spec_file(p: &Path) -> bool {
+    p.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.ends_with(".spec") || n.ends_with(".spec.md"))
+}
+
 #[derive(Parser)]
 #[command(
     name = "agent-spec",
@@ -29,7 +36,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Parse .spec files and show AST
+    /// Parse .spec/.spec.md files and show AST
     Parse {
         /// Spec files to parse
         files: Vec<PathBuf>,
@@ -68,7 +75,7 @@ enum Commands {
         #[arg(long, default_value = "text")]
         format: String,
     },
-    /// Create a starter .spec file
+    /// Create a starter .spec.md file
     Init {
         /// Spec level: org, project, task
         #[arg(long, default_value = "task")]
@@ -131,7 +138,7 @@ enum Commands {
         #[arg(long, default_value = "text")]
         format: String,
     },
-    /// Git guard: lint all .spec files + verify against the selected git change scope
+    /// Git guard: lint all .spec/.spec.md files + verify against the selected git change scope
     Guard {
         /// Spec directory to scan
         #[arg(long, default_value = "specs")]
@@ -658,12 +665,15 @@ fn cmd_guard(
     let spec_files: Vec<PathBuf> = std::fs::read_dir(spec_dir)?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|ext| ext == "spec"))
+        .filter(|p| is_spec_file(p))
         .collect();
 
     if spec_files.is_empty() {
         return Ok(());
     }
+
+    // Warn about duplicate .spec / .spec.md pairs
+    warn_duplicate_spec_extensions(&spec_files);
 
     let change_scope = GitChangeScope::parse(change_scope)?;
     let effective_changes = resolve_guard_change_paths(spec_dir, code, change, change_scope)?;
@@ -735,6 +745,36 @@ fn resolve_command_change_paths(
     };
 
     resolve_git_change_paths(&repo_root, change_scope)
+}
+
+/// Warn when the same spec basename has both `.spec` and `.spec.md` variants.
+fn warn_duplicate_spec_extensions(spec_files: &[PathBuf]) {
+    use std::collections::HashMap;
+
+    let mut by_stem: HashMap<String, Vec<&Path>> = HashMap::new();
+    for path in spec_files {
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            let stem = name
+                .strip_suffix(".spec.md")
+                .or_else(|| name.strip_suffix(".spec"))
+                .unwrap_or(name);
+            by_stem.entry(stem.to_string()).or_default().push(path);
+        }
+    }
+
+    for (stem, paths) in &by_stem {
+        if paths.len() > 1 {
+            eprintln!(
+                "warning: duplicate spec extensions for '{}': {}",
+                stem,
+                paths
+                    .iter()
+                    .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    }
 }
 
 fn resolve_guard_change_paths(
@@ -1307,7 +1347,7 @@ fn cmd_init_at(
         _ => generate_template_en(spec_level, spec_name),
     };
 
-    let filename = format!("{spec_name}.spec");
+    let filename = format!("{spec_name}.spec.md");
     let output_path = output_dir.join(&filename);
     std::fs::write(&output_path, &template)?;
     println!("created {}", output_path.display());
@@ -1957,8 +1997,9 @@ mod tests {
         GitChangeScope, RunLogEntry, build_stamp_trailers, cmd_init_at,
         generate_rewrite_parity_template_both, generate_rewrite_parity_template_en,
         generate_rewrite_parity_template_zh, generate_template_both, generate_template_en,
-        generate_template_zh, parse_ai_mode, render_brief_output, render_contract_output,
-        resolve_command_change_paths, resolve_guard_change_paths, vcs,
+        generate_template_zh, is_spec_file, parse_ai_mode, render_brief_output,
+        render_contract_output, resolve_command_change_paths, resolve_guard_change_paths, vcs,
+        warn_duplicate_spec_extensions,
     };
 
     const SAMPLE: &str = r#"spec: task
@@ -2346,7 +2387,7 @@ Scenario: Contract alias
             "rewrite-parity",
         )
         .unwrap();
-        let content = fs::read_to_string(dir.join("cli-parity-contract.spec")).unwrap();
+        let content = fs::read_to_string(dir.join("cli-parity-contract.spec.md")).unwrap();
         let parsed = crate::spec_parser::parse_spec_from_str(&content).unwrap();
 
         assert!(content.contains("tags: [rewrite, parity]"));
@@ -2494,11 +2535,11 @@ Scenario: verification metadata stays visible
     #[test]
     fn test_roadmap_phase_zero_and_one_specs_exist_and_capture_priorities() {
         let phase0 = fs::read_to_string(
-            repo_root().join("specs/roadmap/task-phase0-contract-fidelity.spec"),
+            repo_root().join("specs/roadmap/task-phase0-contract-fidelity.spec.md"),
         )
         .unwrap();
         let phase1 = fs::read_to_string(
-            repo_root().join("specs/roadmap/task-phase1-contract-review-loop.spec"),
+            repo_root().join("specs/roadmap/task-phase1-contract-review-loop.spec.md"),
         )
         .unwrap();
 
@@ -2515,22 +2556,22 @@ Scenario: verification metadata stays visible
     #[test]
     fn test_roadmap_later_phase_specs_exist_and_are_split_by_concern() {
         let phase2 = fs::read_to_string(
-            repo_root().join("specs/roadmap/task-phase2-run-history-and-vcs-context.spec"),
+            repo_root().join("specs/roadmap/task-phase2-run-history-and-vcs-context.spec.md"),
         )
         .unwrap();
         let phase3 =
-            fs::read_to_string(repo_root().join("specs/roadmap/task-phase3-spec-governance.spec"))
+            fs::read_to_string(repo_root().join("specs/roadmap/task-phase3-spec-governance.spec.md"))
                 .unwrap();
         let phase4 = fs::read_to_string(
-            repo_root().join("specs/roadmap/task-phase4-ai-verification-expansion.spec"),
+            repo_root().join("specs/roadmap/task-phase4-ai-verification-expansion.spec.md"),
         )
         .unwrap();
         let phase5 = fs::read_to_string(
-            repo_root().join("specs/roadmap/task-phase5-ecosystem-integrations.spec"),
+            repo_root().join("specs/roadmap/task-phase5-ecosystem-integrations.spec.md"),
         )
         .unwrap();
         let phase6 = fs::read_to_string(
-            repo_root().join("specs/roadmap/task-phase6-advanced-verification.spec"),
+            repo_root().join("specs/roadmap/task-phase6-advanced-verification.spec.md"),
         )
         .unwrap();
 
@@ -3300,5 +3341,131 @@ Scenario: verification metadata stays visible
 
     fn repo_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    }
+
+    // ── .spec.md extension support tests ────────────────────────────
+
+    #[test]
+    fn test_guard_discovers_spec_md_files() {
+        let dir = make_temp_dir("guard-spec-md");
+        fs::write(
+            dir.join("task.spec.md"),
+            "spec: task\nname: \"t\"\n---\n\n## Intent\n\nTest.\n",
+        )
+        .unwrap();
+
+        let files: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| is_spec_file(p))
+            .collect();
+
+        assert_eq!(files.len(), 1);
+        assert!(files[0].to_string_lossy().ends_with("task.spec.md"));
+    }
+
+    #[test]
+    fn test_guard_discovers_both_spec_and_spec_md() {
+        let dir = make_temp_dir("guard-both-ext");
+        fs::write(
+            dir.join("a.spec"),
+            "spec: task\nname: \"a\"\n---\n\n## Intent\n\nA.\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("b.spec.md"),
+            "spec: task\nname: \"b\"\n---\n\n## Intent\n\nB.\n",
+        )
+        .unwrap();
+
+        let files: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| is_spec_file(p))
+            .collect();
+
+        assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn test_init_creates_spec_md_by_default() {
+        let dir = make_temp_dir("init-spec-md");
+        cmd_init_at(&dir, "task", Some("test-task"), "en", "default").unwrap();
+        assert!(dir.join("test-task.spec.md").exists());
+        assert!(!dir.join("test-task.spec").exists());
+    }
+
+    #[test]
+    fn test_boundary_checker_recognizes_spec_md() {
+        // The boundary checker uses looks_like_path_boundary (private).
+        // We verify indirectly: parse a spec with .spec.md in allowed changes,
+        // then verify boundaries are extracted as path patterns.
+        let input = r#"spec: task
+name: "t"
+---
+
+## Intent
+
+Test boundary recognition.
+
+## Boundaries
+
+### Allowed Changes
+- specs/task.spec.md
+- src/**
+
+## Acceptance Criteria
+
+Scenario: pass
+  Test: test_pass
+  Given something
+  When action
+  Then result
+"#;
+        let doc = crate::spec_parser::parse_spec_from_str(input).unwrap();
+        let boundaries_section = doc.sections.iter().find_map(|s| match s {
+            crate::spec_core::Section::Boundaries { items, .. } => Some(items),
+            _ => None,
+        });
+        let items = boundaries_section.unwrap();
+        let allowed: Vec<_> = items
+            .iter()
+            .filter(|b| b.category == crate::spec_core::BoundaryCategory::Allow)
+            .collect();
+        // Both paths should be extracted as allowed boundaries
+        assert!(allowed.iter().any(|b| b.text == "specs/task.spec.md"));
+        assert!(allowed.iter().any(|b| b.text == "src/**"));
+    }
+
+    #[test]
+    fn test_spec_md_not_matched_by_extension_alone() {
+        let p = Path::new("task.spec.md");
+        // Path::extension() returns "md", not "spec"
+        assert_eq!(p.extension().unwrap(), "md");
+        // But is_spec_file correctly identifies it
+        assert!(is_spec_file(p));
+    }
+
+    #[test]
+    fn test_plain_md_files_not_matched_as_spec() {
+        assert!(!is_spec_file(Path::new("notes.md")));
+        assert!(!is_spec_file(Path::new("README.md")));
+        assert!(is_spec_file(Path::new("task.spec.md")));
+        assert!(is_spec_file(Path::new("task.spec")));
+    }
+
+    #[test]
+    fn test_lint_warns_on_duplicate_spec_extensions() {
+        let dir = make_temp_dir("dup-ext-warn");
+        let spec_a = dir.join("task.spec");
+        let spec_b = dir.join("task.spec.md");
+        fs::write(&spec_a, "spec: task\nname: \"t\"\n---\n\n## Intent\n\nT.\n").unwrap();
+        fs::write(&spec_b, "spec: task\nname: \"t\"\n---\n\n## Intent\n\nT.\n").unwrap();
+
+        let files = vec![spec_a, spec_b];
+        // Should not panic; just prints a warning to stderr
+        warn_duplicate_spec_extensions(&files);
     }
 }

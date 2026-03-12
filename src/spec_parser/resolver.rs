@@ -9,7 +9,7 @@ use super::parser::parse_spec;
 /// Resolve a spec document by loading and merging its inheritance chain.
 ///
 /// `search_dirs` is a list of directories to search for parent spec files.
-/// Files are matched by name: `{inherits_value}.spec`
+/// Files are matched by name: `{inherits_value}.spec.md` (preferred) or `{inherits_value}.spec`
 pub fn resolve_spec(doc: SpecDocument, search_dirs: &[&Path]) -> SpecResult<ResolvedSpec> {
     let owned_search_dirs;
     let search_dirs: Vec<&Path> = if search_dirs.is_empty() {
@@ -82,10 +82,15 @@ fn default_search_dirs(source_path: &Path) -> Vec<PathBuf> {
 }
 
 fn find_and_parse_spec(name: &str, search_dirs: &[&Path]) -> SpecResult<SpecDocument> {
+    // .spec.md preferred over .spec for each candidate pattern
     let candidates = [
+        format!("{name}.spec.md"),
         format!("{name}.spec"),
+        format!("{name}-spec.spec.md"),
         format!("{name}-spec.spec"),
+        "org.spec.md".to_string(),
         "org.spec".to_string(),
+        "project.spec.md".to_string(),
         "project.spec".to_string(),
     ];
 
@@ -259,6 +264,105 @@ inherits: project
             "必须保留顶层项目规则"
         );
         assert!(resolved.inherited_decisions.is_empty());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn test_resolver_prefers_spec_md_over_spec() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("agent-spec-resolver-prefer-md-{stamp}"));
+        fs::create_dir_all(&root).unwrap();
+
+        // Create both project.spec and project.spec.md with different constraints
+        fs::write(
+            root.join("project.spec"),
+            "spec: project\nname: \"old\"\n---\n\n## Constraints\n\n### Must\n- old rule\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("project.spec.md"),
+            "spec: project\nname: \"new\"\n---\n\n## Constraints\n\n### Must\n- new rule from spec.md\n",
+        )
+        .unwrap();
+
+        let task_path = root.join("task.spec");
+        fs::write(
+            &task_path,
+            "spec: task\nname: \"t\"\ninherits: project\n---\n\n## Intent\n\nTest.\n\n## Acceptance Criteria\n\nScenario: ok\n  Given x\n  When y\n  Then z\n",
+        )
+        .unwrap();
+
+        let doc = parse_spec(&task_path).unwrap();
+        let resolved = resolve_spec(doc, &[]).unwrap();
+
+        assert_eq!(resolved.inherited_constraints.len(), 1);
+        assert_eq!(
+            resolved.inherited_constraints[0].text,
+            "new rule from spec.md"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn test_resolver_falls_back_to_spec_when_no_spec_md() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("agent-spec-resolver-fallback-{stamp}"));
+        fs::create_dir_all(&root).unwrap();
+
+        // Only project.spec, no .spec.md
+        fs::write(
+            root.join("project.spec"),
+            "spec: project\nname: \"p\"\n---\n\n## Constraints\n\n### Must\n- legacy rule\n",
+        )
+        .unwrap();
+
+        let task_path = root.join("task.spec");
+        fs::write(
+            &task_path,
+            "spec: task\nname: \"t\"\ninherits: project\n---\n\n## Intent\n\nTest.\n\n## Acceptance Criteria\n\nScenario: ok\n  Given x\n  When y\n  Then z\n",
+        )
+        .unwrap();
+
+        let doc = parse_spec(&task_path).unwrap();
+        let resolved = resolve_spec(doc, &[]).unwrap();
+
+        assert_eq!(resolved.inherited_constraints.len(), 1);
+        assert_eq!(resolved.inherited_constraints[0].text, "legacy rule");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn test_resolver_errors_when_no_spec_or_spec_md_found() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("agent-spec-resolver-missing-{stamp}"));
+        fs::create_dir_all(&root).unwrap();
+
+        // No project.spec or project.spec.md
+        let task_path = root.join("task.spec");
+        fs::write(
+            &task_path,
+            "spec: task\nname: \"t\"\ninherits: project\n---\n\n## Intent\n\nTest.\n\n## Acceptance Criteria\n\nScenario: ok\n  Given x\n  When y\n  Then z\n",
+        )
+        .unwrap();
+
+        let doc = parse_spec(&task_path).unwrap();
+        let result = resolve_spec(doc, &[]);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("project"), "error should mention 'project': {err}");
 
         let _ = fs::remove_dir_all(root);
     }

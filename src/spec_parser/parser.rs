@@ -10,7 +10,7 @@ use super::keywords::{
 };
 use super::meta::parse_meta;
 
-/// Parse a .spec file from disk.
+/// Parse a .spec/.spec.md file from disk.
 pub fn parse_spec(path: &Path) -> SpecResult<SpecDocument> {
     let content = std::fs::read_to_string(path)?;
     let mut doc = parse_spec_from_str(&content)?;
@@ -18,7 +18,7 @@ pub fn parse_spec(path: &Path) -> SpecResult<SpecDocument> {
     Ok(doc)
 }
 
-/// Parse a .spec string into a SpecDocument.
+/// Parse a .spec/.spec.md string into a SpecDocument.
 pub fn parse_spec_from_str(input: &str) -> SpecResult<SpecDocument> {
     let lines: Vec<&str> = input.lines().collect();
 

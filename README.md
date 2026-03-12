@@ -352,7 +352,7 @@ For consistency, `verify` and `lifecycle` use the same precedence when `--change
 
 ## Commands
 
-- `parse`: parse `.spec` files and show the AST
+- `parse`: parse `.spec`/`.spec.md` files and show the AST
 - `lint`: analyze spec quality
 - `verify`: verify code against a single spec
 - `contract`: render the Task Contract view
@@ -391,7 +391,7 @@ agent-spec is self-bootstrapping: the project uses itself to govern its own deve
 
 ### The contribution flow
 
-Every change starts with a Task Contract. Before writing code, create a `.spec` file in `specs/` that defines what you're building — the intent, the technical decisions that are already fixed, the files you'll touch, and the BDD scenarios that define "done." Then implement against the Contract and verify with `lifecycle`.
+Every change starts with a Task Contract. Before writing code, create a `.spec.md` file in `specs/` that defines what you're building — the intent, the technical decisions that are already fixed, the files you'll touch, and the BDD scenarios that define "done." Then implement against the Contract and verify with `lifecycle`. (Legacy `.spec` files are also supported.)
 
 ```bash
 # 1. Create a task contract for your change
@@ -399,18 +399,18 @@ agent-spec init --level task --lang en --name "my-feature"
 # Edit the generated spec: fill in Intent, Decisions, Boundaries, Completion Criteria
 
 # 2. Check that the contract itself is well-written
-agent-spec lint specs/my-feature.spec --min-score 0.7
+agent-spec lint specs/my-feature.spec.md --min-score 0.7
 
 # 3. Implement your change
 
 # 4. Verify against the contract
-agent-spec lifecycle specs/my-feature.spec --code . --change-scope worktree --format json
+agent-spec lifecycle specs/my-feature.spec.md --code . --change-scope worktree --format json
 
 # 5. Run the repo-wide guard before committing
 agent-spec guard --spec-dir specs --code .
 
 # 6. Generate the PR description
-agent-spec explain specs/my-feature.spec --code . --format markdown
+agent-spec explain specs/my-feature.spec.md --code . --format markdown
 ```
 
 The `guard` pre-commit hook is installed via `agent-spec install-hooks`. It checks all specs in `specs/` against your staged changes — your commit will be blocked if any contract fails.

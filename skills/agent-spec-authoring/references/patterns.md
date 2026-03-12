@@ -147,8 +147,8 @@ See [`examples/rewrite-parity-contract.spec`](../../../examples/rewrite-parity-c
 After drafting a spec, run:
 
 ```bash
-agent-spec parse specs/task.spec
-agent-spec lint specs/task.spec --min-score 0.7
+agent-spec parse specs/task.spec.md
+agent-spec lint specs/task.spec.md --min-score 0.7
 ```
 
 If `parse` reports `0 scenarios`, the spec is not ready for `contract`, `lifecycle`, or `guard`.
@@ -254,7 +254,7 @@ Both ASCII quotes `"..."` and Chinese quotes `\u{201C}...\u{201D}` are supported
 
 ## Three-Layer Inheritance Example
 
-### org.spec
+### org.spec.md
 
 ```spec
 spec: org
@@ -267,7 +267,7 @@ name: "ACME Corp Standards"
 - No .unwrap() in production code
 ```
 
-### project.spec
+### project.spec.md
 
 ```spec
 spec: project
@@ -286,7 +286,7 @@ inherits: org
 - Use Redis for session caching
 ```
 
-### task.spec
+### task.spec.md
 
 ```spec
 spec: task

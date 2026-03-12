@@ -78,7 +78,7 @@ Not a vague Issue — a structured Contract with Intent, Decisions, Boundaries, 
 
 ```bash
 agent-spec init --level task --lang zh --name "用户注册API"
-# Then fill in the four elements in the generated .spec file
+# Then fill in the four elements in the generated .spec.md file
 ```
 
 For rewrite, migration, or parity tasks, prefer the parity-aware scaffold:

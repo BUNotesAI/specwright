@@ -6,10 +6,10 @@
 agent-spec <COMMAND>
 
 Commands:
-  parse               Parse .spec files and show AST
+  parse               Parse .spec/.spec.md files and show AST
   lint                Analyze spec quality (detect smells)
   verify              Verify code against specs
-  init                Create a starter .spec file
+  init                Create a starter .spec.md file
   lifecycle           Run full lifecycle: lint -> verify -> report
   brief               Compatibility alias for the contract view
   contract            Render an explicit Task Contract for agent execution
@@ -72,7 +72,7 @@ agent-spec guard \
   [--min-score 0.6]
 ```
 
-Scans all `*.spec` files in `--spec-dir`, runs lint + verify on each. Default change scope is `staged`.
+Scans all `*.spec` and `*.spec.md` files in `--spec-dir`, runs lint + verify on each. Default change scope is `staged`.
 
 ## verify
 

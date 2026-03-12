@@ -48,7 +48,7 @@ jobs:
       - name: Contract Summary
         if: always()
         run: |
-          for spec in specs/*.spec; do
+          for spec in specs/*.spec specs/*.spec.md; do
             [ -f "$spec" ] || continue
             echo "---"
             agent-spec explain "$spec" --code . --format markdown 2>/dev/null || true
