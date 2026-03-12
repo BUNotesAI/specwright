@@ -83,7 +83,7 @@ A Task Contract has structured elements that map directly to estimation inputs:
 ### Step 1: Read the Contract
 
 ```bash
-agent-spec contract specs/task.spec
+agent-spec contract specs/task.spec.md
 ```
 
 Extract: scenario count, decision count, boundary path count, constraint count.
@@ -172,7 +172,7 @@ Always produce this exact structure:
 After a task is complete, compare prediction to reality:
 
 ```bash
-agent-spec explain specs/task.spec --history
+agent-spec explain specs/task.spec.md --history
 ```
 
 The retry count from run logs tells you the actual verification rounds. Compare:
@@ -188,7 +188,7 @@ If actual > predicted × 1.5 → the spec had hidden complexity. Note this for f
 To estimate all active specs:
 
 ```bash
-for spec in specs/task-*.spec; do
+for spec in specs/task-*.spec.md; do
   echo "=== $(basename $spec) ==="
   agent-spec contract "$spec" 2>/dev/null | head -20
   echo
