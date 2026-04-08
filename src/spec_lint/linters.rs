@@ -2,7 +2,7 @@ use crate::spec_core::{
     LintDiagnostic, Scenario, Section, Severity, Span, SpecDocument, SpecLevel, StepKind,
     TestSelector,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::pipeline::SpecLinter;
 
@@ -1917,6 +1917,119 @@ impl SpecLinter for PlatformDecisionTagLinter {
     }
 }
 
+/// Collect all scenarios from a SpecDocument.
+fn collect_scenarios(doc: &SpecDocument) -> Vec<&crate::spec_core::Scenario> {
+    doc.sections
+        .iter()
+        .filter_map(|section| match section {
+            Section::AcceptanceCriteria { scenarios, .. } => {
+                Some(scenarios.iter().collect::<Vec<_>>())
+            }
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+// =============================================================================
+// CircularDependencyLinter - detects circular dependencies in scenario depends_on
+// =============================================================================
+
+pub struct CircularDependencyLinter;
+
+impl SpecLinter for CircularDependencyLinter {
+    fn name(&self) -> &str {
+        "circular-dependency"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        let mut diags = Vec::new();
+        let scenarios: Vec<&Scenario> = doc
+            .sections
+            .iter()
+            .filter_map(|s| match s {
+                Section::AcceptanceCriteria { scenarios, .. } => Some(scenarios.iter()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+
+        // Build adjacency map: name -> depends_on names
+        let mut adj: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut span_map: HashMap<&str, Span> = HashMap::new();
+        for s in &scenarios {
+            adj.insert(
+                s.name.as_str(),
+                s.depends_on.iter().map(|d| d.as_str()).collect(),
+            );
+            span_map.insert(s.name.as_str(), s.span);
+        }
+
+        // DFS cycle detection
+        let mut visited: HashSet<&str> = HashSet::new();
+        let mut on_stack: HashSet<&str> = HashSet::new();
+
+        for s in &scenarios {
+            if !visited.contains(s.name.as_str()) {
+                let mut path = Vec::new();
+                if let Some(cycle) =
+                    dfs_find_cycle(s.name.as_str(), &adj, &mut visited, &mut on_stack, &mut path)
+                {
+                    let cycle_display = cycle.join(" -> ");
+                    let span = span_map
+                        .get(s.name.as_str())
+                        .copied()
+                        .unwrap_or_default();
+                    diags.push(LintDiagnostic {
+                        rule: "circular-dependency".into(),
+                        severity: Severity::Error,
+                        message: format!("circular dependency detected: {cycle_display}"),
+                        span,
+                        suggestion: Some(
+                            "remove or restructure dependencies to break the cycle".into(),
+                        ),
+                    });
+                }
+            }
+        }
+
+        diags
+    }
+}
+
+fn dfs_find_cycle<'a>(
+    node: &'a str,
+    adj: &HashMap<&'a str, Vec<&'a str>>,
+    visited: &mut HashSet<&'a str>,
+    on_stack: &mut HashSet<&'a str>,
+    path: &mut Vec<&'a str>,
+) -> Option<Vec<String>> {
+    visited.insert(node);
+    on_stack.insert(node);
+    path.push(node);
+
+    if let Some(deps) = adj.get(node) {
+        for &dep in deps {
+            if !visited.contains(dep) {
+                if let Some(cycle) = dfs_find_cycle(dep, adj, visited, on_stack, path) {
+                    return Some(cycle);
+                }
+            } else if on_stack.contains(dep) {
+                // Found a cycle: extract the cycle portion
+                let cycle_start = path.iter().position(|&n| n == dep).unwrap_or(0);
+                let mut cycle: Vec<String> =
+                    path[cycle_start..].iter().map(|s| s.to_string()).collect();
+                cycle.push(dep.to_string());
+                return Some(cycle);
+            }
+        }
+    }
+
+    on_stack.remove(node);
+    path.pop();
+    None
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::len_zero, clippy::unwrap_used)]
 mod tests {
@@ -2829,5 +2942,69 @@ name: "empty scenarios"
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].severity, Severity::Error);
         assert!(diags[0].message.contains("no parseable scenarios"));
+    }
+
+    #[test]
+    fn test_lint_detects_circular_dependency() {
+        let input = r#"spec: task
+name: "circular deps"
+---
+
+## Completion Criteria
+
+Scenario: A
+  Depends: B
+  Given A
+  When A
+  Then A
+
+Scenario: B
+  Depends: A
+  Given B
+  When B
+  Then B
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = CircularDependencyLinter.lint(&doc);
+        assert!(
+            !diags.is_empty(),
+            "should detect circular dependency, got no diagnostics"
+        );
+        assert_eq!(diags[0].severity, Severity::Error);
+        assert!(diags[0].message.contains("circular dependency"));
+    }
+
+    #[test]
+    fn test_lint_no_circular_dependency_for_linear_chain() {
+        let input = r#"spec: task
+name: "linear deps"
+---
+
+## Completion Criteria
+
+Scenario: A
+  Given A
+  When A
+  Then A
+
+Scenario: B
+  Depends: A
+  Given B
+  When B
+  Then B
+
+Scenario: C
+  Depends: B
+  Given C
+  When C
+  Then C
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = CircularDependencyLinter.lint(&doc);
+        assert!(
+            diags.is_empty(),
+            "should not detect cycle in linear chain, got: {:?}",
+            diags
+        );
     }
 }

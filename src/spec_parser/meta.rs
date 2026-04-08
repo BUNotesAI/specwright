@@ -7,6 +7,8 @@ pub fn parse_meta(lines: &[&str]) -> Result<SpecMeta, String> {
     let mut inherits = None;
     let mut lang = Vec::new();
     let mut tags = Vec::new();
+    let mut depends = Vec::new();
+    let mut estimate = None;
 
     for line in lines {
         let trimmed = line.trim();
@@ -56,6 +58,21 @@ pub fn parse_meta(lines: &[&str]) -> Result<SpecMeta, String> {
                     }
                 }
             }
+            "depends" => {
+                let value = value.trim_start_matches('[').trim_end_matches(']');
+                for dep in value.split(',') {
+                    let d = dep.trim();
+                    if !d.is_empty() {
+                        depends.push(d.to_string());
+                    }
+                }
+            }
+            "estimate" => {
+                let v = value.trim();
+                if !v.is_empty() {
+                    estimate = Some(v.to_string());
+                }
+            }
             _ => {} // ignore unknown keys
         }
     }
@@ -70,6 +87,8 @@ pub fn parse_meta(lines: &[&str]) -> Result<SpecMeta, String> {
             lang
         },
         tags,
+        depends,
+        estimate,
     })
 }
 
@@ -103,5 +122,39 @@ mod tests {
         assert_eq!(meta.name, "unnamed");
         assert!(meta.inherits.is_none());
         assert_eq!(meta.lang, vec![Lang::Zh, Lang::En]);
+    }
+
+    #[test]
+    fn test_parse_spec_depends_and_estimate_fields() {
+        let lines = vec![
+            "spec: task",
+            r#"name: "依赖图测试""#,
+            "inherits: project",
+            "tags: [bootstrap]",
+            "depends: [task-goal-gate]",
+            "estimate: 3d",
+        ];
+        let meta = parse_meta(&lines).unwrap();
+        assert_eq!(meta.depends, vec!["task-goal-gate"]);
+        assert_eq!(meta.estimate, Some("3d".to_string()));
+    }
+
+    #[test]
+    fn test_parse_meta_multiple_depends() {
+        let lines = vec![
+            "spec: task",
+            r#"name: "多依赖""#,
+            "depends: [task-a, task-b, task-c]",
+        ];
+        let meta = parse_meta(&lines).unwrap();
+        assert_eq!(meta.depends, vec!["task-a", "task-b", "task-c"]);
+    }
+
+    #[test]
+    fn test_parse_meta_no_depends_no_estimate() {
+        let lines = vec!["spec: task", r#"name: "无依赖""#];
+        let meta = parse_meta(&lines).unwrap();
+        assert!(meta.depends.is_empty());
+        assert!(meta.estimate.is_none());
     }
 }

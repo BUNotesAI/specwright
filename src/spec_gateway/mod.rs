@@ -1,5 +1,6 @@
 mod brief;
 mod lifecycle;
+pub mod plan;
 
 #[allow(deprecated)]
 pub use brief::SpecBrief;

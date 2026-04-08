@@ -43,6 +43,7 @@ impl LintPipeline {
         p.add(Box::new(super::linters::BoundaryEntryPointLinter));
         p.add(Box::new(super::linters::FlagCombinationCoverageLinter));
         p.add(Box::new(super::linters::PlatformDecisionTagLinter));
+        p.add(Box::new(super::linters::CircularDependencyLinter));
         p
     }
 

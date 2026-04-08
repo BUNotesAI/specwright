@@ -116,6 +116,33 @@ pub fn match_test_selector(line: &str) -> Option<&str> {
     }
 }
 
+/// Scenario-level tags line recognition (e.g., `标签: [critical]` or `Tags: [critical]`).
+pub fn match_scenario_tags(line: &str) -> Option<Vec<String>> {
+    let trimmed = line.trim().trim_start_matches('#').trim();
+
+    let value = if let Some(rest) = trimmed
+        .strip_prefix("标签:")
+        .or_else(|| trimmed.strip_prefix("标签："))
+    {
+        Some(rest.trim())
+    } else {
+        let lower = trimmed.to_lowercase();
+        if lower.starts_with("tags:") {
+            Some(trimmed["tags:".len()..].trim())
+        } else {
+            None
+        }
+    };
+
+    value.map(|v| {
+        let v = v.trim_start_matches('[').trim_end_matches(']');
+        v.split(',')
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect()
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TestSelectorField {
     Package,
@@ -184,6 +211,66 @@ pub fn match_test_selector_field(line: &str) -> Option<(TestSelectorField, &str)
             TestSelectorField::Targets,
             trimmed["targets:".len()..].trim(),
         ));
+    }
+
+    None
+}
+
+/// Review field recognition: `审核: human` / `Review: human`.
+/// Returns Some("human") or Some("auto"), or None if not a review line.
+pub fn match_review_field(line: &str) -> Option<&str> {
+    let trimmed = line.trim().trim_start_matches('#').trim();
+
+    if let Some(rest) = trimmed
+        .strip_prefix("审核:")
+        .or_else(|| trimmed.strip_prefix("审核："))
+    {
+        return Some(rest.trim());
+    }
+
+    let lower = trimmed.to_lowercase();
+    if lower.starts_with("review:") {
+        return Some(trimmed["review:".len()..].trim());
+    }
+
+    None
+}
+
+/// Mode field recognition: `模式: optimize` / `Mode: optimize`.
+/// Returns Some("optimize") or Some("standard"), or None if not a mode line.
+pub fn match_mode_field(line: &str) -> Option<&str> {
+    let trimmed = line.trim().trim_start_matches('#').trim();
+
+    if let Some(rest) = trimmed
+        .strip_prefix("模式:")
+        .or_else(|| trimmed.strip_prefix("模式："))
+    {
+        return Some(rest.trim());
+    }
+
+    let lower = trimmed.to_lowercase();
+    if lower.starts_with("mode:") {
+        return Some(trimmed["mode:".len()..].trim());
+    }
+
+    None
+}
+
+/// Depends field recognition: `前置: A, B` / `Depends: A, B`.
+/// Returns Some("A, B") or None if not a depends line.
+pub fn match_depends_field(line: &str) -> Option<&str> {
+    let trimmed = line.trim().trim_start_matches('#').trim();
+
+    if let Some(rest) = trimmed
+        .strip_prefix("前置:")
+        .or_else(|| trimmed.strip_prefix("前置："))
+    {
+        return Some(rest.trim());
+    }
+
+    let lower = trimmed.to_lowercase();
+    if lower.starts_with("depends:") {
+        return Some(trimmed["depends:".len()..].trim());
     }
 
     None

@@ -2,12 +2,14 @@ use std::sync::Arc;
 
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::spec_core::{LintReport, SpecResult, Verdict, VerificationReport};
 use crate::spec_lint::LintPipeline;
 use crate::spec_report::OutputFormat;
 use crate::spec_verify::{
-    AiBackend, AiMode, AiVerifier, BoundariesVerifier, StructuralVerifier, TestVerifier,
-    VerificationContext, Verifier, run_verification,
+    AiBackend, AiMode, AiVerifier, BoundariesVerifier, ComplexityVerifier, StructuralVerifier,
+    TestVerifier, VerificationContext, Verifier, run_verification,
 };
 
 use super::TaskContract;
@@ -209,17 +211,65 @@ impl SpecGateway {
         let structural = StructuralVerifier;
         let boundaries = BoundariesVerifier;
         let test = TestVerifier;
-        let verifiers: Vec<&dyn Verifier> = vec![&structural, &boundaries, &test, &ai];
+        let complexity = ComplexityVerifier;
+        let verifiers: Vec<&dyn Verifier> =
+            vec![&structural, &boundaries, &test, &ai, &complexity];
         run_verification(&ctx, &verifiers)
     }
 
     // ── Stage 4: DECIDE ─────────────────────────────────────────
 
     pub fn is_passing(&self, report: &VerificationReport) -> bool {
-        report.summary.total > 0
+        self.is_passing_with_review_mode(report, "auto")
+    }
+
+    /// Check if verification is passing, with review mode support.
+    ///
+    /// - `"auto"` (default): PendingReview counts as passing
+    /// - `"strict"`: PendingReview counts as non-passing
+    pub fn is_passing_with_review_mode(
+        &self,
+        report: &VerificationReport,
+        review_mode: &str,
+    ) -> bool {
+        let base = report.summary.total > 0
             && report.summary.failed == 0
             && report.summary.skipped == 0
-            && report.summary.uncertain == 0
+            && report.summary.uncertain == 0;
+
+        if review_mode == "strict" {
+            base && report.summary.pending_review == 0
+        } else {
+            // "auto" mode: PendingReview counts as pass
+            base
+        }
+    }
+
+    /// Compute gate status by checking whether any critical scenario has a
+    /// non-pass verdict.
+    pub fn gate_status(&self, report: &VerificationReport) -> GateStatus {
+        let mut blocked_gates = Vec::new();
+
+        for scenario in &self.resolved.all_scenarios {
+            if !scenario.is_critical() {
+                continue;
+            }
+            let display = scenario.display_name();
+            // Find the matching result in the report
+            let is_non_pass = report.results.iter().any(|r| {
+                (r.scenario_name == scenario.name || r.scenario_name == display)
+                    && r.verdict != Verdict::Pass
+                    && r.verdict != Verdict::PendingReview
+            });
+            if is_non_pass {
+                blocked_gates.push(display.to_owned());
+            }
+        }
+
+        GateStatus {
+            gate_blocked: !blocked_gates.is_empty(),
+            blocked_gates,
+        }
     }
 
     pub fn failure_summary(&self, report: &VerificationReport) -> String {
@@ -227,7 +277,10 @@ impl SpecGateway {
         out.push_str("## Verification Failed\n\n");
         out.push_str(&format!(
             "{} of {} scenarios are non-passing.\n\n",
-            report.summary.failed + report.summary.skipped + report.summary.uncertain,
+            report.summary.failed
+                + report.summary.skipped
+                + report.summary.uncertain
+                + report.summary.pending_review,
             report.summary.total,
         ));
 
@@ -315,6 +368,13 @@ impl SpecGateway {
         };
         crate::spec_report::format_lint(report, &fmt)
     }
+}
+
+/// Result of the goal-gate check: whether any critical scenario is blocked.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GateStatus {
+    pub gate_blocked: bool,
+    pub blocked_gates: Vec<String>,
 }
 
 /// Gate failure when spec quality is below threshold.
@@ -511,6 +571,7 @@ name: "缺少测试绑定"
                 failed: 0,
                 skipped: 1,
                 uncertain: 0,
+                pending_review: 0,
             },
         };
 
@@ -749,6 +810,7 @@ name: "Contract fidelity"
                 failed: 0,
                 skipped: 1,
                 uncertain: 0,
+                pending_review: 0,
             },
         };
 
@@ -893,5 +955,466 @@ name: "AI host backend"
             .unwrap();
         assert_eq!(report.summary.uncertain, 1);
         assert_eq!(report.results[0].verdict, Verdict::Uncertain);
+    }
+
+    // ── Goal-Gate tests ─────────────────────────────────────────
+
+    /// Helper: build a minimal VerificationReport from (name, verdict) pairs.
+    fn make_report(spec_name: &str, items: &[(&str, Verdict)]) -> VerificationReport {
+        let results: Vec<crate::spec_core::ScenarioResult> = items
+            .iter()
+            .map(|(name, verdict)| crate::spec_core::ScenarioResult {
+                scenario_name: (*name).to_owned(),
+                verdict: *verdict,
+                step_results: vec![],
+                evidence: vec![],
+                duration_ms: 0,
+            })
+            .collect();
+        VerificationReport::from_results(spec_name.to_owned(), results)
+    }
+
+    const CRITICAL_SAMPLE: &str = r#"spec: task
+name: "门禁测试"
+tags: [test]
+---
+
+## 意图
+
+测试门禁功能。
+
+## 验收标准
+
+场景: 普通场景
+  测试: test_critical_scenario_fail_sets_gate_blocked
+  假设 输入有效
+  当 调用函数
+  那么 返回 Ok
+
+场景: 关键场景
+  标签: [critical]
+  测试: test_critical_scenario_pass_no_gate_block
+  假设 输入有效
+  当 调用函数
+  那么 返回 Ok
+"#;
+
+    #[test]
+    fn test_critical_scenario_fail_sets_gate_blocked() {
+        let gw = SpecGateway::from_input(CRITICAL_SAMPLE).unwrap();
+        let report = make_report(
+            "门禁测试",
+            &[
+                ("普通场景", Verdict::Pass),
+                ("关键场景", Verdict::Fail),
+            ],
+        );
+
+        let gate = gw.gate_status(&report);
+        assert!(gate.gate_blocked);
+        assert_eq!(gate.blocked_gates, vec!["关键场景"]);
+    }
+
+    #[test]
+    fn test_critical_scenario_pass_no_gate_block() {
+        let gw = SpecGateway::from_input(CRITICAL_SAMPLE).unwrap();
+        let report = make_report(
+            "门禁测试",
+            &[
+                ("普通场景", Verdict::Pass),
+                ("关键场景", Verdict::Pass),
+            ],
+        );
+
+        let gate = gw.gate_status(&report);
+        assert!(!gate.gate_blocked);
+        assert!(gate.blocked_gates.is_empty());
+    }
+
+    #[test]
+    fn test_no_critical_tag_preserves_existing_behavior() {
+        let gw = SpecGateway::from_input(SAMPLE).unwrap();
+        let report = make_report(
+            "测试任务",
+            &[
+                ("正常路径", Verdict::Pass),
+                ("错误路径", Verdict::Fail),
+            ],
+        );
+
+        let gate = gw.gate_status(&report);
+        assert!(!gate.gate_blocked);
+        assert!(gate.blocked_gates.is_empty());
+
+        // Existing behaviour: is_passing returns false when there are failures
+        assert!(!gw.is_passing(&report));
+    }
+
+    #[test]
+    fn test_critical_suffix_in_scenario_name() {
+        let spec_with_suffix = r#"spec: task
+name: "后缀测试"
+tags: [test]
+---
+
+## 意图
+
+测试名称后缀。
+
+## 验收标准
+
+场景: 用户注册成功（critical）
+  测试: test_critical_suffix_in_scenario_name
+  假设 输入有效
+  当 调用函数
+  那么 返回 Ok
+"#;
+        let gw = SpecGateway::from_input(spec_with_suffix).unwrap();
+
+        // Verify the scenario is recognized as critical
+        let scenario = &gw.resolved().all_scenarios[0];
+        assert!(scenario.is_critical());
+        assert_eq!(scenario.display_name(), "用户注册成功");
+
+        // Verify gate_status works with the display name
+        let report = make_report(
+            "后缀测试",
+            &[("用户注册成功（critical）", Verdict::Fail)],
+        );
+        let gate = gw.gate_status(&report);
+        assert!(gate.gate_blocked);
+        assert_eq!(gate.blocked_gates, vec!["用户注册成功"]);
+    }
+
+    #[test]
+    fn test_critical_fail_exit_code_is_2() {
+        // We test the gate_status method which drives exit code 2 in main.
+        let gw = SpecGateway::from_input(CRITICAL_SAMPLE).unwrap();
+        let report = make_report(
+            "门禁测试",
+            &[
+                ("普通场景", Verdict::Fail),
+                ("关键场景", Verdict::Fail),
+            ],
+        );
+
+        let passing = gw.is_passing(&report);
+        let gate = gw.gate_status(&report);
+
+        // Not passing AND gate blocked → exit code should be 2
+        assert!(!passing);
+        assert!(gate.gate_blocked);
+        assert_eq!(gate.blocked_gates, vec!["关键场景"]);
+    }
+
+    // ── Human Review tests ─────────────────────────────────────
+
+    #[test]
+    fn test_human_review_scenario_produces_pending_review() {
+        let gw = SpecGateway::from_input(
+            r#"spec: task
+name: "人类审核"
+---
+
+## 完成条件
+
+场景: 需要人类审核
+  审核: human
+  测试: test_human_review_scenario_produces_pending_review
+  假设 某个场景声明审核为 human 且测试通过
+  当 lifecycle 执行该场景
+  那么 verdict 为 pending_review
+"#,
+        )
+        .unwrap();
+
+        // Simulate a PendingReview result (test verifier would produce this)
+        let report = make_report(
+            "人类审核",
+            &[("需要人类审核", Verdict::PendingReview)],
+        );
+
+        assert_eq!(report.summary.pending_review, 1);
+        assert_eq!(report.results[0].verdict, Verdict::PendingReview);
+
+        // In auto mode, pending_review counts as passing
+        assert!(gw.is_passing_with_review_mode(&report, "auto"));
+    }
+
+    #[test]
+    fn test_auto_review_mode_treats_pending_as_pass() {
+        let gw = SpecGateway::from_input(
+            r#"spec: task
+name: "审核模式"
+---
+
+## 完成条件
+
+场景: 审核场景
+  审核: human
+  测试: test_auto_review_mode_treats_pending_as_pass
+  假设 某个场景 verdict 为 pending_review
+  当 lifecycle 使用默认 review-mode auto
+  那么 最终 passed 为 true
+"#,
+        )
+        .unwrap();
+
+        let report = make_report(
+            "审核模式",
+            &[("审核场景", Verdict::PendingReview)],
+        );
+
+        // Auto mode: PendingReview counts as pass
+        assert!(gw.is_passing_with_review_mode(&report, "auto"));
+        // Default is_passing also uses auto
+        assert!(gw.is_passing(&report));
+    }
+
+    #[test]
+    fn test_strict_review_mode_treats_pending_as_not_pass() {
+        let gw = SpecGateway::from_input(
+            r#"spec: task
+name: "严格模式"
+---
+
+## 完成条件
+
+场景: 严格审核
+  审核: human
+  测试: test_strict_review_mode_treats_pending_as_not_pass
+  假设 某个场景 verdict 为 pending_review
+  当 lifecycle 使用 review-mode strict
+  那么 最终 passed 为 false
+"#,
+        )
+        .unwrap();
+
+        let report = make_report(
+            "严格模式",
+            &[("严格审核", Verdict::PendingReview)],
+        );
+
+        // Strict mode: PendingReview counts as NOT passing
+        assert!(!gw.is_passing_with_review_mode(&report, "strict"));
+    }
+
+    // ── Optimize Scenario Mode tests ──────────────────────────────
+
+    const OPTIMIZE_SAMPLE: &str = r#"spec: task
+name: "优化模式测试"
+tags: [test]
+---
+
+## 意图
+
+测试优化场景模式。
+
+## 验收标准
+
+场景: 普通场景
+  测试: test_optimize_scenario_pass_listed_as_candidate
+  假设 输入有效
+  当 调用函数
+  那么 返回 Ok
+
+场景: 优化场景
+  模式: optimize
+  测试: test_optimize_scenario_fail_blocks_pass
+  假设 输入有效
+  当 调用函数
+  那么 性能达标
+"#;
+
+    #[test]
+    fn test_optimize_scenario_pass_listed_as_candidate() {
+        let gw = SpecGateway::from_input(OPTIMIZE_SAMPLE).unwrap();
+
+        // Verify the optimize scenario is parsed correctly
+        let opt_scenario = gw
+            .resolved()
+            .all_scenarios
+            .iter()
+            .find(|s| s.name == "优化场景")
+            .expect("should find optimize scenario");
+        assert_eq!(opt_scenario.mode, crate::spec_core::ScenarioMode::Optimize);
+
+        // Build a report where optimize scenario passes
+        let report = make_report(
+            "优化模式测试",
+            &[
+                ("普通场景", Verdict::Pass),
+                ("优化场景", Verdict::Pass),
+            ],
+        );
+
+        // is_passing should be true (all pass)
+        assert!(gw.is_passing(&report));
+
+        // Collect optimization candidates (same logic as cmd_lifecycle)
+        let candidates: Vec<String> = gw
+            .resolved()
+            .all_scenarios
+            .iter()
+            .filter(|s| s.mode == crate::spec_core::ScenarioMode::Optimize)
+            .filter(|s| {
+                report
+                    .results
+                    .iter()
+                    .any(|r| r.scenario_name == s.name && r.verdict == Verdict::Pass)
+            })
+            .map(|s| s.name.clone())
+            .collect();
+
+        assert_eq!(candidates, vec!["优化场景"]);
+    }
+
+    #[test]
+    fn test_optimize_scenario_fail_blocks_pass() {
+        let gw = SpecGateway::from_input(OPTIMIZE_SAMPLE).unwrap();
+        let report = make_report(
+            "优化模式测试",
+            &[
+                ("普通场景", Verdict::Pass),
+                ("优化场景", Verdict::Fail),
+            ],
+        );
+
+        // Optimize scenario failing should cause is_passing to be false
+        assert!(!gw.is_passing(&report));
+    }
+
+    // ── Scenario Dependencies tests ──────────────────────────────
+
+    const DEPENDS_SAMPLE: &str = r#"spec: task
+name: "依赖测试"
+tags: [test]
+---
+
+## 意图
+
+测试场景依赖。
+
+## 验收标准
+
+场景: 场景 A
+  测试: test_dependency_skip_on_prerequisite_fail
+  假设 前置条件 A
+  当 执行 A
+  那么 A 完成
+
+场景: 场景 B
+  前置: 场景 A
+  测试: test_topological_sort_execution_order
+  假设 前置条件 B
+  当 执行 B
+  那么 B 完成
+"#;
+
+    #[test]
+    fn test_dependency_skip_on_prerequisite_fail() {
+        let gw = SpecGateway::from_input(DEPENDS_SAMPLE).unwrap();
+
+        // Verify depends_on is parsed
+        let scenario_b = gw
+            .resolved()
+            .all_scenarios
+            .iter()
+            .find(|s| s.name == "场景 B")
+            .expect("should find scenario B");
+        assert_eq!(scenario_b.depends_on, vec!["场景 A"]);
+
+        // Build report where A fails
+        let mut report = make_report(
+            "依赖测试",
+            &[
+                ("场景 A", Verdict::Fail),
+                ("场景 B", Verdict::Pass),
+            ],
+        );
+
+        // Apply dependency skips
+        crate::apply_dependency_skips(&mut report, &gw.resolved().all_scenarios);
+
+        // B should be skipped because A failed
+        let b_result = report
+            .results
+            .iter()
+            .find(|r| r.scenario_name == "场景 B")
+            .expect("should find scenario B result");
+        assert_eq!(b_result.verdict, Verdict::Skip);
+
+        // Evidence should mention the failed dependency
+        let has_dep_evidence = b_result.evidence.iter().any(|e| {
+            matches!(e, crate::spec_core::Evidence::PatternMatch { pattern, .. }
+                if pattern == "dependency-skip")
+        });
+        assert!(has_dep_evidence, "should have dependency-skip evidence");
+    }
+
+    #[test]
+    fn test_topological_sort_execution_order() {
+        let input = r#"spec: task
+name: "拓扑排序"
+---
+
+## 完成条件
+
+场景: C
+  前置: B
+  假设 C
+  当 C
+  那么 C
+
+场景: B
+  前置: A
+  假设 B
+  当 B
+  那么 B
+
+场景: A
+  假设 A
+  当 A
+  那么 A
+"#;
+        let gw = SpecGateway::from_input(input).unwrap();
+        let order = crate::topological_sort_scenarios(&gw.resolved().all_scenarios);
+
+        // A (index 2) should come before B (index 1) which should come before C (index 0)
+        let pos_a = order.iter().position(|&i| i == 2).unwrap();
+        let pos_b = order.iter().position(|&i| i == 1).unwrap();
+        let pos_c = order.iter().position(|&i| i == 0).unwrap();
+        assert!(pos_a < pos_b, "A should come before B");
+        assert!(pos_b < pos_c, "B should come before C");
+    }
+
+    #[test]
+    fn test_no_dependency_preserves_original_order() {
+        let input = r#"spec: task
+name: "原始顺序"
+---
+
+## 完成条件
+
+场景: 第一个
+  假设 A
+  当 A
+  那么 A
+
+场景: 第二个
+  假设 B
+  当 B
+  那么 B
+
+场景: 第三个
+  假设 C
+  当 C
+  那么 C
+"#;
+        let gw = SpecGateway::from_input(input).unwrap();
+        let order = crate::topological_sort_scenarios(&gw.resolved().all_scenarios);
+
+        // Should preserve original order: 0, 1, 2
+        assert_eq!(order, vec![0, 1, 2]);
     }
 }

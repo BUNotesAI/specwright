@@ -415,6 +415,8 @@ name: "边界"
                     inherits: None,
                     lang: vec![],
                     tags: vec![],
+                    depends: vec![],
+                    estimate: None,
                 },
                 sections: vec![],
                 source_path: PathBuf::new(),

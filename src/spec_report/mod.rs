@@ -1,10 +1,114 @@
 use crate::spec_core::{LintReport, Severity, Verdict, VerificationReport};
+use serde::Serialize;
 
 /// Output format.
 pub enum OutputFormat {
     Text,
     Json,
     Markdown,
+    Compact,
+    Diagnostic,
+}
+
+// === Status File Contract ===
+
+/// Machine-readable status report for CI/CD and external agent consumption.
+#[derive(Debug, Clone, Serialize)]
+pub struct StatusReport {
+    pub spec: String,
+    pub outcome: String,
+    pub gate_blocked: bool,
+    pub scenarios: serde_json::Map<String, serde_json::Value>,
+    pub context_updates: serde_json::Map<String, serde_json::Value>,
+    pub timestamp: u64,
+    pub notes: String,
+}
+
+/// Build a [`StatusReport`] from a verification report.
+///
+/// `gate_blocked` should be `true` when a critical (gate) scenario has failed;
+/// callers that have not yet implemented Goal Gate logic may pass `false`.
+pub fn build_status_report(
+    spec_name: &str,
+    report: &VerificationReport,
+    gate_blocked: bool,
+) -> StatusReport {
+    // Determine outcome
+    let all_pass = report.summary.failed == 0
+        && report.summary.skipped == 0
+        && report.summary.uncertain == 0
+        && report.summary.passed > 0;
+    let all_fail = report.summary.passed == 0 && report.summary.total > 0;
+
+    let outcome = if gate_blocked {
+        "gate_blocked".to_string()
+    } else if all_pass {
+        "success".to_string()
+    } else if all_fail {
+        "fail".to_string()
+    } else {
+        "partial_success".to_string()
+    };
+
+    // Populate scenarios map
+    let mut scenarios = serde_json::Map::new();
+    for r in &report.results {
+        let verdict_str = match r.verdict {
+            Verdict::Pass => "pass",
+            Verdict::Fail => "fail",
+            Verdict::Skip => "skip",
+            Verdict::Uncertain => "uncertain",
+            Verdict::PendingReview => "pending_review",
+        };
+        scenarios.insert(
+            r.scenario_name.clone(),
+            serde_json::json!({
+                "verdict": verdict_str,
+                "duration_ms": r.duration_ms,
+            }),
+        );
+    }
+
+    // Populate context_updates
+    let mut context_updates = serde_json::Map::new();
+    context_updates.insert(
+        "tests_passing".to_string(),
+        serde_json::Value::Number(report.summary.passed.into()),
+    );
+    context_updates.insert(
+        "tests_failing".to_string(),
+        serde_json::Value::Number(report.summary.failed.into()),
+    );
+    context_updates.insert(
+        "tests_skipped".to_string(),
+        serde_json::Value::Number(report.summary.skipped.into()),
+    );
+
+    // Human-readable notes
+    let notes = format!(
+        "{}/{} passed, {} failed, {} skipped, {} uncertain, {} pending_review",
+        report.summary.passed,
+        report.summary.total,
+        report.summary.failed,
+        report.summary.skipped,
+        report.summary.uncertain,
+        report.summary.pending_review,
+    );
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    StatusReport {
+        spec: spec_name.to_string(),
+        outcome,
+        gate_blocked,
+        scenarios,
+        context_updates,
+        timestamp,
+        notes,
+    }
 }
 
 /// Format a verification report.
@@ -13,6 +117,8 @@ pub fn format_verification(report: &VerificationReport, format: &OutputFormat) -
         OutputFormat::Text => format_verification_text(report),
         OutputFormat::Json => format_json(report),
         OutputFormat::Markdown => format_verification_md(report),
+        OutputFormat::Compact => format_verification_compact(report),
+        OutputFormat::Diagnostic => format_verification_diagnostic(report),
     }
 }
 
@@ -38,7 +144,9 @@ pub fn format_explain(
     format: &OutputFormat,
 ) -> String {
     match format {
-        OutputFormat::Text => format_explain_text(input, report),
+        OutputFormat::Text | OutputFormat::Compact | OutputFormat::Diagnostic => {
+            format_explain_text(input, report)
+        }
         OutputFormat::Json => format_json(report),
         OutputFormat::Markdown => format_explain_md(input, report),
     }
@@ -47,7 +155,9 @@ pub fn format_explain(
 /// Format a lint report.
 pub fn format_lint(report: &LintReport, format: &OutputFormat) -> String {
     match format {
-        OutputFormat::Text => format_lint_text(report),
+        OutputFormat::Text | OutputFormat::Compact | OutputFormat::Diagnostic => {
+            format_lint_text(report)
+        }
         OutputFormat::Json => format_lint_json(report),
         OutputFormat::Markdown => format_lint_md(report),
     }
@@ -59,12 +169,13 @@ fn format_verification_text(report: &VerificationReport) -> String {
     let mut out = String::new();
     out.push_str(&format!("Spec: {}\n", report.spec_name));
     out.push_str(&format!(
-        "Results: {} total, {} passed, {} failed, {} skipped, {} uncertain\n\n",
+        "Results: {} total, {} passed, {} failed, {} skipped, {} uncertain, {} pending_review\n\n",
         report.summary.total,
         report.summary.passed,
         report.summary.failed,
         report.summary.skipped,
         report.summary.uncertain,
+        report.summary.pending_review,
     ));
 
     for result in &report.results {
@@ -73,6 +184,7 @@ fn format_verification_text(report: &VerificationReport) -> String {
             Verdict::Fail => "[FAIL]",
             Verdict::Skip => "[SKIP]",
             Verdict::Uncertain => "[????]",
+            Verdict::PendingReview => "[REVIEW]",
         };
         out.push_str(&format!("  {icon} {}\n", result.scenario_name));
 
@@ -82,6 +194,7 @@ fn format_verification_text(report: &VerificationReport) -> String {
                 Verdict::Fail => "x",
                 Verdict::Skip => "-",
                 Verdict::Uncertain => "?",
+                Verdict::PendingReview => "R",
             };
             out.push_str(&format!("    {step_icon} {}\n", step.step_text));
             if step.verdict == Verdict::Fail {
@@ -238,6 +351,7 @@ fn format_explain_text(input: &ExplainInput, report: &VerificationReport) -> Str
             Verdict::Fail => "[FAIL]",
             Verdict::Skip => "[SKIP]",
             Verdict::Uncertain => "[????]",
+            Verdict::PendingReview => "[REVIEW]",
         };
         out.push_str(&format!("  {icon} {}\n", result.scenario_name));
         for ev in &result.evidence {
@@ -327,6 +441,7 @@ fn format_explain_md(input: &ExplainInput, report: &VerificationReport) -> Strin
             Verdict::Fail => "❌",
             Verdict::Skip => "⏭️",
             Verdict::Uncertain => "❓",
+            Verdict::PendingReview => "👁️",
         };
         out.push_str(&format!("- {icon} {}\n", result.scenario_name));
         for ev in &result.evidence {
@@ -457,6 +572,7 @@ pub fn format_cost_report(report: &CostReport, format: &OutputFormat) -> String 
             serde_json::to_string_pretty(&json).unwrap_or_default()
         }
         OutputFormat::Markdown => format_cost_md(report),
+        OutputFormat::Compact | OutputFormat::Diagnostic => format_cost_text(report),
     }
 }
 
@@ -498,6 +614,38 @@ fn format_cost_md(report: &CostReport) -> String {
     out
 }
 
+// === Compact / Diagnostic formatters ===
+
+/// Single-line compact summary: `✓ Scenario1  ✗ Scenario2  ⊘ Scenario3 | 2/3 pass`
+fn format_verification_compact(report: &VerificationReport) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for r in &report.results {
+        let icon = match r.verdict {
+            Verdict::Pass => "\u{2713}",  // ✓
+            Verdict::Fail => "\u{2717}",  // ✗
+            Verdict::Skip => "\u{2298}",  // ⊘
+            Verdict::Uncertain => "?",
+            Verdict::PendingReview => "\u{2299}",  // ⊙
+        };
+        parts.push(format!("{icon} {}", r.scenario_name));
+    }
+    let summary = format!(
+        "{}/{} pass",
+        report.summary.passed, report.summary.total,
+    );
+    format!("{}  | {}", parts.join("  "), summary)
+}
+
+/// Diagnostic format: JSON with full stdout in evidence (wrapper envelope).
+fn format_verification_diagnostic(report: &VerificationReport) -> String {
+    let json = serde_json::json!({
+        "format": "diagnostic",
+        "note": "Full evidence including raw test stdout is embedded in each scenario result.",
+        "report": serde_json::to_value(report).unwrap_or_default(),
+    });
+    serde_json::to_string_pretty(&json).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
+}
+
 // === JSON formatters ===
 
 fn format_json<T: serde::Serialize>(report: &T) -> String {
@@ -532,6 +680,7 @@ fn format_verification_md(report: &VerificationReport) -> String {
             Verdict::Fail => "❌",
             Verdict::Skip => "⏭️",
             Verdict::Uncertain => "❓",
+            Verdict::PendingReview => "👁️",
         };
         out.push_str(&format!("### {icon} {}\n\n", result.scenario_name));
 
@@ -541,6 +690,7 @@ fn format_verification_md(report: &VerificationReport) -> String {
                 Verdict::Fail => "❌",
                 Verdict::Skip => "⏭️",
                 Verdict::Uncertain => "❓",
+                Verdict::PendingReview => "👁️",
             };
             out.push_str(&format!("- {s} {}\n", step.step_text));
         }
@@ -611,6 +761,7 @@ mod tests {
                 failed: 0,
                 skipped: 0,
                 uncertain: 0,
+                pending_review: 0,
             },
         };
         let text = format_verification(&report, &OutputFormat::Text);
@@ -643,6 +794,7 @@ mod tests {
                 failed: 0,
                 skipped: 0,
                 uncertain: 1,
+                pending_review: 0,
             },
         };
 
@@ -677,6 +829,7 @@ mod tests {
                 failed: 0,
                 skipped: 0,
                 uncertain: 0,
+                pending_review: 0,
             },
         };
 
@@ -722,6 +875,7 @@ mod tests {
                 failed: 0,
                 skipped: 0,
                 uncertain: 0,
+                pending_review: 0,
             },
         };
 
@@ -783,5 +937,181 @@ mod tests {
         assert_eq!(parsed["layers"].as_array().unwrap().len(), 2);
         assert_eq!(parsed["total_duration_ms"], 650);
         assert_eq!(parsed["total_tokens"], 1200);
+    }
+
+    // === Status File Contract tests ===
+
+    fn make_all_pass_report() -> VerificationReport {
+        VerificationReport {
+            spec_name: "status-test".into(),
+            results: vec![
+                ScenarioResult {
+                    scenario_name: "scenario A".into(),
+                    verdict: Verdict::Pass,
+                    step_results: vec![],
+                    evidence: vec![],
+                    duration_ms: 10,
+                },
+                ScenarioResult {
+                    scenario_name: "scenario B".into(),
+                    verdict: Verdict::Pass,
+                    step_results: vec![],
+                    evidence: vec![],
+                    duration_ms: 20,
+                },
+            ],
+            summary: VerificationSummary {
+                total: 2,
+                passed: 2,
+                failed: 0,
+                skipped: 0,
+                uncertain: 0,
+                pending_review: 0,
+            },
+        }
+    }
+
+    fn make_mixed_report() -> VerificationReport {
+        VerificationReport {
+            spec_name: "mixed-test".into(),
+            results: vec![
+                ScenarioResult {
+                    scenario_name: "pass scenario".into(),
+                    verdict: Verdict::Pass,
+                    step_results: vec![],
+                    evidence: vec![],
+                    duration_ms: 10,
+                },
+                ScenarioResult {
+                    scenario_name: "fail scenario".into(),
+                    verdict: Verdict::Fail,
+                    step_results: vec![],
+                    evidence: vec![],
+                    duration_ms: 20,
+                },
+                ScenarioResult {
+                    scenario_name: "skip scenario".into(),
+                    verdict: Verdict::Skip,
+                    step_results: vec![],
+                    evidence: vec![],
+                    duration_ms: 0,
+                },
+            ],
+            summary: VerificationSummary {
+                total: 3,
+                passed: 1,
+                failed: 1,
+                skipped: 1,
+                uncertain: 0,
+                pending_review: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn test_status_file_writes_success_on_all_pass() {
+        let report = make_all_pass_report();
+        let status = build_status_report("status-test", &report, false);
+
+        assert_eq!(status.outcome, "success");
+        assert!(!status.gate_blocked);
+        assert_eq!(status.context_updates["tests_failing"], 0);
+        assert_eq!(status.context_updates["tests_passing"], 2);
+        assert_eq!(status.context_updates["tests_skipped"], 0);
+        assert!(status.scenarios.contains_key("scenario A"));
+        assert!(status.scenarios.contains_key("scenario B"));
+
+        // Ensure it serializes to JSON without error
+        let json = serde_json::to_string_pretty(&status).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["outcome"], "success");
+    }
+
+    #[test]
+    fn test_status_file_writes_partial_success_on_mixed() {
+        let report = make_mixed_report();
+        let status = build_status_report("mixed-test", &report, false);
+
+        assert_eq!(status.outcome, "partial_success");
+        assert!(!status.gate_blocked);
+        let passing = status.context_updates["tests_passing"].as_u64().unwrap();
+        let failing = status.context_updates["tests_failing"].as_u64().unwrap();
+        assert!(passing > 0, "tests_passing should be > 0");
+        assert!(failing > 0, "tests_failing should be > 0");
+    }
+
+    #[test]
+    fn test_status_file_outcome_reflects_gate_blocked() {
+        let report = make_mixed_report();
+        let status = build_status_report("gate-test", &report, true);
+
+        assert_eq!(status.outcome, "gate_blocked");
+        assert!(status.gate_blocked);
+    }
+
+    // === Context Fidelity tests ===
+
+    #[test]
+    fn test_compact_format_outputs_single_line_summary() {
+        let report = make_mixed_report();
+        let output = format_verification_compact(&report);
+
+        // Should contain the marker icons
+        assert!(output.contains('\u{2713}'), "should contain ✓ for pass");
+        assert!(output.contains('\u{2717}'), "should contain ✗ for fail");
+        assert!(output.contains('\u{2298}'), "should contain ⊘ for skip");
+        // Should contain pass count
+        assert!(output.contains("1/3 pass"), "should contain pass count summary");
+        // Should be a single line
+        let line_count = output.lines().count();
+        assert!(
+            line_count <= 3,
+            "compact output should be at most 3 lines, got {line_count}"
+        );
+    }
+
+    #[test]
+    fn test_diagnostic_format_includes_raw_test_output() {
+        let report = VerificationReport {
+            spec_name: "diag-test".into(),
+            results: vec![ScenarioResult {
+                scenario_name: "test with stdout".into(),
+                verdict: Verdict::Fail,
+                step_results: vec![],
+                evidence: vec![Evidence::TestOutput {
+                    test_name: "test_something".into(),
+                    stdout: "thread 'test_something' panicked at 'assertion failed'".into(),
+                    passed: false,
+                    package: Some("my-crate".into()),
+                    level: None,
+                    test_double: None,
+                    targets: None,
+                }],
+                duration_ms: 42,
+            }],
+            summary: VerificationSummary {
+                total: 1,
+                passed: 0,
+                failed: 1,
+                skipped: 0,
+                uncertain: 0,
+                pending_review: 0,
+            },
+        };
+
+        let output = format_verification_diagnostic(&report);
+        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        assert_eq!(parsed["format"], "diagnostic");
+        // Ensure raw stdout is present in evidence
+        let results = &parsed["report"]["results"];
+        assert!(results.is_array());
+        let evidence = &results[0]["evidence"][0];
+        assert_eq!(evidence["type"], "test_output");
+        let stdout = evidence["stdout"].as_str().unwrap();
+        assert!(
+            stdout.contains("assertion failed"),
+            "diagnostic output should include raw test stdout"
+        );
     }
 }

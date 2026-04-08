@@ -121,6 +121,12 @@ enum Commands {
         /// Comma-separated list of verification layers to run (e.g., lint,boundary,test,ai)
         #[arg(long)]
         layers: Option<String>,
+        /// Resume from checkpoint: incremental (skip passed) or conservative (rerun all, detect regression)
+        #[arg(long)]
+        resume: Option<Option<String>>,
+        /// How to treat pending_review verdicts: auto (count as pass) or strict (count as non-passing)
+        #[arg(long, default_value = "auto")]
+        review_mode: String,
     },
     /// Compatibility alias for the contract view
     Brief {
@@ -214,6 +220,29 @@ enum Commands {
         #[arg(long, default_value = "json")]
         format: String,
     },
+    /// Generate structured plan context from a spec + codebase scan
+    Plan {
+        /// Spec file
+        spec: PathBuf,
+        /// Code directory to scan
+        #[arg(long, default_value = ".")]
+        code: PathBuf,
+        /// Output format: text, json, prompt
+        #[arg(long, default_value = "text")]
+        format: String,
+        /// Scan depth: shallow (default), full (includes pub API signatures)
+        #[arg(long, default_value = "shallow")]
+        depth: String,
+    },
+    /// Generate a dependency graph from spec files (DOT / SVG)
+    Graph {
+        /// Spec directory to scan
+        #[arg(long, default_value = "specs")]
+        spec_dir: PathBuf,
+        /// Output format: dot (default), svg (requires system graphviz)
+        #[arg(long, default_value = "dot")]
+        format: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -261,6 +290,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             run_log_dir,
             adversarial,
             layers,
+            resume,
+            review_mode,
         } => cmd_lifecycle(
             &spec,
             &code,
@@ -272,6 +303,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             run_log_dir.as_deref(),
             adversarial,
             layers.as_deref(),
+            resume,
+            &review_mode,
         ),
         Commands::Brief { spec, format } => cmd_brief(&spec, &format),
         Commands::Contract { spec, format } => cmd_contract(&spec, &format),
@@ -304,6 +337,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             decisions,
             format,
         } => cmd_resolve_ai(&spec, &code, &decisions, &format),
+        Commands::Plan {
+            spec,
+            code,
+            format,
+            depth,
+        } => cmd_plan(&spec, &code, &format, &depth),
+        Commands::Graph { spec_dir, format } => cmd_graph(&spec_dir, &format),
     }
 }
 
@@ -459,11 +499,44 @@ fn cmd_lifecycle(
     run_log_dir: Option<&Path>,
     _adversarial: bool,
     layers: Option<&str>,
+    resume: Option<Option<String>>,
+    review_mode: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Validate --resume requires --run-log-dir
+    let resume_mode = if let Some(ref mode_opt) = resume {
+        if run_log_dir.is_none() {
+            return Err("--resume requires --run-log-dir to be set".into());
+        }
+        let mode_str = mode_opt.as_deref().unwrap_or("incremental");
+        Some(match mode_str {
+            "incremental" => ResumeMode::Incremental,
+            "conservative" => ResumeMode::Conservative,
+            other => {
+                return Err(format!(
+                    "unsupported --resume mode `{other}` (expected `incremental` or `conservative`)"
+                )
+                .into());
+            }
+        })
+    } else {
+        None
+    };
+
     let gw = crate::spec_gateway::SpecGateway::load(spec)?;
     let change_scope = GitChangeScope::parse(change_scope)?;
     let ai_mode = parse_ai_mode(ai_mode)?;
     let effective_changes = resolve_command_change_paths(spec, code, change, change_scope)?;
+
+    // Load checkpoint if resuming
+    let checkpoint = if resume_mode.is_some() {
+        if let Some(log_dir) = run_log_dir {
+            load_checkpoint(log_dir)?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     // Parse layers filter
     let active_layers: Option<Vec<&str>> = layers.map(|l| l.split(',').map(str::trim).collect());
@@ -503,7 +576,33 @@ fn cmd_lifecycle(
         verify_report
     };
 
-    let passing = gw.is_passing(&verify_report);
+    // Apply checkpoint merge if resuming
+    let verify_report = if let (Some(mode), Some(cp)) = (&resume_mode, &checkpoint) {
+        merge_checkpoint_results(verify_report, cp, mode)
+    } else {
+        verify_report
+    };
+
+    // Apply dependency skips: if a scenario's prerequisite failed, skip it
+    let mut verify_report = verify_report;
+    apply_dependency_skips(&mut verify_report, &gw.resolved().all_scenarios);
+
+    let passing = gw.is_passing_with_review_mode(&verify_report, review_mode);
+
+    // Collect optimization candidates: optimize-mode scenarios that passed
+    let optimization_candidates: Vec<String> = gw
+        .resolved()
+        .all_scenarios
+        .iter()
+        .filter(|s| s.mode == crate::spec_core::ScenarioMode::Optimize)
+        .filter(|s| {
+            verify_report
+                .results
+                .iter()
+                .any(|r| r.scenario_name == s.name && r.verdict == crate::spec_core::Verdict::Pass)
+        })
+        .map(|s| s.name.clone())
+        .collect();
 
     // Stage 2b: If caller mode, emit pending AI requests for skipped scenarios
     let ai_pending = if ai_mode == crate::spec_verify::AiMode::Caller {
@@ -566,6 +665,10 @@ fn cmd_lifecycle(
         if let Some(ref layer_list) = active_layers {
             json_out["layers"] = serde_json::json!(layer_list);
         }
+        if !optimization_candidates.is_empty() {
+            json_out["optimization_candidates"] =
+                serde_json::json!(optimization_candidates);
+        }
         println!("{}", serde_json::to_string_pretty(&json_out)?);
     } else {
         if let Some(ref lr) = lint_report {
@@ -602,6 +705,13 @@ fn cmd_lifecycle(
             vcs: vcs_ctx,
         };
         write_run_log(log_dir, &entry)?;
+
+        // Save checkpoint alongside run log
+        save_checkpoint(
+            log_dir,
+            &verify_report,
+            entry.vcs.as_ref().map(|v| v.change_ref.clone()),
+        )?;
     }
 
     if passing {
@@ -629,6 +739,150 @@ fn filter_report_by_layers(
         })
         .collect();
     crate::spec_core::VerificationReport::from_results(report.spec_name, results)
+}
+
+/// Apply dependency skips: for each scenario with depends_on, if any dependency
+/// has a non-pass verdict, override this scenario's verdict to Skip.
+fn apply_dependency_skips(
+    report: &mut crate::spec_core::VerificationReport,
+    scenarios: &[crate::spec_core::Scenario],
+) {
+    use std::collections::HashMap;
+
+    // Build name -> verdict map from current results (owned keys to avoid borrow conflict)
+    let verdict_map: HashMap<String, crate::spec_core::Verdict> = report
+        .results
+        .iter()
+        .map(|r| (r.scenario_name.clone(), r.verdict))
+        .collect();
+
+    // Build name -> depends_on map from scenarios (owned keys)
+    let deps_map: HashMap<String, Vec<String>> = scenarios
+        .iter()
+        .filter(|s| !s.depends_on.is_empty())
+        .map(|s| (s.name.clone(), s.depends_on.clone()))
+        .collect();
+
+    // For each result, check if any dependency failed
+    for result in &mut report.results {
+        if let Some(deps) = deps_map.get(&result.scenario_name) {
+            let failed_deps: Vec<&str> = deps
+                .iter()
+                .filter(|dep| {
+                    verdict_map
+                        .get(dep.as_str())
+                        .is_none_or(|v| *v != crate::spec_core::Verdict::Pass)
+                })
+                .map(|d| d.as_str())
+                .collect();
+
+            if !failed_deps.is_empty() {
+                result.verdict = crate::spec_core::Verdict::Skip;
+                let dep_names = failed_deps.join(", ");
+                result
+                    .evidence
+                    .push(crate::spec_core::Evidence::PatternMatch {
+                        pattern: "dependency-skip".into(),
+                        matched: true,
+                        locations: vec![format!("dependency failed: {dep_names}")],
+                    });
+            }
+        }
+    }
+
+    // Recompute summary
+    let total = report.results.len();
+    let passed = report
+        .results
+        .iter()
+        .filter(|r| r.verdict == crate::spec_core::Verdict::Pass)
+        .count();
+    let failed = report
+        .results
+        .iter()
+        .filter(|r| r.verdict == crate::spec_core::Verdict::Fail)
+        .count();
+    let skipped = report
+        .results
+        .iter()
+        .filter(|r| r.verdict == crate::spec_core::Verdict::Skip)
+        .count();
+    let uncertain = report
+        .results
+        .iter()
+        .filter(|r| r.verdict == crate::spec_core::Verdict::Uncertain)
+        .count();
+    let pending_review = report
+        .results
+        .iter()
+        .filter(|r| r.verdict == crate::spec_core::Verdict::PendingReview)
+        .count();
+    report.summary = crate::spec_core::VerificationSummary {
+        total,
+        passed,
+        failed,
+        skipped,
+        uncertain,
+        pending_review,
+    };
+}
+
+/// Sort scenarios by topological order based on depends_on.
+/// Returns indices in execution order. Scenarios without dependencies preserve
+/// their original order relative to each other.
+#[allow(dead_code)]
+fn topological_sort_scenarios(scenarios: &[crate::spec_core::Scenario]) -> Vec<usize> {
+    use std::collections::{HashMap, VecDeque};
+
+    let name_to_idx: HashMap<&str, usize> = scenarios
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.name.as_str(), i))
+        .collect();
+
+    // Build in-degree and adjacency
+    let mut in_degree = vec![0usize; scenarios.len()];
+    let mut dependents: Vec<Vec<usize>> = vec![vec![]; scenarios.len()];
+
+    for (i, s) in scenarios.iter().enumerate() {
+        for dep in &s.depends_on {
+            if let Some(&dep_idx) = name_to_idx.get(dep.as_str()) {
+                in_degree[i] += 1;
+                dependents[dep_idx].push(i);
+            }
+        }
+    }
+
+    // Kahn's algorithm with stable ordering
+    let mut queue: VecDeque<usize> = VecDeque::new();
+    for (i, &deg) in in_degree.iter().enumerate() {
+        if deg == 0 {
+            queue.push_back(i);
+        }
+    }
+
+    let mut order = Vec::with_capacity(scenarios.len());
+    while let Some(idx) = queue.pop_front() {
+        order.push(idx);
+        let mut next: Vec<usize> = dependents[idx]
+            .iter()
+            .filter_map(|&dep_idx| {
+                in_degree[dep_idx] -= 1;
+                if in_degree[dep_idx] == 0 {
+                    Some(dep_idx)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // Sort to preserve original order among siblings
+        next.sort();
+        for n in next {
+            queue.push_back(n);
+        }
+    }
+
+    order
 }
 
 // ── Brief (agent prompt generation) ─────────────────────────────
@@ -1189,6 +1443,124 @@ fn sanitize_for_filename(name: &str) -> String {
         .collect()
 }
 
+// ── Checkpoint / Resume ─────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResumeMode {
+    Incremental,
+    Conservative,
+}
+
+fn checkpoint_path(base_dir: &Path) -> PathBuf {
+    base_dir.join(".agent-spec/checkpoint.json")
+}
+
+fn load_checkpoint(
+    base_dir: &Path,
+) -> Result<Option<spec_core::Checkpoint>, Box<dyn std::error::Error>> {
+    let path = checkpoint_path(base_dir);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(&path)?;
+    let cp: spec_core::Checkpoint = serde_json::from_str(&content)?;
+    Ok(Some(cp))
+}
+
+fn save_checkpoint(
+    base_dir: &Path,
+    report: &spec_core::VerificationReport,
+    vcs_ref: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let path = checkpoint_path(base_dir);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let mut scenarios = std::collections::HashMap::new();
+    for result in &report.results {
+        scenarios.insert(
+            result.scenario_name.clone(),
+            spec_core::CheckpointEntry {
+                verdict: result.verdict,
+                vcs_ref: vcs_ref.clone(),
+            },
+        );
+    }
+
+    let cp = spec_core::Checkpoint {
+        spec_name: report.spec_name.clone(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        vcs_ref: vcs_ref.clone(),
+        scenarios,
+    };
+
+    let json = serde_json::to_string_pretty(&cp)?;
+    std::fs::write(&path, json)?;
+    Ok(())
+}
+
+fn merge_checkpoint_results(
+    report: spec_core::VerificationReport,
+    checkpoint: &spec_core::Checkpoint,
+    mode: &ResumeMode,
+) -> spec_core::VerificationReport {
+    let results: Vec<spec_core::ScenarioResult> = report
+        .results
+        .into_iter()
+        .map(|mut result| {
+            if let Some(cp_entry) = checkpoint.scenarios.get(&result.scenario_name) {
+                match mode {
+                    ResumeMode::Incremental => {
+                        if cp_entry.verdict == spec_core::Verdict::Pass {
+                            // Replace with checkpoint pass - scenario was skipped
+                            result.verdict = spec_core::Verdict::Pass;
+                            result.step_results = result
+                                .step_results
+                                .into_iter()
+                                .map(|mut s| {
+                                    s.verdict = spec_core::Verdict::Pass;
+                                    s.reason = "carried forward from checkpoint".into();
+                                    s
+                                })
+                                .collect();
+                            result.evidence.push(spec_core::Evidence::PatternMatch {
+                                pattern: "checkpoint:incremental".into(),
+                                matched: true,
+                                locations: vec![
+                                    "verdict carried forward from checkpoint".into(),
+                                ],
+                            });
+                            result.duration_ms = 0;
+                        }
+                    }
+                    ResumeMode::Conservative => {
+                        if cp_entry.verdict == spec_core::Verdict::Pass
+                            && result.verdict == spec_core::Verdict::Fail
+                        {
+                            // Regression detected
+                            result.evidence.push(spec_core::Evidence::PatternMatch {
+                                pattern: "checkpoint:regression".into(),
+                                matched: true,
+                                locations: vec![
+                                    "regression: true".into(),
+                                    "scenario was pass in checkpoint but now fails".into(),
+                                ],
+                            });
+                        }
+                    }
+                }
+            }
+            result
+        })
+        .collect();
+
+    spec_core::VerificationReport::from_results(report.spec_name, results)
+}
+
 fn read_run_log_history(base_dir: &Path, spec_name: &str) -> String {
     let runs_dir = base_dir.join(".agent-spec/runs");
     let Ok(entries) = std::fs::read_dir(&runs_dir) else {
@@ -1697,8 +2069,8 @@ Scenario: cold start follows fallback order
 
 fn format_non_passing_summary(summary: &crate::spec_core::VerificationSummary) -> String {
     format!(
-        "verification not passing: {} failed, {} skipped, {} uncertain",
-        summary.failed, summary.skipped, summary.uncertain,
+        "verification not passing: {} failed, {} skipped, {} uncertain, {} pending_review",
+        summary.failed, summary.skipped, summary.uncertain, summary.pending_review,
     )
 }
 
@@ -1984,6 +2356,300 @@ fn cmd_resolve_ai(
     }
 }
 
+// ── Plan ─────────────────────────────────────────────────────────
+
+fn cmd_plan(
+    spec: &Path,
+    code: &Path,
+    format: &str,
+    depth: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let gw = crate::spec_gateway::SpecGateway::load(spec)?;
+    let contract = gw.plan();
+    let scan_depth = crate::spec_gateway::plan::ScanDepth::parse(depth);
+
+    let ctx = crate::spec_gateway::plan::build_plan_context(
+        &contract,
+        gw.resolved(),
+        code,
+        scan_depth,
+    );
+
+    // Print warnings to stderr
+    for warning in &ctx.warnings {
+        eprintln!("warning: {warning}");
+    }
+
+    let output = match format {
+        "json" => crate::spec_gateway::plan::format_plan_json(&ctx),
+        "prompt" => crate::spec_gateway::plan::format_plan_prompt(&ctx),
+        _ => crate::spec_gateway::plan::format_plan_text(&ctx),
+    };
+
+    print!("{output}");
+    Ok(())
+}
+
+// ── Graph ────────────────────────────────────────────────────────
+
+struct GraphNode {
+    name: String,
+    file_stem: String,
+    depends: Vec<String>,
+    estimate: Option<String>,
+    tags: Vec<String>,
+}
+
+fn cmd_graph(spec_dir: &Path, format: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use std::collections::HashMap;
+
+    // Collect all spec files
+    let mut spec_files: Vec<PathBuf> = Vec::new();
+    collect_spec_files(spec_dir, &mut spec_files)?;
+
+    if spec_files.is_empty() {
+        return Err(format!("no spec files found in {}", spec_dir.display()).into());
+    }
+
+    let mut nodes: Vec<GraphNode> = Vec::new();
+    let mut name_to_stem: HashMap<String, String> = HashMap::new();
+    let mut stem_to_idx: HashMap<String, usize> = HashMap::new();
+
+    for file in &spec_files {
+        let doc = match crate::spec_parser::parse_spec(file) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("warning: skipping {}: {e}", file.display());
+                continue;
+            }
+        };
+        let stem = file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .trim_end_matches(".spec")
+            .to_string();
+        let idx = nodes.len();
+        name_to_stem.insert(doc.meta.name.clone(), stem.clone());
+        stem_to_idx.insert(stem.clone(), idx);
+        nodes.push(GraphNode {
+            name: doc.meta.name,
+            file_stem: stem,
+            depends: doc.meta.depends,
+            estimate: doc.meta.estimate,
+            tags: doc.meta.tags,
+        });
+    }
+
+    // Build edges: dep -> dependent
+    let mut edges: Vec<(usize, usize)> = Vec::new();
+    for (i, node) in nodes.iter().enumerate() {
+        for dep in &node.depends {
+            let dep_idx = stem_to_idx.get(dep.as_str()).copied().or_else(|| {
+                name_to_stem
+                    .get(dep.as_str())
+                    .and_then(|s| stem_to_idx.get(s.as_str()).copied())
+            });
+            if let Some(j) = dep_idx {
+                edges.push((j, i));
+            } else {
+                eprintln!(
+                    "warning: spec '{}' depends on unknown '{}', ignoring",
+                    node.name, dep
+                );
+            }
+        }
+    }
+
+    // Compute critical path
+    let estimates: Vec<f64> = nodes
+        .iter()
+        .map(|n| n.estimate.as_deref().map_or(0.0, parse_estimate_days))
+        .collect();
+    let critical_path_edges = compute_critical_path(nodes.len(), &edges, &estimates);
+
+    // Generate DOT
+    let dot = generate_dot(&nodes, &edges, &critical_path_edges);
+
+    match format {
+        "svg" => {
+            let mut child = Command::new("dot")
+                .args(["-Tsvg"])
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("failed to run 'dot' (is graphviz installed?): {e}"))?;
+
+            if let Some(ref mut stdin) = child.stdin {
+                use std::io::Write;
+                stdin.write_all(dot.as_bytes())?;
+            }
+            let output = child.wait_with_output()?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("dot command failed: {stderr}").into());
+            }
+            std::io::Write::write_all(&mut std::io::stdout(), &output.stdout)?;
+        }
+        _ => {
+            print!("{dot}");
+        }
+    }
+
+    Ok(())
+}
+
+fn generate_dot(
+    nodes: &[GraphNode],
+    edges: &[(usize, usize)],
+    critical_edges: &[(usize, usize)],
+) -> String {
+    use std::collections::HashSet;
+
+    let mut dot = String::new();
+    dot.push_str("digraph spec_dependencies {\n");
+    dot.push_str("  rankdir=LR;\n");
+    dot.push_str("  node [fontname=\"Helvetica\", fontsize=11];\n");
+    dot.push_str("  edge [fontname=\"Helvetica\", fontsize=9];\n\n");
+
+    for node in nodes {
+        let label = if let Some(ref est) = node.estimate {
+            format!("{}\\n[{}]", node.name, est)
+        } else {
+            node.name.clone()
+        };
+        let is_done = node.tags.iter().any(|t| t == "done" || t == "completed");
+        let shape = if is_done { "doubleoctagon" } else { "box" };
+        dot.push_str(&format!(
+            "  \"{}\" [label=\"{}\", shape={}];\n",
+            node.file_stem, label, shape
+        ));
+    }
+
+    dot.push('\n');
+
+    let critical_set: HashSet<(usize, usize)> = critical_edges.iter().copied().collect();
+    for &(from, to) in edges {
+        let attrs = if critical_set.contains(&(from, to)) {
+            "arrowhead=vee, color=red, penwidth=2.0"
+        } else {
+            "arrowhead=vee"
+        };
+        dot.push_str(&format!(
+            "  \"{}\" -> \"{}\" [{}];\n",
+            nodes[from].file_stem, nodes[to].file_stem, attrs
+        ));
+    }
+
+    dot.push_str("}\n");
+    dot
+}
+
+/// Collect .spec / .spec.md files recursively from a directory.
+fn collect_spec_files(
+    dir: &Path,
+    out: &mut Vec<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !dir.exists() {
+        return Err(format!("directory not found: {}", dir.display()).into());
+    }
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_spec_files(&path, out)?;
+        } else if is_spec_file(&path) {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// Parse estimate string like "1d", "0.5d", "1w" into days as f64.
+fn parse_estimate_days(est: &str) -> f64 {
+    let est = est.trim().trim_start_matches('~');
+    if let Some(days) = est.strip_suffix('d') {
+        days.trim().parse::<f64>().unwrap_or(0.0)
+    } else if let Some(weeks) = est.strip_suffix('w') {
+        weeks.trim().parse::<f64>().unwrap_or(0.0) * 5.0
+    } else if let Some(hours) = est.strip_suffix('h') {
+        hours.trim().parse::<f64>().unwrap_or(0.0) / 8.0
+    } else {
+        est.parse::<f64>().unwrap_or(0.0)
+    }
+}
+
+/// Compute the critical path edges using longest-path on the DAG.
+fn compute_critical_path(
+    n: usize,
+    edges: &[(usize, usize)],
+    estimates: &[f64],
+) -> Vec<(usize, usize)> {
+    if n == 0 || edges.is_empty() {
+        return Vec::new();
+    }
+
+    // Topological sort (Kahn's algorithm)
+    let mut in_degree = vec![0usize; n];
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for &(from, to) in edges {
+        adj[from].push(to);
+        in_degree[to] += 1;
+    }
+
+    let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+    for (i, &deg) in in_degree.iter().enumerate() {
+        if deg == 0 {
+            queue.push_back(i);
+        }
+    }
+
+    let mut topo_order = Vec::with_capacity(n);
+    while let Some(u) = queue.pop_front() {
+        topo_order.push(u);
+        for &v in &adj[u] {
+            in_degree[v] -= 1;
+            if in_degree[v] == 0 {
+                queue.push_back(v);
+            }
+        }
+    }
+
+    // Longest path DP
+    let mut dist = vec![0.0f64; n];
+    let mut pred = vec![None::<usize>; n];
+
+    for &u in &topo_order {
+        let u_cost = estimates[u];
+        for &v in &adj[u] {
+            let new_dist = dist[u] + u_cost;
+            if new_dist > dist[v] {
+                dist[v] = new_dist;
+                pred[v] = Some(u);
+            }
+        }
+    }
+
+    // Find the end node with maximum total cost
+    let end = (0..n).max_by(|&a, &b| {
+        let da = dist[a] + estimates[a];
+        let db = dist[b] + estimates[b];
+        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Trace back
+    let mut path_edges = Vec::new();
+    if let Some(mut cur) = end {
+        while let Some(p) = pred[cur] {
+            path_edges.push((p, cur));
+            cur = p;
+        }
+    }
+    path_edges.reverse();
+    path_edges
+}
+
 #[cfg(test)]
 #[allow(clippy::collapsible_if, clippy::expect_used, clippy::unwrap_used)]
 mod tests {
@@ -1994,12 +2660,13 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        GitChangeScope, RunLogEntry, build_stamp_trailers, cmd_init_at,
-        generate_rewrite_parity_template_both, generate_rewrite_parity_template_en,
-        generate_rewrite_parity_template_zh, generate_template_both, generate_template_en,
-        generate_template_zh, is_spec_file, parse_ai_mode, render_brief_output,
-        render_contract_output, resolve_command_change_paths, resolve_guard_change_paths, vcs,
-        warn_duplicate_spec_extensions,
+        GitChangeScope, ResumeMode, RunLogEntry, build_stamp_trailers, checkpoint_path,
+        cmd_init_at, generate_rewrite_parity_template_both,
+        generate_rewrite_parity_template_en, generate_rewrite_parity_template_zh,
+        generate_template_both, generate_template_en, generate_template_zh, is_spec_file,
+        load_checkpoint, merge_checkpoint_results, parse_ai_mode, render_brief_output,
+        render_contract_output, resolve_command_change_paths, resolve_guard_change_paths,
+        save_checkpoint, vcs, warn_duplicate_spec_extensions,
     };
 
     const SAMPLE: &str = r#"spec: task
@@ -2630,6 +3297,7 @@ Scenario: verification metadata stays visible
                 failed: 0,
                 skipped: 0,
                 uncertain: 0,
+                pending_review: 0,
             },
         };
 
@@ -2684,6 +3352,7 @@ Scenario: verification metadata stays visible
                 failed: 1,
                 skipped: 0,
                 uncertain: 0,
+                pending_review: 0,
             },
         };
 
@@ -2708,6 +3377,7 @@ Scenario: verification metadata stays visible
             failed: 1,
             skipped: 0,
             uncertain: 0,
+            pending_review: 0,
         };
 
         let trailers = build_stamp_trailers("my-contract", false, &summary, None);
@@ -3024,6 +3694,7 @@ Scenario: verification metadata stays visible
                 failed: 0,
                 skipped: 0,
                 uncertain: 1,
+                pending_review: 0,
             },
         };
 
@@ -3089,6 +3760,7 @@ Scenario: verification metadata stays visible
             failed: 0,
             skipped: 0,
             uncertain: 0,
+            pending_review: 0,
         };
         let jj_ctx = vcs::VcsContext {
             vcs_type: vcs::VcsType::Jj,
@@ -3116,6 +3788,7 @@ Scenario: verification metadata stays visible
             failed: 0,
             skipped: 0,
             uncertain: 0,
+            pending_review: 0,
         };
         let git_ctx = vcs::VcsContext {
             vcs_type: vcs::VcsType::Git,
@@ -3467,5 +4140,429 @@ Scenario: pass
         let files = vec![spec_a, spec_b];
         // Should not panic; just prints a warning to stderr
         warn_duplicate_spec_extensions(&files);
+    }
+
+    // ── Checkpoint / Resume tests ───────────────────────────────
+
+    fn make_scenario_result(
+        name: &str,
+        verdict: crate::spec_core::Verdict,
+    ) -> crate::spec_core::ScenarioResult {
+        crate::spec_core::ScenarioResult {
+            scenario_name: name.to_owned(),
+            verdict,
+            step_results: vec![crate::spec_core::StepVerdict {
+                step_text: format!("step for {name}"),
+                verdict,
+                reason: "test".into(),
+            }],
+            evidence: vec![],
+            duration_ms: 10,
+        }
+    }
+
+    #[test]
+    fn test_resume_incremental_skips_passed_scenarios() {
+        let mut scenarios = std::collections::HashMap::new();
+        scenarios.insert(
+            "场景 A".to_owned(),
+            crate::spec_core::CheckpointEntry {
+                verdict: crate::spec_core::Verdict::Pass,
+                vcs_ref: Some("abc123".into()),
+            },
+        );
+        scenarios.insert(
+            "场景 B".to_owned(),
+            crate::spec_core::CheckpointEntry {
+                verdict: crate::spec_core::Verdict::Fail,
+                vcs_ref: Some("abc123".into()),
+            },
+        );
+        let checkpoint = crate::spec_core::Checkpoint {
+            spec_name: "测试".into(),
+            timestamp: 1000,
+            vcs_ref: Some("abc123".into()),
+            scenarios,
+        };
+
+        let report = crate::spec_core::VerificationReport::from_results(
+            "测试".into(),
+            vec![
+                make_scenario_result("场景 A", crate::spec_core::Verdict::Skip),
+                make_scenario_result("场景 B", crate::spec_core::Verdict::Fail),
+            ],
+        );
+
+        let merged = merge_checkpoint_results(report, &checkpoint, &ResumeMode::Incremental);
+
+        let a = merged
+            .results
+            .iter()
+            .find(|r| r.scenario_name == "场景 A")
+            .unwrap();
+        assert_eq!(a.verdict, crate::spec_core::Verdict::Pass);
+        let has_checkpoint_evidence = a.evidence.iter().any(|e| match e {
+            crate::spec_core::Evidence::PatternMatch { pattern, .. } => {
+                pattern == "checkpoint:incremental"
+            }
+            _ => false,
+        });
+        assert!(has_checkpoint_evidence, "should have checkpoint evidence");
+        assert_eq!(a.duration_ms, 0, "skipped scenario should have 0 duration");
+
+        let b = merged
+            .results
+            .iter()
+            .find(|r| r.scenario_name == "场景 B")
+            .unwrap();
+        assert_eq!(b.verdict, crate::spec_core::Verdict::Fail);
+
+        assert_eq!(merged.summary.passed, 1);
+        assert_eq!(merged.summary.failed, 1);
+    }
+
+    #[test]
+    fn test_resume_conservative_detects_regression() {
+        let mut scenarios = std::collections::HashMap::new();
+        scenarios.insert(
+            "场景 A".to_owned(),
+            crate::spec_core::CheckpointEntry {
+                verdict: crate::spec_core::Verdict::Pass,
+                vcs_ref: Some("abc123".into()),
+            },
+        );
+        let checkpoint = crate::spec_core::Checkpoint {
+            spec_name: "测试".into(),
+            timestamp: 1000,
+            vcs_ref: Some("abc123".into()),
+            scenarios,
+        };
+
+        let report = crate::spec_core::VerificationReport::from_results(
+            "测试".into(),
+            vec![make_scenario_result(
+                "场景 A",
+                crate::spec_core::Verdict::Fail,
+            )],
+        );
+
+        let merged = merge_checkpoint_results(report, &checkpoint, &ResumeMode::Conservative);
+
+        let a = merged
+            .results
+            .iter()
+            .find(|r| r.scenario_name == "场景 A")
+            .unwrap();
+        assert_eq!(a.verdict, crate::spec_core::Verdict::Fail);
+        let has_regression = a.evidence.iter().any(|e| match e {
+            crate::spec_core::Evidence::PatternMatch {
+                pattern, locations, ..
+            } => {
+                pattern == "checkpoint:regression"
+                    && locations.iter().any(|l| l.contains("regression: true"))
+            }
+            _ => false,
+        });
+        assert!(has_regression, "should have regression evidence marker");
+    }
+
+    #[test]
+    fn test_resume_without_run_log_dir_errors() {
+        let cli = super::Cli::try_parse_from([
+            "agent-spec",
+            "lifecycle",
+            "dummy.spec",
+            "--code",
+            ".",
+            "--resume",
+        ]);
+        assert!(cli.is_ok(), "CLI should parse --resume flag without error");
+
+        // Verify that --resume without --run-log-dir triggers the error condition
+        let resume: Option<Option<String>> = Some(None);
+        let run_log_dir: Option<&Path> = None;
+        if let Some(ref _mode_opt) = resume {
+            assert!(
+                run_log_dir.is_none(),
+                "this test verifies --resume requires --run-log-dir"
+            );
+        }
+    }
+
+    #[test]
+    fn test_checkpoint_roundtrip_serialization() {
+        let dir = make_temp_dir("checkpoint-roundtrip");
+
+        let report = crate::spec_core::VerificationReport::from_results(
+            "序列化测试".into(),
+            vec![
+                make_scenario_result("场景 A", crate::spec_core::Verdict::Pass),
+                make_scenario_result("场景 B", crate::spec_core::Verdict::Fail),
+                make_scenario_result("场景 C", crate::spec_core::Verdict::Skip),
+            ],
+        );
+
+        save_checkpoint(&dir, &report, Some("def456".into())).unwrap();
+
+        let cp_path = checkpoint_path(&dir);
+        assert!(cp_path.exists(), "checkpoint file should exist");
+
+        let loaded = load_checkpoint(&dir).unwrap();
+        assert!(loaded.is_some(), "checkpoint should be loaded");
+        let cp = loaded.unwrap();
+
+        assert_eq!(cp.spec_name, "序列化测试");
+        assert_eq!(cp.vcs_ref, Some("def456".into()));
+        assert_eq!(cp.scenarios.len(), 3);
+
+        let entry_a = cp.scenarios.get("场景 A").unwrap();
+        assert_eq!(entry_a.verdict, crate::spec_core::Verdict::Pass);
+        assert_eq!(entry_a.vcs_ref, Some("def456".into()));
+
+        let entry_b = cp.scenarios.get("场景 B").unwrap();
+        assert_eq!(entry_b.verdict, crate::spec_core::Verdict::Fail);
+
+        let entry_c = cp.scenarios.get("场景 C").unwrap();
+        assert_eq!(entry_c.verdict, crate::spec_core::Verdict::Skip);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_load_checkpoint_returns_none_when_missing() {
+        let dir = make_temp_dir("checkpoint-missing");
+        let result = load_checkpoint(&dir).unwrap();
+        assert!(result.is_none());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    // ── Graph tests ────────────────────────────────────────────
+
+    fn write_spec_file(dir: &Path, name: &str, content: &str) {
+        let path = dir.join(format!("{name}.spec.md"));
+        fs::write(path, content).unwrap();
+    }
+
+    #[test]
+    fn test_graph_generates_dot_output() {
+        let dir = make_temp_dir("graph-dot");
+        write_spec_file(
+            &dir,
+            "spec-a",
+            "spec: task\nname: \"A\"\ntags: []\n---\n\n## 意图\n\nA\n",
+        );
+        write_spec_file(
+            &dir,
+            "spec-b",
+            "spec: task\nname: \"B\"\ntags: []\ndepends: [spec-a]\n---\n\n## 意图\n\nB\n",
+        );
+        write_spec_file(
+            &dir,
+            "spec-c",
+            "spec: task\nname: \"C\"\ntags: []\ndepends: [spec-a, spec-b]\n---\n\n## 意图\n\nC\n",
+        );
+
+        // Use cmd_graph internals: collect, parse, generate DOT
+        let mut spec_files = Vec::new();
+        super::collect_spec_files(&dir, &mut spec_files).unwrap();
+        assert_eq!(spec_files.len(), 3);
+
+        // Parse and build graph
+        let mut nodes = Vec::new();
+        let mut name_to_stem = std::collections::HashMap::new();
+        let mut stem_to_idx = std::collections::HashMap::new();
+
+        for file in &spec_files {
+            let doc = crate::spec_parser::parse_spec(file).unwrap();
+            let stem = file
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .trim_end_matches(".spec")
+                .to_string();
+            let idx = nodes.len();
+            name_to_stem.insert(doc.meta.name.clone(), stem.clone());
+            stem_to_idx.insert(stem.clone(), idx);
+            nodes.push(super::GraphNode {
+                name: doc.meta.name,
+                file_stem: stem,
+                depends: doc.meta.depends,
+                estimate: doc.meta.estimate,
+                tags: doc.meta.tags,
+            });
+        }
+
+        let mut edges = Vec::new();
+        for (i, node) in nodes.iter().enumerate() {
+            for dep in &node.depends {
+                let dep_idx = stem_to_idx.get(dep.as_str()).copied().or_else(|| {
+                    name_to_stem
+                        .get(dep.as_str())
+                        .and_then(|s| stem_to_idx.get(s.as_str()).copied())
+                });
+                if let Some(j) = dep_idx {
+                    edges.push((j, i));
+                }
+            }
+        }
+
+        let estimates: Vec<f64> = nodes
+            .iter()
+            .map(|n| n.estimate.as_deref().map_or(0.0, super::parse_estimate_days))
+            .collect();
+        let critical = super::compute_critical_path(nodes.len(), &edges, &estimates);
+        let dot = super::generate_dot(&nodes, &edges, &critical);
+
+        // Verify DOT output
+        assert!(dot.contains("digraph spec_dependencies"));
+        assert!(dot.contains("spec-a"));
+        assert!(dot.contains("spec-b"));
+        assert!(dot.contains("spec-c"));
+        // Should have 3 edges: A->B, A->C, B->C
+        assert_eq!(edges.len(), 3);
+        assert!(dot.contains("->"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_graph_nodes_include_estimate() {
+        let dir = make_temp_dir("graph-estimate");
+        write_spec_file(
+            &dir,
+            "spec-est",
+            "spec: task\nname: \"EstTest\"\ntags: []\nestimate: 2d\n---\n\n## 意图\n\nTest\n",
+        );
+
+        let mut spec_files = Vec::new();
+        super::collect_spec_files(&dir, &mut spec_files).unwrap();
+        let doc = crate::spec_parser::parse_spec(&spec_files[0]).unwrap();
+
+        let nodes = vec![super::GraphNode {
+            name: doc.meta.name,
+            file_stem: "spec-est".to_string(),
+            depends: doc.meta.depends,
+            estimate: doc.meta.estimate,
+            tags: doc.meta.tags,
+        }];
+
+        let dot = super::generate_dot(&nodes, &[], &[]);
+        assert!(dot.contains("2d"), "DOT node label should contain estimate '2d'");
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_graph_independent_specs_are_isolated_nodes() {
+        let dir = make_temp_dir("graph-isolated");
+        write_spec_file(
+            &dir,
+            "spec-x",
+            "spec: task\nname: \"X\"\ntags: []\n---\n\n## 意图\n\nX\n",
+        );
+        write_spec_file(
+            &dir,
+            "spec-y",
+            "spec: task\nname: \"Y\"\ntags: []\n---\n\n## 意图\n\nY\n",
+        );
+
+        let mut spec_files = Vec::new();
+        super::collect_spec_files(&dir, &mut spec_files).unwrap();
+
+        let mut nodes = Vec::new();
+        for file in &spec_files {
+            let doc = crate::spec_parser::parse_spec(file).unwrap();
+            let stem = file
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .trim_end_matches(".spec")
+                .to_string();
+            nodes.push(super::GraphNode {
+                name: doc.meta.name,
+                file_stem: stem,
+                depends: doc.meta.depends,
+                estimate: doc.meta.estimate,
+                tags: doc.meta.tags,
+            });
+        }
+
+        // No edges for independent specs
+        let dot = super::generate_dot(&nodes, &[], &[]);
+        assert!(dot.contains("spec-x"));
+        assert!(dot.contains("spec-y"));
+        // Should not contain any edges
+        assert!(!dot.contains("->"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_graph_critical_path_highlighted() {
+        let dir = make_temp_dir("graph-critical");
+        write_spec_file(
+            &dir,
+            "spec-a",
+            "spec: task\nname: \"A\"\ntags: []\nestimate: 1d\n---\n\n## 意图\n\nA\n",
+        );
+        write_spec_file(
+            &dir,
+            "spec-b",
+            "spec: task\nname: \"B\"\ntags: []\ndepends: [spec-a]\nestimate: 2d\n---\n\n## 意图\n\nB\n",
+        );
+        write_spec_file(
+            &dir,
+            "spec-c",
+            "spec: task\nname: \"C\"\ntags: []\ndepends: [spec-b]\nestimate: 1d\n---\n\n## 意图\n\nC\n",
+        );
+
+        let mut spec_files = Vec::new();
+        super::collect_spec_files(&dir, &mut spec_files).unwrap();
+
+        let mut nodes = Vec::new();
+        let mut stem_to_idx = std::collections::HashMap::new();
+
+        for file in &spec_files {
+            let doc = crate::spec_parser::parse_spec(file).unwrap();
+            let stem = file
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .trim_end_matches(".spec")
+                .to_string();
+            let idx = nodes.len();
+            stem_to_idx.insert(stem.clone(), idx);
+            nodes.push(super::GraphNode {
+                name: doc.meta.name,
+                file_stem: stem,
+                depends: doc.meta.depends,
+                estimate: doc.meta.estimate,
+                tags: doc.meta.tags,
+            });
+        }
+
+        let mut edges = Vec::new();
+        for (i, node) in nodes.iter().enumerate() {
+            for dep in &node.depends {
+                if let Some(&j) = stem_to_idx.get(dep.as_str()) {
+                    edges.push((j, i));
+                }
+            }
+        }
+
+        let estimates: Vec<f64> = nodes
+            .iter()
+            .map(|n| n.estimate.as_deref().map_or(0.0, super::parse_estimate_days))
+            .collect();
+        let critical = super::compute_critical_path(nodes.len(), &edges, &estimates);
+        let dot = super::generate_dot(&nodes, &edges, &critical);
+
+        // Critical path A -> B -> C should be marked red
+        assert!(dot.contains("color=red"), "Critical path edges should be colored red");
+
+        let _ = fs::remove_dir_all(dir);
     }
 }

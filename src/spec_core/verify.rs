@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Verification verdict for a scenario or step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -8,6 +9,7 @@ pub enum Verdict {
     Fail,
     Skip,
     Uncertain,
+    PendingReview,
 }
 
 /// Result of verifying a single scenario.
@@ -62,6 +64,22 @@ pub enum Evidence {
     },
 }
 
+/// Checkpoint data for incremental/conservative resume.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Checkpoint {
+    pub spec_name: String,
+    pub timestamp: u64,
+    pub vcs_ref: Option<String>,
+    pub scenarios: HashMap<String, CheckpointEntry>,
+}
+
+/// Entry for a single scenario in a checkpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckpointEntry {
+    pub verdict: Verdict,
+    pub vcs_ref: Option<String>,
+}
+
 /// Structured request sent to an AI verifier backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiRequest {
@@ -100,6 +118,8 @@ pub struct VerificationSummary {
     pub failed: usize,
     pub skipped: usize,
     pub uncertain: usize,
+    #[serde(default)]
+    pub pending_review: usize,
 }
 
 impl VerificationSummary {
@@ -138,6 +158,10 @@ impl VerificationReport {
             .iter()
             .filter(|r| r.verdict == Verdict::Uncertain)
             .count();
+        let pending_review = results
+            .iter()
+            .filter(|r| r.verdict == Verdict::PendingReview)
+            .count();
 
         Self {
             spec_name,
@@ -148,6 +172,7 @@ impl VerificationReport {
                 failed,
                 skipped,
                 uncertain,
+                pending_review,
             },
         }
     }

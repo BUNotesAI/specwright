@@ -1,5 +1,6 @@
 mod ai_verifier;
 mod boundaries;
+mod complexity;
 mod structural;
 mod test_verifier;
 
@@ -12,6 +13,7 @@ use crate::spec_core::{
 
 pub use ai_verifier::{AiBackend, AiVerifier, build_ai_request};
 pub use boundaries::BoundariesVerifier;
+pub use complexity::ComplexityVerifier;
 pub use structural::StructuralVerifier;
 pub use test_verifier::TestVerifier;
 
@@ -153,6 +155,9 @@ mod tests {
             }],
             test_selector: None,
             tags: vec![],
+            review: Default::default(),
+            mode: Default::default(),
+            depends_on: vec![],
             span: Span::line(1),
         };
         let ctx = VerificationContext {
@@ -167,6 +172,8 @@ mod tests {
                         inherits: None,
                         lang: vec![],
                         tags: vec![],
+                        depends: vec![],
+                        estimate: None,
                     },
                     sections: vec![Section::AcceptanceCriteria {
                         scenarios: vec![scenario.clone()],

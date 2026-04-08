@@ -2,20 +2,21 @@
 name: agent-spec-tool-first
 description: |
   CRITICAL: Use for agent-spec CLI tool workflow. Triggers on:
-  agent-spec, contract, lifecycle, guard, verify, explain, stamp, checkpoint,
+  agent-spec, contract, lifecycle, guard, verify, explain, stamp, checkpoint, plan,
   spec verification, task contract, spec quality, lint spec, run log,
   "how to verify", "how to use agent-spec", "spec failed", "guard failed",
   contract review, contract acceptance, PR review, code review workflow,
-  合约, 验证, 生命周期, 守卫, 规格检查, 质量门禁, 合约审查,
+  plan context, codebase scan, task sketch, implementation plan,
+  合约, 验证, 生命周期, 守卫, 规格检查, 质量门禁, 合约审查, 计划,
   "验证失败", "怎么用 agent-spec", "spec 不通过", "工作流"
 ---
 
 # Agent Spec Tool-First Workflow
 
-> **Version:** 3.1.0 | **Last Updated:** 2026-03-08
+> **Version:** 3.2.0 | **Last Updated:** 2026-03-19
 
 You are an expert at using `agent-spec` as a CLI tool for contract-driven AI coding. Help users by:
-- **Planning**: Render task contracts before coding with `contract`
+- **Planning**: Render task contracts with `contract`, generate plan context with `plan`
 - **Implementing**: Follow contract Intent, Decisions, Boundaries
 - **Verifying**: Run `lifecycle` / `guard` to check code against specs
 - **Reviewing**: Use `explain` for human-readable summaries, `stamp` for git trailers
@@ -49,6 +50,7 @@ Humans define "what is correct" (Contract). Machines verify "is the code correct
 |---------|---------|-------------|
 | `agent-spec init` | Scaffold new spec | Starting a new task |
 | `agent-spec contract <spec>` | Render Task Contract | Before coding - read the execution plan |
+| `agent-spec plan <spec> --code .` | Generate plan context | Before coding - codebase scan + task sketch |
 | `agent-spec lint <files>` | Spec quality check | After writing spec, before giving to Agent |
 | `agent-spec lifecycle <spec> --code .` | Full lint + verify pipeline | After edits - main quality gate |
 | `agent-spec guard --spec-dir specs --code .` | Repo-wide check | Pre-commit / CI - all specs at once |
@@ -117,13 +119,24 @@ Catches: malformed structure, zero-scenario acceptance sections, vague verbs, un
 
 Optional: team "Contract Review" — review 50-80 lines of natural language instead of 500 lines of code diff.
 
-### Step 3: Agent reads Contract and codes
+### Step 3: Agent reads Contract, generates plan, and codes
 
-Agent consumes the structured contract:
+Agent consumes the structured contract and generates plan context:
 
 ```bash
+# Read the contract
 agent-spec contract specs/user-registration.spec
+
+# Generate plan context with codebase scan
+agent-spec plan specs/user-registration.spec --code . --format prompt
 ```
+
+The `plan` command outputs three blocks:
+- **Contract** — the full task contract (same as `contract` command)
+- **Codebase Context** — files in Allowed Changes paths with summaries, pub signatures, and test function names
+- **Task Sketch** — scenarios grouped by dependency order for implementation sequencing
+
+Use `--format prompt` to get a self-contained prompt for AI plan generation. Use `--depth full` to include pub API signatures.
 
 Agent is triple-constrained:
 - **Decisions** tell it "how to do it" (no technology shopping)
@@ -150,6 +163,14 @@ Agent retry loop (no human needed):
 
 Run logs record this history — "this Contract took 3 tries to pass".
 
+#### The Iron Law
+
+```
+NO CODE IS "DONE" WITHOUT A PASSING LIFECYCLE
+```
+
+If lifecycle hasn't run in this session, you cannot claim completion. If lifecycle ran but had failures, code is not done. No exceptions.
+
 #### Retry Protocol
 
 When lifecycle fails, follow this exact sequence:
@@ -164,6 +185,18 @@ When lifecycle fails, follow this exact sequence:
 8. After 3 consecutive failures on the same scenario, stop and escalate to the human
 
 **Critical rule**: The spec defines "what is correct". If the code doesn't match, fix the code. If the spec itself is wrong, switch to authoring mode and update the Contract explicitly — never silently weaken acceptance criteria.
+
+#### Red Flags — Stop If You're Thinking This
+
+| Thought | Reality |
+|---------|---------|
+| "lifecycle is slow, skip it this once" | Skipping verification = delivering unverified code |
+| "I only changed one line, no need to re-run" | One line can break every scenario |
+| "skip means it's fine" | skip ≠ pass. skip = not verified |
+| "The spec is too strict, let me adjust it" | Changing spec to pass isn't fixing — it's weakening the contract |
+| "3 failures already, just submit what I have" | 3 failures → stop and escalate to human |
+| "I ran lifecycle earlier, it should still pass" | "Should" is not evidence. Run it again. |
+| "The test is flaky, not my code" | Prove it: run 3 times. If 2+ pass, investigate flake. If 0-1 pass, it's your code. |
 
 ### Step 5: Guard gate (pre-commit / CI)
 
@@ -184,6 +217,8 @@ Human reviews a Contract-level summary, not a code diff:
 ```bash
 agent-spec explain specs/user-registration.spec --code . --format markdown
 ```
+
+**Evidence gate**: Before presenting results to the reviewer, run `agent-spec explain <spec> --format markdown` fresh. Read the output. Confirm all verdicts are `pass`. Do NOT report results from memory — run the command and read the output in this session.
 
 Reviewer judges two questions:
 1. **Is the Contract definition correct?** (Intent, Decisions, Boundaries make sense?)
@@ -356,6 +391,7 @@ Month 3+:  Consider org.spec for cross-project governance
 | Preference | Use | Instead of |
 |------------|-----|------------|
 | `contract` | Render task contract | `brief` (legacy alias) |
+| `plan` | Contract + codebase + sketch | Manual code exploration |
 | `lifecycle` | Full pipeline | `verify` alone (misses lint) |
 | `guard` | Repo-wide | Multiple individual `lifecycle` calls |
 | `--change` | Explicit paths known | `--change-scope` when paths are known |

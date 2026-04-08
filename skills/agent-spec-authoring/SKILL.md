@@ -13,7 +13,7 @@ description: |
 
 # Agent Spec Authoring
 
-> **Version:** 3.1.0 | **Last Updated:** 2026-03-08
+> **Version:** 3.2.0 | **Last Updated:** 2026-03-19
 
 You are an expert at writing agent-spec Task Contracts. Help users by:
 - **Creating specs**: Scaffold new `.spec.md` files with correct structure (`.spec` also supported)
@@ -403,6 +403,20 @@ Before handing a Contract to an Agent, verify:
 | 6 | Steps use deterministic wording | "returns 201" not "should return 201" |
 | 7 | `agent-spec lint` score >= 0.7 | Quality gate before Agent starts |
 
+## Common Rationalizations When Writing Specs
+
+| Excuse | Reality |
+|--------|---------|
+| "This is too simple to need a spec" | Simple tasks take 5 min to spec. Un-specced simple tasks scope-creep into complex ones. |
+| "I'll write code first, then add the spec" | Specs written after code conform to what was built, not what's correct. |
+| "Exception paths don't matter much" | Bugs live in exception paths. Lint enforces exception >= happy path count. |
+| "I'll add Test selectors later" | Scenarios without `Test:` get `skip` verdicts — they verify nothing. |
+| "Boundaries are too restrictive" | Boundaries are a safety net for the agent, not a limitation on you. |
+| "One happy path scenario is enough" | One scenario = one test = zero confidence in edge cases. |
+| "The intent is obvious, no need to write it" | Obvious to you ≠ obvious to the agent. Write it. |
+
+If you catch yourself using any of these, stop and write the spec properly.
+
 ## Deprecated Patterns (Don't Use)
 
 | Deprecated | Use Instead | Reason |
@@ -424,6 +438,8 @@ When authoring specs for the `agent-spec` project itself:
 - Do not let a task spec rely on implicit test-name matching
 
 ## Escalation
+
+**Authoring → Planning**: After the Contract passes `agent-spec lint` with score >= 0.7, generate plan context with `agent-spec plan <spec> --code . --format prompt` to give the AI Agent codebase awareness before coding.
 
 **Authoring → Implementation**: Switch to `agent-spec-tool-first` after the Contract is drafted and passes `agent-spec lint` with score >= 0.7.
 

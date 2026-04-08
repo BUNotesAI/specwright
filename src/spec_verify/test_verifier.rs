@@ -5,7 +5,8 @@ use std::process::Command;
 use std::time::Instant;
 
 use crate::spec_core::{
-    Evidence, Scenario, ScenarioResult, SpecError, SpecResult, StepVerdict, TestSelector, Verdict,
+    Evidence, ReviewMode, Scenario, ScenarioResult, SpecError, SpecResult, StepVerdict,
+    TestSelector, Verdict,
 };
 
 use super::{VerificationContext, Verifier};
@@ -64,7 +65,11 @@ impl Verifier for TestVerifier {
             };
 
             let verdict = if output.status.success() {
-                Verdict::Pass
+                if scenario.review == ReviewMode::Human {
+                    Verdict::PendingReview
+                } else {
+                    Verdict::Pass
+                }
             } else {
                 Verdict::Fail
             };
@@ -313,6 +318,9 @@ fn helper() {}
                 "test_explicit_scenario_selector_takes_precedence_over_legacy_comment_binding",
             )),
             tags: Vec::new(),
+            review: Default::default(),
+            mode: Default::default(),
+            depends_on: vec![],
             span: Span::default(),
         };
         let legacy = HashMap::from([("场景一".to_string(), "legacy_test_name".to_string())]);
@@ -334,6 +342,9 @@ fn helper() {}
             steps: Vec::new(),
             test_selector: None,
             tags: Vec::new(),
+            review: Default::default(),
+            mode: Default::default(),
+            depends_on: vec![],
             span: Span::default(),
         };
         let legacy = HashMap::from([(

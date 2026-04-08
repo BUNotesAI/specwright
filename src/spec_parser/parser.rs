@@ -1,11 +1,12 @@
 use crate::spec_core::{
-    Boundary, BoundaryCategory, Constraint, ConstraintCategory, Scenario, Section, Span,
-    SpecDocument, SpecError, SpecResult, Step, TestSelector,
+    Boundary, BoundaryCategory, Constraint, ConstraintCategory, ReviewMode, Scenario,
+    ScenarioMode, Section, Span, SpecDocument, SpecError, SpecResult, Step, TestSelector,
 };
 use std::path::{Path, PathBuf};
 
 use super::keywords::{
-    SectionKind, TestSelectorField, extract_params, match_scenario_header, match_section_header,
+    SectionKind, TestSelectorField, extract_params, match_depends_field, match_mode_field,
+    match_review_field, match_scenario_header, match_scenario_tags, match_section_header,
     match_step_keyword, match_test_selector, match_test_selector_field,
 };
 use super::meta::parse_meta;
@@ -229,6 +230,10 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<Vec<Scenario>> {
     let mut current_name: Option<(String, usize)> = None;
     let mut current_steps: Vec<Step> = Vec::new();
     let mut current_test_selector: Option<TestSelectorDraft> = None;
+    let mut current_tags: Vec<String> = Vec::new();
+    let mut current_review: ReviewMode = ReviewMode::default();
+    let mut current_mode: ScenarioMode = ScenarioMode::Standard;
+    let mut current_depends_on: Vec<String> = Vec::new();
     let mut reading_test_selector_block = false;
 
     for &(line_num, line) in lines {
@@ -240,12 +245,49 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<Vec<Scenario>> {
                     name: prev_name,
                     steps: std::mem::take(&mut current_steps),
                     test_selector: finalize_test_selector(current_test_selector.take(), end)?,
-                    tags: Vec::new(),
+                    tags: std::mem::take(&mut current_tags),
+                    review: std::mem::take(&mut current_review),
+                    mode: std::mem::take(&mut current_mode),
+                    depends_on: std::mem::take(&mut current_depends_on),
                     span: Span::new(start, 0, end, 0),
                 });
             }
             current_name = Some((name.to_string(), line_num));
+            current_tags = Vec::new();
+            current_review = ReviewMode::default();
+            current_mode = ScenarioMode::Standard;
+            current_depends_on = Vec::new();
             reading_test_selector_block = false;
+        } else if let Some(tags) = match_scenario_tags(line) {
+            if current_name.is_some() {
+                current_tags = tags;
+            }
+        } else if let Some(review_value) = match_review_field(line) {
+            if current_name.is_some() {
+                let lower = review_value.to_lowercase();
+                if lower == "human" {
+                    current_review = ReviewMode::Human;
+                } else {
+                    current_review = ReviewMode::Auto;
+                }
+            }
+        } else if let Some(mode_value) = match_mode_field(line) {
+            if current_name.is_some() {
+                let lower = mode_value.to_lowercase();
+                if lower == "optimize" {
+                    current_mode = ScenarioMode::Optimize;
+                } else {
+                    current_mode = ScenarioMode::Standard;
+                }
+            }
+        } else if let Some(depends_value) = match_depends_field(line) {
+            if current_name.is_some() {
+                current_depends_on = depends_value
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
         } else if let Some(selector) = match_test_selector(line) {
             if current_name.is_some() {
                 let draft = current_test_selector.get_or_insert_with(TestSelectorDraft::default);
@@ -299,7 +341,10 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<Vec<Scenario>> {
             name,
             steps: current_steps,
             test_selector: finalize_test_selector(current_test_selector, end)?,
-            tags: Vec::new(),
+            tags: current_tags,
+            review: current_review,
+            mode: current_mode,
+            depends_on: current_depends_on,
             span: Span::new(start, 0, end, 0),
         });
     }
@@ -926,5 +971,186 @@ name: "Markdown Scenario"
         let doc = parse_spec_from_str(SAMPLE_SPEC).unwrap();
         let json = serde_json::to_string_pretty(&doc).unwrap();
         let _: SpecDocument = serde_json::from_str(&json).unwrap();
+    }
+
+    #[test]
+    fn test_parse_mode_field_in_scenario() {
+        let input = r#"spec: task
+name: "模式测试"
+---
+
+## 完成条件
+
+场景: 优化场景
+  模式: optimize
+  测试: test_parse_mode_field_in_scenario
+  假设 某个场景声明 optimize 模式
+  当 parser 解析该场景
+  那么 AST 中 mode 字段为 Optimize
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        match &doc.sections[0] {
+            Section::AcceptanceCriteria { scenarios, .. } => {
+                assert_eq!(scenarios.len(), 1);
+                assert_eq!(scenarios[0].mode, crate::spec_core::ScenarioMode::Optimize);
+            }
+            other => panic!("expected AcceptanceCriteria, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_mode_field_english() {
+        let input = r#"spec: task
+name: "mode test"
+---
+
+## Completion Criteria
+
+Scenario: optimize scenario
+  Mode: optimize
+  Given an optimize-mode scenario
+  When parser reads it
+  Then mode is Optimize
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        match &doc.sections[0] {
+            Section::AcceptanceCriteria { scenarios, .. } => {
+                assert_eq!(scenarios[0].mode, crate::spec_core::ScenarioMode::Optimize);
+            }
+            other => panic!("expected AcceptanceCriteria, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_mode_field_standard_is_default() {
+        let input = r#"spec: task
+name: "default mode"
+---
+
+## Completion Criteria
+
+Scenario: standard scenario
+  Mode: standard
+  Given a standard scenario
+  When parser reads it
+  Then mode is Standard
+
+Scenario: no mode declared
+  Given no mode field
+  When parser reads it
+  Then mode defaults to Standard
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        match &doc.sections[0] {
+            Section::AcceptanceCriteria { scenarios, .. } => {
+                assert_eq!(scenarios[0].mode, crate::spec_core::ScenarioMode::Standard);
+                assert_eq!(scenarios[1].mode, crate::spec_core::ScenarioMode::Standard);
+            }
+            other => panic!("expected AcceptanceCriteria, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_depends_field_in_scenario() {
+        let input = r#"spec: task
+name: "依赖测试"
+---
+
+## 完成条件
+
+场景: 用户注册
+  假设 注册表单已打开
+  当 用户提交注册
+  那么 注册成功
+
+场景: 用户登录
+  前置: 用户注册
+  假设 已有注册用户
+  当 用户登录
+  那么 登录成功
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        match &doc.sections[0] {
+            Section::AcceptanceCriteria { scenarios, .. } => {
+                assert_eq!(scenarios.len(), 2);
+                assert!(scenarios[0].depends_on.is_empty());
+                assert_eq!(scenarios[1].depends_on, vec!["用户注册"]);
+            }
+            other => panic!("expected AcceptanceCriteria, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_depends_field_multiple() {
+        let input = r#"spec: task
+name: "multi depends"
+---
+
+## Completion Criteria
+
+Scenario: A
+  Given A
+  When A
+  Then A
+
+Scenario: B
+  Given B
+  When B
+  Then B
+
+Scenario: C
+  Depends: A, B
+  Given C depends on A and B
+  When parser reads it
+  Then depends_on contains both
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        match &doc.sections[0] {
+            Section::AcceptanceCriteria { scenarios, .. } => {
+                assert_eq!(scenarios[2].depends_on, vec!["A", "B"]);
+            }
+            other => panic!("expected AcceptanceCriteria, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_review_field_in_scenario() {
+        let input = r#"spec: task
+name: "审核测试"
+---
+
+## 完成条件
+
+场景: 需要人类审核
+  审核: human
+  测试: test_parse_review_field_in_scenario
+  假设 某个场景声明审核为 human
+  当 parser 解析该场景
+  那么 AST 中 review 字段为 Human
+
+场景: 默认自动审核
+  测试: test_default_auto_review
+  假设 某个场景不声明审核字段
+  当 parser 解析该场景
+  那么 AST 中 review 字段为 Auto
+"#;
+
+        let doc = parse_spec_from_str(input).unwrap();
+        match &doc.sections[0] {
+            Section::AcceptanceCriteria { scenarios, .. } => {
+                assert_eq!(scenarios.len(), 2);
+                assert_eq!(
+                    scenarios[0].review,
+                    crate::spec_core::ReviewMode::Human,
+                    "scenario with '审核: human' should have ReviewMode::Human"
+                );
+                assert_eq!(
+                    scenarios[1].review,
+                    crate::spec_core::ReviewMode::Auto,
+                    "scenario without review field should default to ReviewMode::Auto"
+                );
+            }
+            other => panic!("expected AcceptanceCriteria, got {other:?}"),
+        }
     }
 }

@@ -26,6 +26,12 @@ pub struct SpecMeta {
     pub inherits: Option<String>,
     pub lang: Vec<Lang>,
     pub tags: Vec<String>,
+    /// Spec-level dependencies: names of other specs this spec depends on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends: Vec<String>,
+    /// Estimated effort (e.g., "0.5d", "2d", "1w").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate: Option<String>,
 }
 
 /// A parsed .spec document.
@@ -102,6 +108,41 @@ pub enum BoundaryCategory {
     General,
 }
 
+/// Scenario execution mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ScenarioMode {
+    #[default]
+    Standard,
+    Optimize,
+}
+
+impl ScenarioMode {
+    pub fn is_standard(&self) -> bool {
+        *self == Self::Standard
+    }
+}
+
+/// Review mode for a scenario: whether it needs human review after passing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReviewMode {
+    Auto,
+    Human,
+}
+
+impl Default for ReviewMode {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+impl ReviewMode {
+    pub fn is_auto(&self) -> bool {
+        *self == Self::Auto
+    }
+}
+
 /// A BDD scenario.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scenario {
@@ -110,7 +151,50 @@ pub struct Scenario {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub test_selector: Option<TestSelector>,
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "ReviewMode::is_auto")]
+    pub review: ReviewMode,
+    #[serde(default, skip_serializing_if = "ScenarioMode::is_standard")]
+    pub mode: ScenarioMode,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
     pub span: Span,
+}
+
+impl Scenario {
+    /// Returns `true` if this scenario is marked as critical — either via a
+    /// `critical` tag or a `(critical)` / `（critical）` name suffix (case-insensitive).
+    pub fn is_critical(&self) -> bool {
+        let has_tag = self
+            .tags
+            .iter()
+            .any(|t| t.eq_ignore_ascii_case("critical"));
+        if has_tag {
+            return true;
+        }
+        let lower = self.name.to_lowercase();
+        lower.ends_with("(critical)") || lower.ends_with("（critical）")
+    }
+
+    /// Returns the scenario name with any trailing `(critical)` / `（critical）`
+    /// suffix stripped, suitable for display purposes.
+    pub fn display_name(&self) -> &str {
+        let name = self.name.trim_end();
+        // Try ASCII parentheses first
+        if let Some(idx) = name.rfind('(') {
+            let suffix = &name[idx..];
+            if suffix.to_lowercase() == "(critical)" {
+                return name[..idx].trim_end();
+            }
+        }
+        // Try fullwidth parentheses
+        if let Some(idx) = name.rfind('（') {
+            let suffix = &name[idx..];
+            if suffix.to_lowercase() == "（critical）" {
+                return name[..idx].trim_end();
+            }
+        }
+        name
+    }
 }
 
 /// Structured test selector for binding a scenario to test execution.

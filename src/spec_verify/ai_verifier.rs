@@ -217,6 +217,9 @@ mod tests {
             ],
             test_selector: None,
             tags: vec![],
+            review: Default::default(),
+            mode: Default::default(),
+            depends_on: vec![],
             span: Span::line(1),
         };
 
@@ -232,6 +235,8 @@ mod tests {
                         inherits: None,
                         lang: vec![],
                         tags: vec![],
+                        depends: vec![],
+                        estimate: None,
                     },
                     sections: vec![
                         Section::Intent {

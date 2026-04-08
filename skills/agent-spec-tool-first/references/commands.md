@@ -17,6 +17,7 @@ Commands:
   explain             Generate a human-readable contract review summary
   stamp               Preview git trailers for a verified contract
   checkpoint          Preview or create a VCS checkpoint
+  plan                Generate structured plan context from spec + codebase scan
   resolve-ai          Merge external AI decisions into a verification report
   measure-determinism [Experimental] Measure contract verification determinism
   install-hooks       Install git hooks for automatic spec checking
@@ -28,14 +29,37 @@ Commands:
 # 1. Read the contract
 agent-spec contract specs/task.spec
 
-# 2. Implement code...
+# 2. Generate plan context for AI
+agent-spec plan specs/task.spec --code . --format prompt
 
-# 3. Verify
+# 3. Implement code...
+
+# 4. Verify
 agent-spec lifecycle specs/task.spec --code . --format json
 
-# 4. Repo-wide guard
+# 5. Repo-wide guard
 agent-spec guard --spec-dir specs --code .
 ```
+
+## plan
+
+```bash
+agent-spec plan <spec> [--code .] [--format text|json|prompt] [--depth shallow|full]
+```
+
+Generates structured plan context by combining three blocks:
+- **Contract** — from `TaskContract::from_resolved()` (same as `contract` command)
+- **Codebase Context** — scans Allowed Changes paths for file summaries, pub signatures, test functions
+- **Task Sketch** — groups scenarios by dependency order (topological sort)
+
+Options:
+- `--format text` (default): human-readable structured summary
+- `--format json`: machine-parseable with `contract`, `codebase_context`, `task_sketch` fields
+- `--format prompt`: self-contained AI prompt (includes all inherited constraints)
+- `--depth shallow` (default): file names + first-line summaries
+- `--depth full`: includes `pub fn`/`pub struct`/`pub enum`/`pub trait` signatures
+
+Respects `.gitignore`. Warns (does not error) on missing Allowed Changes paths.
 
 ## contract
 
