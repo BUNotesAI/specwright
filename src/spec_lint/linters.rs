@@ -2030,6 +2030,127 @@ fn dfs_find_cycle<'a>(
     None
 }
 
+// =============================================================================
+// 22. PseudoScenarioLinter - flags scenarios whose test_double bypasses runtime
+//     behavior (e.g. fs.readFile / grep / git log). All tasks must write
+//     scenarios as behavior contracts; structural shape belongs to design docs.
+// =============================================================================
+
+/// Verdict of a scenario's `test_double` field.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ScenarioVerdict {
+    /// Runtime behavior or external interface assertion. Allowed.
+    Behavior,
+    /// Static / structural assertion (fs / grep / git log). Disallowed for behavior contracts.
+    Structural,
+    /// Cannot determine (e.g. bare `git diff` without an interface-boundary path).
+    Ambiguous,
+}
+
+/// Keywords whose presence in a scenario's `test_double` signals a structural
+/// assertion(file existence / source grep / git history) rather than runtime
+/// behavior. Stored lowercase; comparison is also lowercase. CJK is unaffected
+/// by `to_lowercase`, so Chinese terms match as-is.
+const STRUCTURAL_KEYWORDS: &[&str] = &[
+    "fs.readfile",
+    "fs.readdir",
+    "fs.exists",
+    "静态扫描",
+    "源码字面量",
+    "源码扫描",
+    "grep",
+    "wc -l",
+    "行数",
+    "line count",
+    "git log --grep",
+    "commit message",
+];
+
+/// Keywords signaling a runtime behavior assertion. `git diff` paths pointing
+/// to public-interface boundary files (e.g. `bindings.ts`) count as behavior
+/// proxies; bare `git diff` falls through to `Ambiguous`.
+const BEHAVIOR_KEYWORDS: &[&str] = &[
+    "vitest",
+    "rtl",
+    "react testing library",
+    "cargo test",
+    "pnpm test",
+    "vi.fn",
+    "tohavebeencalled",
+    "renderhook",
+    "git diff src/bindings.ts",
+    "git diff bindings.ts",
+];
+
+/// Classify a scenario's `test_double` string by keyword pattern.
+///
+/// Order of precedence: Structural keywords are checked first, so a mixed
+/// input like "vitest + fs.readFile" is classified as Structural — the
+/// stricter verdict guards against agents混 behavior tokens to mask static
+/// assertions.
+pub fn classify_scenario_double(test_double: &str) -> ScenarioVerdict {
+    let needle = test_double.to_lowercase();
+
+    if STRUCTURAL_KEYWORDS.iter().any(|kw| needle.contains(kw)) {
+        return ScenarioVerdict::Structural;
+    }
+    if BEHAVIOR_KEYWORDS.iter().any(|kw| needle.contains(kw)) {
+        return ScenarioVerdict::Behavior;
+    }
+    ScenarioVerdict::Ambiguous
+}
+
+pub struct PseudoScenarioLinter;
+
+impl SpecLinter for PseudoScenarioLinter {
+    fn name(&self) -> &str {
+        "pseudo-scenario"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        let mut diags = Vec::new();
+        for section in &doc.sections {
+            if let Section::AcceptanceCriteria { scenarios, .. } = section {
+                for scenario in scenarios {
+                    let Some(test_double) = scenario
+                        .test_selector
+                        .as_ref()
+                        .and_then(|s| s.test_double.as_deref())
+                    else {
+                        continue;
+                    };
+
+                    let (severity, verdict_label, hint) = match classify_scenario_double(test_double) {
+                        ScenarioVerdict::Behavior => continue,
+                        ScenarioVerdict::Structural => (
+                            Severity::Warning,
+                            "Structural",
+                            "rewrite as a runtime behavior assertion (RTL DOM / vi.fn / cargo test / public-interface diff); structural shape belongs in design docs",
+                        ),
+                        ScenarioVerdict::Ambiguous => (
+                            Severity::Info,
+                            "Ambiguous",
+                            "clarify the test double — name the public-interface file for git diff, or rewrite as a runtime assertion",
+                        ),
+                    };
+
+                    diags.push(LintDiagnostic {
+                        rule: "pseudo-scenario".into(),
+                        severity,
+                        message: format!(
+                            "scenario '{}' has {verdict_label} test_double '{}' — scenarios must be behavior contracts",
+                            scenario.name, test_double
+                        ),
+                        span: scenario.span,
+                        suggestion: Some(hint.into()),
+                    });
+                }
+            }
+        }
+        diags
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::len_zero, clippy::unwrap_used)]
 mod tests {
@@ -3005,6 +3126,236 @@ Scenario: C
             diags.is_empty(),
             "should not detect cycle in linear chain, got: {:?}",
             diags
+        );
+    }
+
+    // ========================================================================
+    // PseudoScenarioLinter / classify_scenario_double — task_28323518 W1a
+    // ========================================================================
+
+    #[test]
+    fn classify_returns_behavior_for_each_behavior_keyword() {
+        let keywords = [
+            "vitest",
+            "RTL",
+            "React Testing Library",
+            "cargo test",
+            "pnpm test",
+            "vi.fn",
+            "toHaveBeenCalled",
+            "renderHook",
+            "git diff src/bindings.ts",
+            "git diff bindings.ts",
+        ];
+        for kw in keywords {
+            assert_eq!(
+                classify_scenario_double(kw),
+                ScenarioVerdict::Behavior,
+                "keyword {kw:?} should classify as Behavior",
+            );
+        }
+    }
+
+    #[test]
+    fn classify_returns_structural_for_each_structural_keyword() {
+        let keywords = [
+            "fs.readFile",
+            "fs.readdir",
+            "fs.exists",
+            "静态扫描",
+            "源码字面量",
+            "源码扫描",
+            "grep",
+            "wc -l",
+            "行数",
+            "line count",
+            "git log --grep",
+            "commit message",
+        ];
+        for kw in keywords {
+            assert_eq!(
+                classify_scenario_double(kw),
+                ScenarioVerdict::Structural,
+                "keyword {kw:?} should classify as Structural",
+            );
+        }
+    }
+
+    #[test]
+    fn classify_returns_ambiguous_for_bare_git_diff() {
+        assert_eq!(
+            classify_scenario_double("git diff"),
+            ScenarioVerdict::Ambiguous
+        );
+        assert_eq!(
+            classify_scenario_double("git diff src/modules/foo.rs"),
+            ScenarioVerdict::Ambiguous,
+        );
+    }
+
+    #[test]
+    fn classify_returns_ambiguous_by_default() {
+        assert_eq!(classify_scenario_double(""), ScenarioVerdict::Ambiguous);
+        assert_eq!(
+            classify_scenario_double("plain prose without keyword"),
+            ScenarioVerdict::Ambiguous,
+        );
+    }
+
+    #[test]
+    fn classify_prefers_structural_over_behavior_on_mixed_input() {
+        assert_eq!(
+            classify_scenario_double("vitest + fs.readFile 静态扫描"),
+            ScenarioVerdict::Structural,
+        );
+    }
+
+    #[test]
+    fn classify_keyword_match_is_case_insensitive() {
+        assert_eq!(
+            classify_scenario_double("VITEST + RTL"),
+            ScenarioVerdict::Behavior,
+        );
+        assert_eq!(
+            classify_scenario_double("FS.READFILE"),
+            ScenarioVerdict::Structural,
+        );
+    }
+
+    /// 含 1 Structural + 1 Ambiguous + 1 Behavior 三个场景的 fixture spec。
+    /// 复用于多个 PseudoScenarioLinter 测试。
+    const MIXED_FIXTURE_SPEC: &str = r#"spec: task
+name: "fixture-bad-feature"
+---
+
+## 完成条件
+
+场景: X 文件存在
+  测试:
+    过滤: x_file_exists
+    层级: unit
+    替身: fs.readFile + 静态扫描
+  假设 模块文件应存在
+  当 跑 fs 检查
+  那么 fs.readFile 命中
+
+场景: 裸 git diff 检查
+  测试:
+    过滤: bare_git_diff
+    层级: unit
+    替身: git diff
+  假设 修改已落地
+  当 跑 git diff
+  那么 输出非空
+
+场景: 渲染行为
+  测试:
+    过滤: renders_behavior
+    层级: integration
+    替身: vitest + RTL
+  假设 组件已挂载
+  当 渲染并触发 click
+  那么 DOM 出现期望文本
+"#;
+
+    #[test]
+    fn linter_name_returns_pseudo_scenario() {
+        assert_eq!(PseudoScenarioLinter.name(), "pseudo-scenario");
+    }
+
+    #[test]
+    fn linter_emits_warn_for_structural_and_info_for_ambiguous() {
+        let doc = parse_spec_from_str(MIXED_FIXTURE_SPEC).unwrap();
+        let diags = PseudoScenarioLinter.lint(&doc);
+
+        assert_eq!(diags.len(), 2, "expected 1 warn + 1 info, got {:?}", diags);
+
+        let warns: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
+        assert_eq!(warns.len(), 1, "expected exactly 1 warning");
+        assert!(
+            warns[0].message.contains("Structural"),
+            "warn message should mention 'Structural', got: {}",
+            warns[0].message,
+        );
+
+        let infos: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Info)
+            .collect();
+        assert_eq!(infos.len(), 1, "expected exactly 1 info");
+        assert!(
+            infos[0].message.contains("Ambiguous"),
+            "info message should mention 'Ambiguous', got: {}",
+            infos[0].message,
+        );
+
+        let errors: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect();
+        assert!(errors.is_empty(), "linter should not emit errors");
+    }
+
+    #[test]
+    fn linter_returns_empty_for_all_behavior_scenarios() {
+        let input = r#"spec: task
+name: "fixture-clean-behavior"
+---
+
+## 完成条件
+
+场景: 单元行为
+  测试:
+    过滤: behavior_unit
+    层级: unit
+    替身: cargo test
+  假设 函数已实现
+  当 调用
+  那么 返回期望
+
+场景: 集成行为
+  测试:
+    过滤: behavior_integration
+    层级: integration
+    替身: vitest + vi.fn
+  假设 组件挂载
+  当 触发 onClick
+  那么 mock 被调用
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = PseudoScenarioLinter.lint(&doc);
+        assert!(
+            diags.is_empty(),
+            "expected no diagnostics for all-behavior fixture, got: {:?}",
+            diags,
+        );
+    }
+
+    #[test]
+    fn linter_diagnostic_points_to_scenario_line_and_name() {
+        let doc = parse_spec_from_str(MIXED_FIXTURE_SPEC).unwrap();
+        let diags = PseudoScenarioLinter.lint(&doc);
+
+        let pointed_at_x = diags.iter().find(|d| d.message.contains("X 文件存在"));
+        assert!(
+            pointed_at_x.is_some(),
+            "expected at least one diagnostic referencing 'X 文件存在', got: {:?}",
+            diags,
+        );
+
+        let diagnostic = pointed_at_x.unwrap();
+        // MIXED_FIXTURE_SPEC line layout: "场景: X 文件存在" appears at line 7
+        // (header lines 1-3, blank line 4, "## 完成条件" line 5, blank line 6,
+        // "场景: X 文件存在" line 7). The linter must point its diagnostic
+        // at this line so editors can navigate directly to the offending scenario.
+        let expected_line = 7;
+        assert_eq!(
+            diagnostic.span.start_line, expected_line,
+            "diagnostic should point to scenario line {expected_line}, got {}: {}",
+            diagnostic.span.start_line, diagnostic.message,
         );
     }
 }
