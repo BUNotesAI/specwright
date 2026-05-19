@@ -449,3 +449,112 @@ When authoring specs for the `agent-spec` project itself:
 - A Decision was wrong and needs changing
 
 Update the Contract first, re-lint, then resume implementation. The Contract is a living document until the task is stamped.
+
+## § Scenario 必须是行为契约
+
+**核心原则**:Scenario 锁定的是运行时表现 / 外部可观察接口 —— 不是源码形态。代码结构、文件分布、模块边界这类"作者设计偏好"应该写到 `design-v{N}.md`,**不**写到 spec.md。
+
+新加入的 `pseudo-scenario` lint 规则(由 `PseudoScenarioLinter` 实现)按 scenario 的 `Test Double:` / `替身:` 字段判定三种 verdict:
+
+| Verdict | 触发关键词(出现在替身字段) | Lint 输出 |
+|---|---|---|
+| **Behavior**(放行) | `vitest` / `RTL` / `React Testing Library` / `cargo test` / `pnpm test` / `vi.fn` / `toHaveBeenCalled` / `renderHook` / `git diff src/bindings.ts` / `git diff bindings.ts` | 无 diagnostic |
+| **Structural**(警告) | `fs.readFile` / `fs.readdir` / `fs.exists` / `静态扫描` / `源码字面量` / `源码扫描` / `grep` / `wc -l` / `行数` / `line count` / `git log --grep` / `commit message` | Warning,扣 quality score |
+| **Ambiguous**(提示澄清) | 含 `git diff` 但路径不在公共接口边界(如裸 `git diff` / `git diff src/foo.rs`) | Info,要求 agent 明确替身 |
+
+Structural 优先级高于 Behavior:替身字段含 `vitest + fs.readFile 静态扫描` 也判为 Structural。识别大小写不敏感(CJK 字符 `to_lowercase` 不变)。
+
+### 反模式 → 正例对照
+
+#### 例 1:静态扫描"文件存在 + 命中次数"
+
+```
+反:
+场景: commands/ 目录新增 11 个 entity 文件
+  测试:
+    过滤: dir_has_11_files
+    层级: unit
+    替身: fs.readdir + 源码静态扫描
+  那么 commands/ 含 11 个 .rs 文件
+  并且 累计 #[tauri::command] 命中次数 == 58
+
+正:
+场景: 拆解后既有 IPC 调用全部继续工作
+  测试:
+    过滤: ipc_invocations_still_work
+    层级: e2e
+    替身: cargo test export_bindings + pnpm test
+  当 跑端到端测试覆盖前端通过 invoke 调 card_get / section_get / task_query_all 等 11 个 entity 各代表命令
+  那么 全部 IPC 调用返回正确 typed 数据
+  并且 src/bindings.ts 字节不变(外部接口边界 diff = 行为代理)
+```
+
+理由:author 想拆 11 个文件是设计偏好,写到 design;spec 锁的是"拆完后外部行为不变"。
+
+#### 例 2:源码 grep 检查 import / export
+
+```
+反:
+场景: TaskPreview.tsx 文件存在并 export TaskPreview
+  测试:
+    过滤: task_preview_exported
+    层级: unit
+    替身: 源码字面量 grep
+  那么 src/components/.../TaskPreview.tsx 含 `export function TaskPreview` 字串
+
+正:
+场景: 点击 task 节点后 sidebar 渲染 task 的 body markdown
+  测试:
+    过滤: task_click_renders_body_in_drawer
+    层级: integration
+    替身: vitest + RTL
+  假设 task 含 content="# Heading\n\nBody text"
+  当 点击 task 节点
+  那么 sidebar drawer 展开
+  并且 DOM 文本含 "Heading" 和 "Body text"
+```
+
+理由:文件存在 + export 名字是实施细节;真契约是"点击后用户看到正确渲染"。
+
+#### 例 3:`git log --grep` 检查 commit trailer
+
+```
+反:
+场景: 每个 phase commit 含 Task-Id trailer
+  测试:
+    过滤: each_phase_has_task_id
+    层级: unit
+    替身: git log --grep
+  那么 `git log --grep="^Task-Id: task_xxx$" --oneline` 命中数 ≥ 2
+
+正:
+将 commit trailer 检查移到 close 阶段的 grep 兜底(harness-task-close-discipline
+的 7 项 code review),不写为 BDD scenario。spec.md 的"结构约束清单"段可以列。
+```
+
+理由:commit trailer 是 author 的 git 操作纪律,不是被测代码的运行时行为。
+
+### 例外:外部接口边界文件 diff = 行为代理
+
+`git diff src/bindings.ts` 或 `git diff bindings.ts`(明确指向公共 IPC / API 边界文件)算 **Behavior** verdict,因为"前端类型接口字节不变"是"外部行为不变"的可观察代理 —— 跨模块调用方都能感知。
+
+裸 `git diff`(无具体路径)或 `git diff src/某非边界文件.rs` 是 **Ambiguous**,要求 agent 在替身字段里写清楚到底 diff 哪个边界。
+
+### 作者偏好的去处
+
+想锁定"具体拆分方案 / 文件分布 / 模块边界 / 命名约定 / 行数上限"这类作者设计偏好?写到:
+
+- **`design-v{N}-cc.md`**:架构决策段落(沉淀方案选择背景)
+- **`spec.md` 的「已定决策」段**:作为 prose 决策(由 `DecisionCoverageLinter` 验证有对应 scenario 覆盖)
+- **`spec.md` 的「结构约束清单」段**:用 H3 子段在 Decisions 末尾列条目,close 阶段 grep 兜底
+- **code review checklist**(`harness-task-close-discipline` 内 7 项):reviewer 人工对照 design 的方案 walkthrough
+
+**不要**写为 BDD scenario,否则 pseudo-scenario linter 会报 Structural warn,且这种 scenario 的 Red→Green 转换没有信息量。
+
+### 自查命令
+
+```bash
+agent-spec lint <spec>.md           # 跑全部 linter,看 pseudo-scenario warn/info
+```
+
+quality score 扣分超过 5 分时,优先重写为 Behavior scenario,而不是 acknowledge warn。
