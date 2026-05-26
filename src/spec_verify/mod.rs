@@ -162,10 +162,25 @@ fn ensure_runner_supported_on_host(
     }
 
     Err(SpecError::Verification(format!(
-        "`{}` test runner is not supported on `{}` host",
+        "`{}` test runner requires {}; current host is `{}`",
         runner.id(),
+        supported_host_label(supported),
         host_platform.as_str()
     )))
+}
+
+fn supported_host_label(platforms: &[HostPlatform]) -> String {
+    platforms
+        .iter()
+        .map(|platform| match platform {
+            HostPlatform::All => "all hosts",
+            HostPlatform::Linux => "Linux",
+            HostPlatform::MacOS => "macOS",
+            HostPlatform::Windows => "Windows",
+            HostPlatform::Other => "other",
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn current_host_platform() -> HostPlatform {
@@ -256,7 +271,7 @@ fn probe_workspace_markers(root: Option<&Path>) -> WorkspaceMarkers {
     let mut markers = Vec::new();
     if let Some(root) = root {
         for marker in WORKSPACE_MARKERS {
-            if root.join(marker).is_file() {
+            if workspace_marker_exists(root, marker) {
                 markers.push(*marker);
             }
         }
@@ -314,6 +329,8 @@ fn collect_source_paths(dir: &Path, source_extensions: &[&str], files: &mut Vec<
 const WORKSPACE_ROOT_MARKERS: &[&str] = &[
     "Cargo.toml",
     "AndroidManifest.xml",
+    "Package.swift",
+    "*.xcodeproj",
     "pom.xml",
     "build.gradle",
     "build.gradle.kts",
@@ -324,6 +341,8 @@ const WORKSPACE_ROOT_MARKERS: &[&str] = &[
 const WORKSPACE_MARKERS: &[&str] = &[
     "Cargo.toml",
     "AndroidManifest.xml",
+    "Package.swift",
+    "*.xcodeproj",
     "pom.xml",
     "build.gradle",
     "build.gradle.kts",
@@ -338,7 +357,31 @@ const WORKSPACE_MARKERS: &[&str] = &[
 fn has_workspace_marker(dir: &Path) -> bool {
     WORKSPACE_ROOT_MARKERS
         .iter()
-        .any(|marker| dir.join(marker).is_file())
+        .any(|marker| workspace_marker_exists(dir, marker))
+}
+
+fn workspace_marker_exists(dir: &Path, marker: &str) -> bool {
+    if marker == "*.xcodeproj" {
+        return contains_xcodeproj_dir(dir);
+    }
+
+    let path = dir.join(marker);
+    path.is_file() || path.is_dir()
+}
+
+fn contains_xcodeproj_dir(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+
+    entries.flatten().any(|entry| {
+        let path = entry.path();
+        path.is_dir()
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".xcodeproj"))
+    })
 }
 
 fn has_source_extension(path: &Path, source_extensions: &[&str]) -> bool {
@@ -600,7 +643,85 @@ mod tests {
         assert_eq!(ctx.runner_resolution.config_warnings, expected);
     }
 
+    #[test]
+    fn test_ios_host_gate_by_name_no_io() {
+        let result = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![PathBuf::from("this/path/must/not/be/probed")],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(None),
+            Some("ios"),
+            HostPlatform::Linux,
+        );
+        let Err(err) = result else {
+            panic!("iOS runner should be rejected on a non-macOS host before workspace probing");
+        };
+        let message = err.to_string();
+
+        assert!(message.contains("ios"));
+        assert!(message.contains("requires macOS"));
+    }
+
+    #[test]
+    fn test_ios_host_gate_needs_detect_marker_only_io() {
+        let root = temp_workspace_path("ios-needs-detect-host-gate");
+        write_file(
+            &root.join("MyApp.xcodeproj/project.pbxproj"),
+            "// xcode project marker\n",
+        );
+
+        let result = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(None),
+            None,
+            HostPlatform::Linux,
+        );
+        let Err(err) = result else {
+            panic!("detected iOS runner should be rejected on a non-macOS host");
+        };
+        let message = err.to_string();
+
+        assert!(message.contains("ios"));
+        assert!(message.contains("requires macOS"));
+    }
+
+    #[test]
+    fn test_ios_unknown_config_key_surfaces_through_warnings() {
+        let ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![PathBuf::from("src/spec_verify/mod.rs")],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner_and_config(
+                None,
+                BTreeMap::from([("destinaiton".to_string(), "typo".to_string())]),
+            ),
+            Some("ios"),
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+
+        let expected = vec![RunnerWarning {
+            runner: "ios".into(),
+            key: "destinaiton".into(),
+            reason: "unknown `destinaiton` runner_config key for `ios` runner".into(),
+        }];
+        assert_eq!(ctx.config_warnings, expected);
+        assert_eq!(ctx.runner_resolution.config_warnings, expected);
+    }
+
     fn resolved_spec_with_runner(runner: Option<&str>) -> ResolvedSpec {
+        resolved_spec_with_runner_and_config(runner, BTreeMap::new())
+    }
+
+    fn resolved_spec_with_runner_and_config(
+        runner: Option<&str>,
+        config: BTreeMap<String, String>,
+    ) -> ResolvedSpec {
         ResolvedSpec {
             task: SpecDocument {
                 meta: SpecMeta {
@@ -610,7 +731,7 @@ mod tests {
                     lang: vec![],
                     tags: vec![],
                     runner: runner.map(str::to_string),
-                    runner_config: Default::default(),
+                    runner_config: config,
                     depends: vec![],
                     estimate: None,
                 },

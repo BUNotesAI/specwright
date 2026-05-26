@@ -3,8 +3,8 @@ use std::sync::Arc;
 use crate::spec_core::{ResolvedSpec, SpecError, SpecResult};
 
 use super::{
-    AndroidRunner, CargoRunner, GradleRunner, MavenRunner, ResolutionSource, RunnerResolution,
-    RunnerSelection, TestRunner, WorkspaceMarkers,
+    AndroidRunner, CargoRunner, GradleRunner, IosRunner, MavenRunner, ResolutionSource,
+    RunnerResolution, RunnerSelection, TestRunner, WorkspaceMarkers,
 };
 
 /// Registry of available test runners.
@@ -25,6 +25,7 @@ impl RunnerRegistry {
         registry.register(Arc::new(CargoRunner));
         registry.register(Arc::new(MavenRunner));
         registry.register(Arc::new(AndroidRunner::new()));
+        registry.register(Arc::new(IosRunner::new()));
         registry.register(Arc::new(GradleRunner));
         registry
     }
@@ -174,6 +175,7 @@ pub fn resolve_detected_runner(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -182,8 +184,8 @@ mod tests {
     };
 
     use super::super::{
-        PreflightOutcome, ResolutionSource, RunnerSelection, RunnerSourceFile, RunnerWorkspace,
-        TestCommand, TestRunner, WorkspaceMarkers,
+        HostPlatform, PreflightOutcome, ResolutionSource, RunnerSelection, RunnerSourceFile,
+        RunnerWorkspace, TestCommand, TestRunner, WorkspaceMarkers,
     };
     use super::{RunnerRegistry, resolve_detected_runner, resolve_runner_choice};
 
@@ -498,6 +500,112 @@ class PaymentRiskRulesTest {
     }
 
     #[test]
+    fn test_ios_build_test_command_with_destination_and_scheme() {
+        let registry = RunnerRegistry::with_defaults();
+        let Some(runner) = registry.get("ios") else {
+            panic!("ios runner should be registered");
+        };
+        let workspace = ios_workspace(BTreeMap::from([
+            (
+                "destination".to_string(),
+                "platform=iOS Simulator,name=iPhone 15".to_string(),
+            ),
+            ("scheme".to_string(), "IosMini".to_string()),
+        ]));
+
+        let command = runner
+            .build_test_command(
+                &workspace,
+                &TestSelector {
+                    package: Some("IosMiniTests".to_string()),
+                    filter: "PaymentTests/testRejectsExpiredCard".to_string(),
+                    level: None,
+                    test_double: None,
+                    targets: None,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(command.program, "xcodebuild");
+        assert_eq!(
+            command.args,
+            vec![
+                "test".to_string(),
+                "-scheme".to_string(),
+                "IosMini".to_string(),
+                "-destination".to_string(),
+                "platform=iOS Simulator,name=iPhone 15".to_string(),
+                "-only-testing:IosMiniTests/PaymentTests/testRejectsExpiredCard".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_ios_build_test_command_without_destination_and_scheme() {
+        let registry = RunnerRegistry::with_defaults();
+        let Some(runner) = registry.get("ios") else {
+            panic!("ios runner should be registered");
+        };
+        let workspace = ios_workspace(BTreeMap::new());
+
+        let command = runner
+            .build_test_command(
+                &workspace,
+                &TestSelector {
+                    package: Some("IosMiniTests".to_string()),
+                    filter: "PaymentTests/testRejectsExpiredCard".to_string(),
+                    level: None,
+                    test_double: None,
+                    targets: None,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(command.program, "xcodebuild");
+        assert_eq!(
+            command.args,
+            vec![
+                "test".to_string(),
+                "-only-testing:IosMiniTests/PaymentTests/testRejectsExpiredCard".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_ios_supported_host_platforms_snapshot() {
+        let registry = RunnerRegistry::with_defaults();
+        let Some(runner) = registry.get("ios") else {
+            panic!("ios runner should be registered");
+        };
+
+        assert_eq!(runner.supported_host_platforms(), &[HostPlatform::MacOS]);
+    }
+
+    #[test]
+    fn test_ios_detects_swift_package_marker() {
+        let registry = RunnerRegistry::with_defaults();
+        let markers = WorkspaceMarkers::from_files(["Package.swift"]);
+
+        let (runner, resolution) =
+            resolve_detected_runner(&registry, RunnerSelection::NeedsDetect, &markers).unwrap();
+
+        assert_eq!(runner.id(), "ios");
+        assert_eq!(resolution.name, "ios");
+    }
+
+    #[test]
+    fn test_ios_detects_xcodeproj_marker() {
+        let registry = RunnerRegistry::with_defaults();
+        let markers = WorkspaceMarkers::from_files(["*.xcodeproj"]);
+
+        let (runner, resolution) =
+            resolve_detected_runner(&registry, RunnerSelection::NeedsDetect, &markers).unwrap();
+
+        assert_eq!(runner.id(), "ios");
+        assert_eq!(resolution.name, "ios");
+    }
+
+    #[test]
     fn test_resolve_runner_choice_precedence_matrix() {
         let mut registry = RunnerRegistry::with_defaults();
         registry.register(Arc::new(FakeRunner));
@@ -569,6 +677,16 @@ class PaymentRiskRulesTest {
             Vec::new(),
             Default::default(),
             WorkspaceMarkers::from_files(["AndroidManifest.xml", "build.gradle.kts", "gradlew"]),
+            Vec::new(),
+        )
+    }
+
+    fn ios_workspace(config: BTreeMap<String, String>) -> RunnerWorkspace {
+        RunnerWorkspace::new(
+            Some(PathBuf::from(".")),
+            Vec::new(),
+            config,
+            WorkspaceMarkers::from_files(["Package.swift"]),
             Vec::new(),
         )
     }

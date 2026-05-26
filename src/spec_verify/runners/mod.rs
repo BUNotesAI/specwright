@@ -1,6 +1,7 @@
 mod android;
 mod cargo;
 mod gradle;
+mod ios;
 mod jvm;
 mod maven;
 mod model;
@@ -11,6 +12,7 @@ pub use cargo::CargoRunner;
 #[cfg(test)]
 pub use cargo::extract_bindings;
 pub use gradle::GradleRunner;
+pub use ios::IosRunner;
 pub use maven::MavenRunner;
 pub use model::{
     HostPlatform, PreflightOutcome, ResolutionSource, RunnerResolution, RunnerSelection,
