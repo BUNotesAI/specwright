@@ -39,6 +39,8 @@ pub enum Evidence {
         stdout: String,
         passed: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        command_program: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         package: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         level: Option<String>,

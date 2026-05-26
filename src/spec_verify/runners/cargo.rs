@@ -16,6 +16,10 @@ impl TestRunner for CargoRunner {
         markers.contains("Cargo.toml")
     }
 
+    fn source_extensions(&self) -> &'static [&'static str] {
+        &["rs"]
+    }
+
     fn build_test_command(
         &self,
         _workspace: &RunnerWorkspace,

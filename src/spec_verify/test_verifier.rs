@@ -124,6 +124,7 @@ impl Verifier for TestVerifier {
                     test_name: selector_label,
                     stdout: combined,
                     passed: output.status.success(),
+                    command_program: command_program_evidence(ctx.runner.id(), &command.program),
                     package: binding.selector.package.clone(),
                     level: binding.selector.level.clone(),
                     test_double: binding.selector.test_double.clone(),
@@ -154,6 +155,14 @@ fn resolve_test_binding(
             selector: TestSelector::filter_only(selector.clone()),
             source: BindingSource::LegacyComment,
         })
+}
+
+fn command_program_evidence(runner_id: &str, program: &str) -> Option<String> {
+    if runner_id == "cargo" && program == "cargo" {
+        None
+    } else {
+        Some(program.to_string())
+    }
 }
 
 fn skip_for_missing_capability(
@@ -280,6 +289,19 @@ fn helper() {}
             )
         );
         assert_eq!(binding.source, BindingSource::LegacyComment);
+    }
+
+    #[test]
+    fn test_cargo_command_program_evidence_is_omitted_for_json_compatibility() {
+        assert_eq!(super::command_program_evidence("cargo", "cargo"), None);
+        assert_eq!(
+            super::command_program_evidence("maven", "./mvnw"),
+            Some("./mvnw".to_string())
+        );
+        assert_eq!(
+            super::command_program_evidence("gradle", "./gradlew"),
+            Some("./gradlew".to_string())
+        );
     }
 
     struct MissingInstrumentedRunner;

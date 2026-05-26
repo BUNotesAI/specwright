@@ -106,7 +106,7 @@ fn probe_and_build_context_with_registry_and_host(
     let markers = probe_workspace_markers(root.as_deref());
     let (runner, mut runner_resolution) = resolve_detected_runner(&registry, selection, &markers)?;
     ensure_runner_supported_on_host(runner.as_ref(), host_platform)?;
-    let source_files = collect_source_files(&code_paths)?;
+    let source_files = collect_source_files(&code_paths, runner.source_extensions())?;
     let runner_workspace = RunnerWorkspace::new(
         root,
         code_paths.clone(),
@@ -240,7 +240,7 @@ fn find_workspace_root(code_paths: &[PathBuf]) -> Option<PathBuf> {
         };
 
         loop {
-            if current.join("Cargo.toml").is_file() {
+            if has_workspace_marker(&current) {
                 return Some(current);
             }
             if !current.pop() {
@@ -254,39 +254,44 @@ fn find_workspace_root(code_paths: &[PathBuf]) -> Option<PathBuf> {
 
 fn probe_workspace_markers(root: Option<&Path>) -> WorkspaceMarkers {
     let mut markers = Vec::new();
-    if let Some(root) = root
-        && root.join("Cargo.toml").is_file()
-    {
-        markers.push("Cargo.toml");
+    if let Some(root) = root {
+        for marker in WORKSPACE_MARKERS {
+            if root.join(marker).is_file() {
+                markers.push(*marker);
+            }
+        }
     }
     WorkspaceMarkers::from_files(markers)
 }
 
-fn collect_source_files(code_paths: &[PathBuf]) -> SpecResult<Vec<RunnerSourceFile>> {
+fn collect_source_files(
+    code_paths: &[PathBuf],
+    source_extensions: &[&str],
+) -> SpecResult<Vec<RunnerSourceFile>> {
     let mut files = Vec::new();
     let mut paths = Vec::new();
 
     for path in code_paths {
         if path.is_file() {
-            paths.push(path.clone());
+            if has_source_extension(path, source_extensions) {
+                paths.push(path.clone());
+            }
         } else if path.is_dir() {
-            collect_source_paths(path, &mut paths);
+            collect_source_paths(path, source_extensions, &mut paths);
         }
     }
 
     for path in paths {
-        if path.extension().is_some_and(|ext| ext == "rs") {
-            files.push(RunnerSourceFile {
-                content: std::fs::read_to_string(&path)?,
-                path,
-            });
-        }
+        files.push(RunnerSourceFile {
+            content: std::fs::read_to_string(&path)?,
+            path,
+        });
     }
 
     Ok(files)
 }
 
-fn collect_source_paths(dir: &Path, files: &mut Vec<PathBuf>) {
+fn collect_source_paths(dir: &Path, source_extensions: &[&str], files: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -295,15 +300,49 @@ fn collect_source_paths(dir: &Path, files: &mut Vec<PathBuf>) {
         let path = entry.path();
         if path.is_dir() {
             if let Some(name) = path.file_name().and_then(|name| name.to_str())
-                && (name.starts_with('.') || name == "target")
+                && (name.starts_with('.') || name == "target" || name == "build")
             {
                 continue;
             }
-            collect_source_paths(&path, files);
-        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            collect_source_paths(&path, source_extensions, files);
+        } else if has_source_extension(&path, source_extensions) {
             files.push(path);
         }
     }
+}
+
+const WORKSPACE_ROOT_MARKERS: &[&str] = &[
+    "Cargo.toml",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
+];
+
+const WORKSPACE_MARKERS: &[&str] = &[
+    "Cargo.toml",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
+    "mvnw",
+    "mvnw.cmd",
+    "gradlew",
+    "gradlew.bat",
+];
+
+fn has_workspace_marker(dir: &Path) -> bool {
+    WORKSPACE_ROOT_MARKERS
+        .iter()
+        .any(|marker| dir.join(marker).is_file())
+}
+
+fn has_source_extension(path: &Path, source_extensions: &[&str]) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| source_extensions.contains(&extension))
 }
 
 #[cfg(test)]
@@ -336,7 +375,7 @@ impl VerificationContext {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::{BTreeMap, HashMap};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
     use crate::spec_core::{
@@ -489,6 +528,50 @@ mod tests {
     }
 
     #[test]
+    fn test_gradle_runner_walks_java_and_kotlin_sources() {
+        let root = temp_workspace_path("gradle-java-kotlin-sources");
+        write_file(&root.join("build.gradle.kts"), "plugins {}\n");
+        write_file(&root.join("gradlew"), "#!/bin/sh\n");
+        write_file(
+            &root.join("src/test/java/com/example/JavaRulesTest.java"),
+            "class JavaRulesTest {}\n",
+        );
+        write_file(
+            &root.join("src/test/kotlin/com/example/KotlinRulesTest.kt"),
+            "class KotlinRulesTest\n",
+        );
+
+        let ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root.clone()],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(None),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+
+        let source_names: Vec<String> = ctx
+            .runner_workspace
+            .source_files
+            .iter()
+            .map(|source| {
+                source
+                    .path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+
+        assert_eq!(ctx.runner_resolution.name, "gradle");
+        assert!(source_names.contains(&"JavaRulesTest.java".to_string()));
+        assert!(source_names.contains(&"KotlinRulesTest.kt".to_string()));
+    }
+
+    #[test]
     fn test_probe_context_collects_unknown_runner_config_warnings() {
         let mut registry = RunnerRegistry::new();
         registry.register(Arc::new(ConfigRunner));
@@ -515,6 +598,32 @@ mod tests {
         assert_eq!(ctx.runner_resolution.config_warnings, expected);
     }
 
+    fn resolved_spec_with_runner(runner: Option<&str>) -> ResolvedSpec {
+        ResolvedSpec {
+            task: SpecDocument {
+                meta: SpecMeta {
+                    level: SpecLevel::Task,
+                    name: "runner spec".into(),
+                    inherits: None,
+                    lang: vec![],
+                    tags: vec![],
+                    runner: runner.map(str::to_string),
+                    runner_config: Default::default(),
+                    depends: vec![],
+                    estimate: None,
+                },
+                sections: vec![Section::AcceptanceCriteria {
+                    scenarios: vec![],
+                    span: Span::line(1),
+                }],
+                source_path: PathBuf::new(),
+            },
+            inherited_constraints: vec![],
+            inherited_decisions: vec![],
+            all_scenarios: vec![],
+        }
+    }
+
     fn resolved_spec_with_config(config: BTreeMap<String, String>) -> ResolvedSpec {
         ResolvedSpec {
             task: SpecDocument {
@@ -539,6 +648,19 @@ mod tests {
             inherited_decisions: vec![],
             all_scenarios: vec![],
         }
+    }
+
+    fn temp_workspace_path(name: &str) -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("agent-spec-{name}-{unique}"))
+    }
+
+    fn write_file(path: &Path, content: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, content).unwrap();
     }
 
     #[test]

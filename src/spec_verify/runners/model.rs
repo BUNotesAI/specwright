@@ -148,6 +148,10 @@ pub trait TestRunner: Send + Sync {
 
     fn detect(&self, markers: &WorkspaceMarkers) -> bool;
 
+    fn source_extensions(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     fn build_test_command(
         &self,
         workspace: &RunnerWorkspace,
