@@ -313,6 +313,7 @@ fn collect_source_paths(dir: &Path, source_extensions: &[&str], files: &mut Vec<
 
 const WORKSPACE_ROOT_MARKERS: &[&str] = &[
     "Cargo.toml",
+    "AndroidManifest.xml",
     "pom.xml",
     "build.gradle",
     "build.gradle.kts",
@@ -322,6 +323,7 @@ const WORKSPACE_ROOT_MARKERS: &[&str] = &[
 
 const WORKSPACE_MARKERS: &[&str] = &[
     "Cargo.toml",
+    "AndroidManifest.xml",
     "pom.xml",
     "build.gradle",
     "build.gradle.kts",
@@ -730,17 +732,7 @@ mod tests {
             .iter()
             .flat_map(|path| {
                 let source = std::fs::read_to_string(path).unwrap();
-                source
-                    .lines()
-                    .enumerate()
-                    .filter_map(move |(index, line)| {
-                        if line.contains("fs::") || line.contains("Command::new") {
-                            Some(format!("{}:{}", path.display(), index + 1))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>()
+                io_offenders_outside_preflight(path, &source)
             })
             .collect();
 
@@ -748,6 +740,39 @@ mod tests {
             offenders.is_empty(),
             "runner methods outside preflight should stay IO-free: {offenders:?}"
         );
+    }
+
+    fn io_offenders_outside_preflight(path: &std::path::Path, source: &str) -> Vec<String> {
+        let mut offenders = Vec::new();
+        let mut in_preflight = false;
+        let mut seen_preflight_body = false;
+        let mut brace_depth = 0isize;
+
+        for (index, line) in source.lines().enumerate() {
+            if !in_preflight && line.contains("fn preflight(") {
+                in_preflight = true;
+                seen_preflight_body = false;
+                brace_depth = 0;
+            }
+
+            if (line.contains("fs::") || line.contains("Command::new")) && !in_preflight {
+                offenders.push(format!("{}:{}", path.display(), index + 1));
+            }
+
+            if in_preflight {
+                let opens = line.matches('{').count() as isize;
+                let closes = line.matches('}').count() as isize;
+                if opens > 0 {
+                    seen_preflight_body = true;
+                }
+                brace_depth += opens - closes;
+                if seen_preflight_body && brace_depth == 0 {
+                    in_preflight = false;
+                }
+            }
+        }
+
+        offenders
     }
 
     fn collect_rs_files(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {

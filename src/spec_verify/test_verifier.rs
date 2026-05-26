@@ -304,9 +304,9 @@ fn helper() {}
         );
     }
 
-    struct MissingInstrumentedRunner;
+    struct MissingAdbRunner;
 
-    impl TestRunner for MissingInstrumentedRunner {
+    impl TestRunner for MissingAdbRunner {
         fn id(&self) -> &'static str {
             "android"
         }
@@ -337,15 +337,15 @@ fn helper() {}
         ) -> crate::spec_core::SpecResult<PreflightOutcome> {
             if selector.level.as_deref() == Some("instrumented") {
                 return Ok(PreflightOutcome::MissingCapability {
-                    capability: "android-instrumented-on-windows".into(),
-                    reason: "Android instrumented tests are not supported on Windows hosts".into(),
+                    capability: "adb-device".into(),
+                    reason: "adb devices did not report an active device".into(),
                 });
             }
             Ok(PreflightOutcome::Ready)
         }
     }
 
-    fn instrumented_preflight_context() -> VerificationContext {
+    fn android_missing_adb_context() -> VerificationContext {
         let scenario = Scenario {
             name: "Android instrumented".into(),
             steps: vec![Step {
@@ -395,7 +395,7 @@ fn helper() {}
                 inherited_decisions: vec![],
                 all_scenarios: vec![scenario],
             },
-            runner: Arc::new(MissingInstrumentedRunner),
+            runner: Arc::new(MissingAdbRunner),
             runner_workspace: RunnerWorkspace::for_test("."),
             runner_resolution: RunnerResolution {
                 name: "android".into(),
@@ -408,8 +408,8 @@ fn helper() {}
     }
 
     #[test]
-    fn test_preflight_uses_bound_selector_and_skips_without_spawn() {
-        let ctx = instrumented_preflight_context();
+    fn test_android_preflight_missing_adb_skips_verdict() {
+        let ctx = android_missing_adb_context();
 
         let results = TestVerifier.verify(&ctx).unwrap();
 
@@ -417,7 +417,7 @@ fn helper() {}
         assert_eq!(results[0].verdict, Verdict::Skip);
         assert_eq!(
             results[0].step_results[0].reason,
-            "android-instrumented-on-windows: Android instrumented tests are not supported on Windows hosts"
+            "adb-device: adb devices did not report an active device"
         );
     }
 

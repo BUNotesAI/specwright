@@ -3,8 +3,8 @@ use std::sync::Arc;
 use crate::spec_core::{ResolvedSpec, SpecError, SpecResult};
 
 use super::{
-    CargoRunner, GradleRunner, MavenRunner, ResolutionSource, RunnerResolution, RunnerSelection,
-    TestRunner, WorkspaceMarkers,
+    AndroidRunner, CargoRunner, GradleRunner, MavenRunner, ResolutionSource, RunnerResolution,
+    RunnerSelection, TestRunner, WorkspaceMarkers,
 };
 
 /// Registry of available test runners.
@@ -24,6 +24,7 @@ impl RunnerRegistry {
         let mut registry = Self::new();
         registry.register(Arc::new(CargoRunner));
         registry.register(Arc::new(MavenRunner));
+        registry.register(Arc::new(AndroidRunner::new()));
         registry.register(Arc::new(GradleRunner));
         registry
     }
@@ -362,6 +363,141 @@ class PaymentRiskRulesTest {
     }
 
     #[test]
+    fn test_android_build_test_command_unit_dispatch() {
+        let registry = RunnerRegistry::with_defaults();
+        let runner = registry.get("android").unwrap();
+        let workspace = android_workspace();
+
+        for level in [None, Some("unit".to_string())] {
+            let command = runner
+                .build_test_command(
+                    &workspace,
+                    &TestSelector {
+                        package: Some(":app".to_string()),
+                        filter: "com.example.PaymentRulesTest#approvesValidCard".to_string(),
+                        level,
+                        test_double: None,
+                        targets: None,
+                    },
+                )
+                .unwrap();
+
+            assert_eq!(command.program, "./gradlew");
+            assert_eq!(
+                command.args,
+                vec![
+                    ":app:testDebugUnitTest".to_string(),
+                    "--tests".to_string(),
+                    "com.example.PaymentRulesTest.approvesValidCard".to_string()
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn test_android_build_test_command_instrumented_dispatch() {
+        let registry = RunnerRegistry::with_defaults();
+        let runner = registry.get("android").unwrap();
+        let workspace = android_workspace();
+
+        let command = runner
+            .build_test_command(
+                &workspace,
+                &TestSelector {
+                    package: Some(":app".to_string()),
+                    filter: "com.example.PaymentRulesTest#approvesValidCard".to_string(),
+                    level: Some("instrumented".to_string()),
+                    test_double: None,
+                    targets: None,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(command.program, "./gradlew");
+        assert_eq!(
+            command.args,
+            vec![
+                ":app:connectedAndroidTest".to_string(),
+                "-Pandroid.testInstrumentationRunnerArguments.class=com.example.PaymentRulesTest#approvesValidCard".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_android_build_test_command_unknown_level_errors() {
+        let registry = RunnerRegistry::with_defaults();
+        let runner = registry.get("android").unwrap();
+        let workspace = android_workspace();
+
+        let err = runner
+            .build_test_command(
+                &workspace,
+                &TestSelector {
+                    package: Some(":app".to_string()),
+                    filter: "com.example.PaymentRulesTest#approvesValidCard".to_string(),
+                    level: Some("integration".to_string()),
+                    test_double: None,
+                    targets: None,
+                },
+            )
+            .unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains("integration"));
+        assert!(message.contains("unit"));
+        assert!(message.contains("instrumented"));
+    }
+
+    #[test]
+    fn test_android_requires_device_flips_with_level() {
+        let registry = RunnerRegistry::with_defaults();
+        let runner = registry.get("android").unwrap();
+
+        let unit = TestSelector {
+            package: Some(":app".to_string()),
+            filter: "com.example.PaymentRulesTest#approvesValidCard".to_string(),
+            level: None,
+            test_double: None,
+            targets: None,
+        };
+        let instrumented = TestSelector {
+            level: Some("instrumented".to_string()),
+            ..unit.clone()
+        };
+
+        assert!(!runner.requires_device(&unit));
+        assert!(runner.requires_device(&instrumented));
+    }
+
+    #[test]
+    fn test_android_recognized_config_keys_snapshot() {
+        let registry = RunnerRegistry::with_defaults();
+        let runner = registry.get("android").unwrap();
+
+        assert_eq!(
+            runner.recognized_config_keys(),
+            &["gradle_args", "instrumentation_runner"]
+        );
+    }
+
+    #[test]
+    fn test_android_detect_precedence_over_gradle() {
+        let registry = RunnerRegistry::with_defaults();
+        let markers = WorkspaceMarkers::from_files([
+            "AndroidManifest.xml",
+            "build.gradle.kts",
+            "settings.gradle.kts",
+            "gradlew",
+        ]);
+
+        let (runner, resolution) =
+            resolve_detected_runner(&registry, RunnerSelection::NeedsDetect, &markers).unwrap();
+
+        assert_eq!(runner.id(), "android");
+        assert_eq!(resolution.name, "android");
+    }
+
+    #[test]
     fn test_resolve_runner_choice_precedence_matrix() {
         let mut registry = RunnerRegistry::with_defaults();
         registry.register(Arc::new(FakeRunner));
@@ -425,6 +561,16 @@ class PaymentRiskRulesTest {
         assert_eq!(runner.id(), "fake_runner");
         assert_eq!(resolution.name, "fake_runner");
         assert_eq!(resolution.source, ResolutionSource::SpecFrontmatter);
+    }
+
+    fn android_workspace() -> RunnerWorkspace {
+        RunnerWorkspace::new(
+            Some(PathBuf::from(".")),
+            Vec::new(),
+            Default::default(),
+            WorkspaceMarkers::from_files(["AndroidManifest.xml", "build.gradle.kts", "gradlew"]),
+            Vec::new(),
+        )
     }
 
     fn resolved_spec(runner: Option<&str>) -> ResolvedSpec {

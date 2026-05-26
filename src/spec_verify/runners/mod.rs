@@ -1,3 +1,4 @@
+mod android;
 mod cargo;
 mod gradle;
 mod jvm;
@@ -5,6 +6,7 @@ mod maven;
 mod model;
 mod registry;
 
+pub use android::AndroidRunner;
 pub use cargo::CargoRunner;
 #[cfg(test)]
 pub use cargo::extract_bindings;
