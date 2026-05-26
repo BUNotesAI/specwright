@@ -7,7 +7,33 @@ spec: task           # org | project | task
 name: "Task Name"   # Required, human-readable
 inherits: project    # Optional, parent spec name
 tags: [tag1, tag2]   # Optional, for filtering
+runner: cargo        # Optional: cargo, maven, gradle, android, ios
+runner_config: {}    # Optional inline map, e.g. { scheme: "App" }
 ```
+
+## Runner-Aware Contracts
+
+Use runner frontmatter when the spec must bind verification to a specific language or platform runner:
+
+```spec
+spec: task
+name: "iOS XCTest contract"
+runner: ios
+runner_config: { scheme: "IosMini", destination: "platform=iOS Simulator,name=iPhone 16 Pro" }
+---
+```
+
+Built-in runners:
+
+| Runner | Markers | Selector notes |
+|---|---|---|
+| `cargo` | `Cargo.toml` | `Package` maps to Cargo package. |
+| `maven` | `pom.xml` | `Package` maps to Maven module with `-pl`. |
+| `gradle` | `build.gradle` / `build.gradle.kts` | `Package` maps to Gradle project path. |
+| `android` | Android manifest plus Gradle | `Level: unit` or `Level: instrumented`. |
+| `ios` | `Package.swift` or `*.xcodeproj` | `runner_config.scheme` and `runner_config.destination` feed `xcodebuild test`. |
+
+`runner_config` must be an inline string map. Unknown keys are verification warnings; review them as likely typos.
 
 ## Section Headers (Bilingual)
 
@@ -205,6 +231,19 @@ Scenario: Cross-crate verification
   Given a task spec
   When verified
   Then passes
+```
+
+### Structured selector with runner level
+
+```spec
+Scenario: Android instrumented verification
+  Test:
+    Package: app
+    Filter: com.example.PaymentTest#rejectsExpiredCard
+    Level: instrumented
+  Given an Android project
+  When lifecycle verification runs
+  Then the connected-device test command is selected
 ```
 
 ```spec

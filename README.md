@@ -123,23 +123,45 @@ See [`examples/rewrite-parity-contract.spec`](examples/rewrite-parity-contract.s
 ./install-skills.sh
 ```
 
-This installs the `agent-spec` CLI via `cargo install` (if not already present) and copies all three skills to `~/.claude/skills/`.
+This installs the `agent-spec` CLI from the current checkout with `cargo install --path . --force` and copies all three skills to `~/.claude/skills/`.
+
+Use `AGENT_SPEC_SKILL_DIR` when your agent skills live somewhere else:
+
+```bash
+AGENT_SPEC_SKILL_DIR=~/dotfiles/claude/.claude/skills ./install-skills.sh
+```
+
+Use `AGENT_SPEC_INSTALL_CLI=0` when you only want to sync skills:
+
+```bash
+AGENT_SPEC_INSTALL_CLI=0 AGENT_SPEC_SKILL_DIR=/path/to/skills ./install-skills.sh
+```
 
 #### Manual install for Claude Code
 
 ```bash
 # Copy to your global skills directory
-cp -r skills/agent-spec-tool-first ~/.claude/skills/
-cp -r skills/agent-spec-authoring ~/.claude/skills/
-cp -r skills/agent-spec-estimate ~/.claude/skills/
+SKILL_DIR=~/dotfiles/claude/.claude/skills
+cp -r skills/agent-spec-tool-first "${SKILL_DIR}/"
+cp -r skills/agent-spec-authoring "${SKILL_DIR}/"
+cp -r skills/agent-spec-estimate "${SKILL_DIR}/"
 ```
 
 Or symlink for auto-updates:
 
 ```bash
-ln -s "$(pwd)/skills/agent-spec-tool-first" ~/.claude/skills/
-ln -s "$(pwd)/skills/agent-spec-authoring" ~/.claude/skills/
-ln -s "$(pwd)/skills/agent-spec-estimate" ~/.claude/skills/
+SKILL_DIR=~/dotfiles/claude/.claude/skills
+ln -s "$(pwd)/skills/agent-spec-tool-first" "${SKILL_DIR}/"
+ln -s "$(pwd)/skills/agent-spec-authoring" "${SKILL_DIR}/"
+ln -s "$(pwd)/skills/agent-spec-estimate" "${SKILL_DIR}/"
+```
+
+After copying, verify the local agent skills match the repository copies:
+
+```bash
+diff -qr skills/agent-spec-tool-first "${SKILL_DIR}/agent-spec-tool-first"
+diff -qr skills/agent-spec-authoring "${SKILL_DIR}/agent-spec-authoring"
+diff -qr skills/agent-spec-estimate "${SKILL_DIR}/agent-spec-estimate"
 ```
 
 #### Install for Codex

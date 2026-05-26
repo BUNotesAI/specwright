@@ -92,3 +92,16 @@ Worked examples mapping Task Contracts to round-based estimates.
 | 3-5 scenarios, moderate scope | 12-25 rounds (~36-75 min) |
 | 5-10 scenarios, broad scope or missing decisions | 25-50 rounds (~75-150 min) |
 | 10+ scenarios or cross-cutting refactor | 50+ rounds (~2.5+ hours) |
+
+## Runner-Aware Adders
+
+When a task contract uses non-Cargo runners, add explicit setup and verification rounds:
+
+| Runner | Add rounds | Evidence to expect |
+|---|---:|---|
+| `maven` | +2-4 | Real `mvn test` or wrapper fixture. |
+| `gradle` | +3-5 | Real `gradle test` / `./gradlew test` fixture. |
+| `android` | +5-10 | Android SDK present, Gradle/AGP fixture, ADB preflight or explicit skip evidence. |
+| `ios` | +6-12 | Xcode present, booted iOS Simulator, real `xcodebuild test` fixture. |
+
+Use the higher end when the local machine does not already have the toolchain installed.

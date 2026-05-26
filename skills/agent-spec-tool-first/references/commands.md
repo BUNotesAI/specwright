@@ -85,6 +85,23 @@ agent-spec lifecycle <spec> --code <dir> \
 
 Full pipeline: lint -> verify -> report. Default format is `json`.
 
+Task specs can choose a runner in frontmatter:
+
+```yaml
+runner: cargo | maven | gradle | android | ios
+runner_config: { scheme: "IosMini", destination: "platform=iOS Simulator,name=iPhone 16 Pro" }
+```
+
+Runner-specific behavior:
+
+- `cargo`: detects `Cargo.toml`; runs `cargo test -q`.
+- `maven`: detects `pom.xml`; prefers `./mvnw`; runs `test -Dtest=<filter>`.
+- `gradle`: detects `build.gradle` or `build.gradle.kts`; prefers `./gradlew`; runs `test --tests <filter>`.
+- `android`: detects Gradle plus `AndroidManifest.xml`; `Test.level: instrumented` uses connected-device preflight.
+- `ios`: detects `Package.swift` or `*.xcodeproj`; macOS-only; uses `runner_config.scheme` and `runner_config.destination` for `xcodebuild test`.
+
+When a required external tool or device is unavailable, mobile runner preflight reports `MissingCapability`; `TestVerifier` converts that scenario to `skip`.
+
 ## guard
 
 ```bash

@@ -11,7 +11,7 @@ description: |
 
 # Agent Spec Estimate
 
-> **Version:** 1.1.0 | **Last Updated:** 2026-03-19
+> **Version:** 1.2.0 | **Last Updated:** 2026-05-27
 
 You are an expert at estimating AI agent work effort from structured Task Contracts. Help users by:
 - **Estimating specs**: Read a `.spec`/`.spec.md` file and produce a round-based effort estimate
@@ -55,6 +55,7 @@ A Task Contract has structured elements that map directly to estimation inputs:
 | **Out of Scope** | Scope control | Reduces estimate (explicitly excluded work) |
 | **inherits: project/org** | Inherited overhead | Inherited constraints add ~1-2 rounds for compliance |
 | **Exception scenario count** | Quality indicator | More exceptions = better spec but more rounds |
+| **runner / runner_config** | Toolchain and platform overhead | Non-Cargo runners add fixture, environment, and preflight risk |
 
 ### Scenario Complexity Tiers
 
@@ -65,6 +66,20 @@ A Task Contract has structured elements that map directly to estimation inputs:
 | Error/exception path | 1-3 | Usually simpler than happy path (reject early) |
 | Boundary/integration scenario | 3-8 | Involves file I/O, external calls, or multi-step state |
 | Exploratory/under-documented | 5-10 | No `Decisions` for the tech, or sparse step descriptions |
+
+### Runner Complexity Adders
+
+Apply these adders when the task spec uses `runner` or clearly targets a non-default toolchain:
+
+| Runner | Add rounds | Why |
+|---|---:|---|
+| `cargo` | +0-1 | Default path; add only when workspace/package selection is new. |
+| `maven` | +2-4 | Requires JVM fixture shape and `mvn`/wrapper behavior. |
+| `gradle` | +3-5 | Requires Gradle project-path handling and wrapper/system Gradle behavior. |
+| `android` | +5-10 | Requires Android SDK, Gradle/AGP fixture, unit vs instrumented mode, and ADB preflight. |
+| `ios` | +6-12 | Requires macOS, Xcode, iOS Simulator, `xcodebuild` fixture, and simulator preflight. |
+
+If the spec requires real mobile toolchains in close gates, use 5 min/round for wallclock conversion unless the environment is already installed and booted.
 
 ### Risk Coefficient from Contract Signals
 
@@ -136,6 +151,7 @@ Adjust minutes_per_round:
 - Fast iteration, agent barely paused: 2 min
 - Human reviews each step: 4 min
 - Manual testing needed (mobile, hardware): 5 min
+- Mobile runner setup or simulator/device bootstrapping: 5-7 min
 
 ## Output Format
 

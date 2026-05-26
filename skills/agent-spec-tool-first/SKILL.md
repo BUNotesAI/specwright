@@ -13,7 +13,7 @@ description: |
 
 # Agent Spec Tool-First Workflow
 
-> **Version:** 3.2.0 | **Last Updated:** 2026-03-19
+> **Version:** 3.3.0 | **Last Updated:** 2026-05-27
 
 You are an expert at using `agent-spec` as a CLI tool for contract-driven AI coding. Help users by:
 - **Planning**: Render task contracts with `contract`, generate plan context with `plan`
@@ -21,6 +21,7 @@ You are an expert at using `agent-spec` as a CLI tool for contract-driven AI cod
 - **Verifying**: Run `lifecycle` / `guard` to check code against specs
 - **Reviewing**: Use `explain` for human-readable summaries, `stamp` for git trailers
 - **Debugging**: Interpret verification failures and fix code accordingly
+- **Runner-aware workflows**: Select Cargo, Maven, Gradle, Android, or iOS runners through spec frontmatter or CLI overrides
 
 ## IMPORTANT: CLI Prerequisite Check
 
@@ -59,6 +60,46 @@ Humans define "what is correct" (Contract). Machines verify "is the code correct
 | `agent-spec stamp <spec> --dry-run` | Preview git trailers | Before committing - traceability |
 | `agent-spec verify <spec> --code .` | Raw verification only | When you want verify without lint gate |
 | `agent-spec checkpoint status` | VCS-aware status | Check uncommitted state |
+
+## Runner-Aware Verification
+
+`agent-spec` can execute task scenarios through built-in language runners. Prefer spec frontmatter when the contract owns the runner choice, and use CLI overrides only for local diagnosis or one-off verification.
+
+```spec
+spec: task
+name: "iOS XCTest fixture"
+runner: ios
+runner_config: { scheme: "IosMini", destination: "platform=iOS Simulator,name=iPhone 16 Pro" }
+---
+```
+
+Built-in runners:
+
+| Runner | Detection markers | Test command shape | Notes |
+|---|---|---|---|
+| `cargo` | `Cargo.toml` | `cargo test -q [-p <package>] <filter>` | Default Rust path. Default Cargo JSON remains byte-equivalent unless warnings or runner overrides are present. |
+| `maven` | `pom.xml`, prefers `mvnw` when present | `mvn test [-pl <package>] -Dtest=<filter>` | Uses JVM binding scan for Java/Kotlin scenarios. |
+| `gradle` | `build.gradle` / `build.gradle.kts`, prefers `gradlew` when present | `gradle :<package>:test --tests <filter>` | Maven/Gradle mixed workspaces require exactly one wrapper family or an explicit runner. |
+| `android` | `AndroidManifest.xml` plus Gradle markers | Gradle unit or instrumented task selected by `Test.level` | `level: instrumented` requires ADB and a connected device/emulator; missing capability becomes Skip. |
+| `ios` | `Package.swift` or `*.xcodeproj` | `xcodebuild test -scheme <scheme> -destination <destination> -only-testing:<package>/<filter>` | macOS only. Requires Xcode and a booted iOS Simulator; missing capability becomes Skip. |
+
+Structured selectors can include `Package`, `Filter`, and `Level`:
+
+```spec
+Scenario: Android instrumented flow
+  Test:
+    Package: app
+    Filter: com.example.PaymentTest#rejectsExpiredCard
+    Level: instrumented
+```
+
+Known runner config keys:
+
+| Runner | Keys |
+|---|---|
+| `ios` | `scheme`, `destination` |
+
+Unknown `runner_config` keys are non-blocking warnings in the verification context. Treat spelling mistakes such as `destinaiton` as review findings even when the lifecycle status still passes.
 
 ## Documentation
 

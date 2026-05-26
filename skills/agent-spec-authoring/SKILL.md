@@ -13,7 +13,7 @@ description: |
 
 # Agent Spec Authoring
 
-> **Version:** 3.2.0 | **Last Updated:** 2026-03-19
+> **Version:** 3.3.0 | **Last Updated:** 2026-05-27
 
 You are an expert at writing agent-spec Task Contracts. Help users by:
 - **Creating specs**: Scaffold new `.spec.md` files with correct structure (`.spec` also supported)
@@ -21,6 +21,7 @@ You are an expert at writing agent-spec Task Contracts. Help users by:
 - **Writing scenarios**: BDD-style with proper test selectors and step tables
 - **Debugging specs**: Fix lint warnings, improve quality scores
 - **Self-hosting**: Maintain specs for the agent-spec project itself
+- **Runner-aware contracts**: Choose Cargo, Maven, Gradle, Android, or iOS execution semantics in frontmatter
 
 ## IMPORTANT: CLI Prerequisite Check
 
@@ -273,6 +274,8 @@ spec: task           # Level: org, project, task
 name: "Task Name"   # Human-readable name
 inherits: project    # Parent spec (optional)
 tags: [feature, api] # Tags for filtering
+runner: cargo        # Optional: cargo, maven, gradle, android, ios
+runner_config: {}    # Optional inline map for runner-specific settings
 ---
 ```
 
@@ -291,6 +294,34 @@ org.spec(.md) → project.spec(.md) → task.spec(.md)
 Both `.spec` and `.spec.md` extensions are recognized. `.spec.md` is preferred for new files (enables Markdown preview in editors and GitHub).
 
 Constraints and decisions are **inherited downward**. Task specs inherit from project, which inherits from org.
+
+### Runner-Aware Frontmatter
+
+Use `runner` when the task contract must bind scenarios to a non-Cargo execution environment or when auto-detection would be ambiguous.
+
+```spec
+spec: task
+name: "iOS XCTest mini fixture"
+runner: ios
+runner_config: { scheme: "IosMini", destination: "platform=iOS Simulator,name=iPhone 16 Pro" }
+---
+```
+
+Built-in runner choices:
+
+| Runner | Use when | Frontmatter/config notes |
+|---|---|---|
+| `cargo` | Rust crates and workspaces | Usually detected from `Cargo.toml`; `Package` maps to `cargo test -p`. |
+| `maven` | Java/Kotlin Maven projects | Detected from `pom.xml`; `Package` maps to `-pl`. |
+| `gradle` | Java/Kotlin Gradle projects | Detected from `build.gradle` / `build.gradle.kts`; `Package` maps to Gradle project path. |
+| `android` | Android Gradle projects | Use selector `Level: unit` or `Level: instrumented`; instrumented tests require ADB and a device/emulator. |
+| `ios` | Swift Package or Xcode project XCTest | macOS only; `runner_config` may set `scheme` and `destination`. |
+
+Rules:
+
+- `runner_config` must use inline map syntax: `{ key: "value" }`.
+- Unknown runner config keys are warnings, not hard parse errors. Treat them as likely contract bugs during review.
+- Mobile real-path scenarios must state toolchain prerequisites in Decisions or Open Environment Notes when they are close gates.
 
 ## BDD Step Keywords
 
@@ -324,6 +355,21 @@ Scenario: Cross-crate verification
   Given a task spec
   When verified
   Then passes
+```
+
+### Structured selector with runner level
+
+Use `Level` for runners that expose multiple execution modes.
+
+```spec
+Scenario: Android instrumented flow
+  Test:
+    Package: app
+    Filter: com.example.PaymentTest#rejectsExpiredCard
+    Level: instrumented
+  Given an Android project
+  When lifecycle verification runs
+  Then the instrumented test command is selected
 ```
 
 ### Chinese equivalents
