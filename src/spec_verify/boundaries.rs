@@ -131,16 +131,19 @@ fn collect_path_boundaries(sections: &[crate::spec_core::Section]) -> (Vec<Strin
 }
 
 fn looks_like_path_boundary(text: &str) -> bool {
-    let trimmed = text.trim();
-    trimmed.contains('/')
-        || trimmed.contains('\\')
-        || trimmed.contains('*')
-        || trimmed.ends_with(".rs")
-        || trimmed.ends_with(".ts")
-        || trimmed.ends_with(".js")
-        || trimmed.ends_with(".py")
-        || trimmed.ends_with(".spec")
-        || trimmed.ends_with(".spec.md")
+    let candidate = boundary_path_candidate(text);
+    if candidate.split_whitespace().nth(1).is_some() {
+        return false;
+    }
+
+    candidate.contains('/')
+        || candidate.contains('\\')
+        || candidate.contains('*')
+        || candidate.starts_with('.')
+        || candidate
+            .rsplit(['/', '\\'])
+            .next()
+            .is_some_and(|name| name.contains('.'))
 }
 
 fn normalize_change_paths(paths: &[PathBuf], workspace_root: Option<&Path>) -> Vec<String> {
@@ -170,13 +173,22 @@ fn normalize_path(path: &Path, workspace_root: Option<&Path>) -> String {
 }
 
 fn normalize_pattern(pattern: &str) -> String {
-    pattern
-        .trim()
+    boundary_path_candidate(pattern)
         .trim_matches('`')
         .replace('\\', "/")
         .trim_start_matches("./")
         .trim_matches('/')
         .to_string()
+}
+
+fn boundary_path_candidate(text: &str) -> &str {
+    let trimmed = text.trim();
+    if let Some(start) = trimmed.find('`')
+        && let Some(end) = trimmed[start + 1..].find('`')
+    {
+        return &trimmed[start + 1..start + 1 + end];
+    }
+    trimmed
 }
 
 fn path_matches_pattern(pattern: &str, path: &str) -> bool {
@@ -258,7 +270,7 @@ fn find_workspace_root(paths: &[PathBuf]) -> Option<PathBuf> {
 
         loop {
             if current.join("Cargo.toml").is_file() {
-                return Some(current);
+                return Some(std::fs::canonicalize(&current).unwrap_or(current));
             }
             if !current.pop() {
                 break;
@@ -325,6 +337,69 @@ name: "边界"
             .verify(&VerificationContext {
                 code_paths: vec![PathBuf::from(".")],
                 change_paths: vec![PathBuf::from("crates/spec-parser/src/parser.rs")],
+                ai_mode: AiMode::Off,
+                resolved_spec: resolved,
+            })
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].verdict, Verdict::Pass);
+    }
+
+    #[test]
+    fn test_boundaries_verifier_accepts_absolute_changes_with_relative_workspace_root() {
+        let resolved = make_resolved_spec(
+            r#"spec: task
+name: "boundary"
+---
+
+## Boundaries
+
+### Allowed Changes
+- src/spec_verify/**
+"#,
+        )
+        .unwrap();
+
+        let verifier = BoundariesVerifier;
+        let results = verifier
+            .verify(&VerificationContext {
+                code_paths: vec![PathBuf::from(".")],
+                change_paths: vec![
+                    std::env::current_dir()
+                        .unwrap()
+                        .join("src/spec_verify/boundaries.rs"),
+                ],
+                ai_mode: AiMode::Off,
+                resolved_spec: resolved,
+            })
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].verdict, Verdict::Pass);
+    }
+
+    #[test]
+    fn test_boundaries_verifier_accepts_toml_and_lockfile_boundaries() {
+        let resolved = make_resolved_spec(
+            r#"spec: task
+name: "boundary"
+---
+
+## Boundaries
+
+### Allowed Changes
+- `Cargo.toml`
+- `Cargo.lock`(generated)
+"#,
+        )
+        .unwrap();
+
+        let verifier = BoundariesVerifier;
+        let results = verifier
+            .verify(&VerificationContext {
+                code_paths: vec![PathBuf::from(".")],
+                change_paths: vec![PathBuf::from("Cargo.toml"), PathBuf::from("Cargo.lock")],
                 ai_mode: AiMode::Off,
                 resolved_spec: resolved,
             })

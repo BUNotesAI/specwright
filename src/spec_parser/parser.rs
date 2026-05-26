@@ -1,6 +1,6 @@
 use crate::spec_core::{
-    Boundary, BoundaryCategory, Constraint, ConstraintCategory, ReviewMode, Scenario,
-    ScenarioMode, Section, Span, SpecDocument, SpecError, SpecResult, Step, TestSelector,
+    Boundary, BoundaryCategory, Constraint, ConstraintCategory, ReviewMode, Scenario, ScenarioMode,
+    Section, Span, SpecDocument, SpecError, SpecResult, Step, TestSelector,
 };
 use std::path::{Path, PathBuf};
 
@@ -225,6 +225,7 @@ fn parse_boundaries(lines: &[(usize, &str)]) -> Vec<Boundary> {
     items
 }
 
+#[allow(clippy::too_many_lines)] // Exception: legacy scenario parser state machine; refactor is outside this migration checkpoint.
 fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<Vec<Scenario>> {
     let mut scenarios = Vec::new();
     let mut current_name: Option<(String, usize)> = None;

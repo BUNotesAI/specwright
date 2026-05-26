@@ -1,6 +1,7 @@
 use crate::spec_core::{Lang, SpecLevel, SpecMeta};
 
 /// Parse front-matter block (before `---`) into SpecMeta.
+#[allow(clippy::too_many_lines)] // Exception: legacy front-matter parser; refactor is outside this migration checkpoint.
 pub fn parse_meta(lines: &[&str]) -> Result<SpecMeta, String> {
     let mut level = None;
     let mut name = None;

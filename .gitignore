@@ -30,3 +30,9 @@ Thumbs.db
 
 # agent-spec run logs
 .agent-spec/
+
+# harness local config (public repo: keep out of upstream)
+/vault
+CLAUDE.md
+AGENTS.md
+.claude/

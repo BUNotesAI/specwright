@@ -30,6 +30,7 @@ impl Verifier for TestVerifier {
         "test"
     }
 
+    #[allow(clippy::too_many_lines)] // Exception: legacy Cargo verifier path; runner refactor will split this under task_3455b7d6.
     fn verify(&self, ctx: &VerificationContext) -> SpecResult<Vec<ScenarioResult>> {
         let Some(workspace_root) = find_workspace_root(&ctx.code_paths) else {
             return Ok(Vec::new());

@@ -1,3 +1,4 @@
+#![warn(clippy::too_many_lines)]
 #![warn(clippy::all)]
 #![deny(unsafe_code)]
 #![allow(dead_code)]
@@ -257,6 +258,7 @@ fn main() -> ExitCode {
     }
 }
 
+#[allow(clippy::too_many_lines)] // Exception: legacy CLI dispatcher; decomposition is outside this migration checkpoint.
 fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Parse { files, format } => cmd_parse(&files, &format),
@@ -488,6 +490,7 @@ fn cmd_verify(
 // ── Lifecycle (full pipeline for CI/agent) ──────────────────────
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)] // Exception: legacy lifecycle orchestration; refactor is outside this migration checkpoint.
 fn cmd_lifecycle(
     spec: &Path,
     code: &Path,
@@ -590,19 +593,18 @@ fn cmd_lifecycle(
     let passing = gw.is_passing_with_review_mode(&verify_report, review_mode);
 
     // Collect optimization candidates: optimize-mode scenarios that passed
-    let optimization_candidates: Vec<String> = gw
-        .resolved()
-        .all_scenarios
-        .iter()
-        .filter(|s| s.mode == crate::spec_core::ScenarioMode::Optimize)
-        .filter(|s| {
-            verify_report
-                .results
-                .iter()
-                .any(|r| r.scenario_name == s.name && r.verdict == crate::spec_core::Verdict::Pass)
-        })
-        .map(|s| s.name.clone())
-        .collect();
+    let optimization_candidates: Vec<String> =
+        gw.resolved()
+            .all_scenarios
+            .iter()
+            .filter(|s| s.mode == crate::spec_core::ScenarioMode::Optimize)
+            .filter(|s| {
+                verify_report.results.iter().any(|r| {
+                    r.scenario_name == s.name && r.verdict == crate::spec_core::Verdict::Pass
+                })
+            })
+            .map(|s| s.name.clone())
+            .collect();
 
     // Stage 2b: If caller mode, emit pending AI requests for skipped scenarios
     let ai_pending = if ai_mode == crate::spec_verify::AiMode::Caller {
@@ -666,8 +668,7 @@ fn cmd_lifecycle(
             json_out["layers"] = serde_json::json!(layer_list);
         }
         if !optimization_candidates.is_empty() {
-            json_out["optimization_candidates"] =
-                serde_json::json!(optimization_candidates);
+            json_out["optimization_candidates"] = serde_json::json!(optimization_candidates);
         }
         println!("{}", serde_json::to_string_pretty(&json_out)?);
     } else {
@@ -1023,7 +1024,11 @@ fn warn_duplicate_spec_extensions(spec_files: &[PathBuf]) {
                 stem,
                 paths
                     .iter()
-                    .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
+                    .map(|p| p
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
             );
@@ -1090,7 +1095,7 @@ fn find_command_repo_root(spec: &Path, code: &Path) -> Option<PathBuf> {
 }
 
 fn find_guard_repo_root(spec_dir: &Path, code: &Path) -> Option<PathBuf> {
-    for candidate in [code, spec_dir, Path::new(".")] {
+    for candidate in [code, spec_dir] {
         if let Some(root) = find_git_repo_root(candidate) {
             return Some(root);
         }
@@ -1530,9 +1535,7 @@ fn merge_checkpoint_results(
                             result.evidence.push(spec_core::Evidence::PatternMatch {
                                 pattern: "checkpoint:incremental".into(),
                                 matched: true,
-                                locations: vec![
-                                    "verdict carried forward from checkpoint".into(),
-                                ],
+                                locations: vec!["verdict carried forward from checkpoint".into()],
                             });
                             result.duration_ms = 0;
                         }
@@ -2368,12 +2371,8 @@ fn cmd_plan(
     let contract = gw.plan();
     let scan_depth = crate::spec_gateway::plan::ScanDepth::parse(depth);
 
-    let ctx = crate::spec_gateway::plan::build_plan_context(
-        &contract,
-        gw.resolved(),
-        code,
-        scan_depth,
-    );
+    let ctx =
+        crate::spec_gateway::plan::build_plan_context(&contract, gw.resolved(), code, scan_depth);
 
     // Print warnings to stderr
     for warning in &ctx.warnings {
@@ -2400,6 +2399,7 @@ struct GraphNode {
     tags: Vec<String>,
 }
 
+#[allow(clippy::too_many_lines)] // Exception: legacy graph command assembly; refactor is outside this migration checkpoint.
 fn cmd_graph(spec_dir: &Path, format: &str) -> Result<(), Box<dyn std::error::Error>> {
     use std::collections::HashMap;
 
@@ -2661,12 +2661,11 @@ mod tests {
 
     use super::{
         GitChangeScope, ResumeMode, RunLogEntry, build_stamp_trailers, checkpoint_path,
-        cmd_init_at, generate_rewrite_parity_template_both,
-        generate_rewrite_parity_template_en, generate_rewrite_parity_template_zh,
-        generate_template_both, generate_template_en, generate_template_zh, is_spec_file,
-        load_checkpoint, merge_checkpoint_results, parse_ai_mode, render_brief_output,
-        render_contract_output, resolve_command_change_paths, resolve_guard_change_paths,
-        save_checkpoint, vcs, warn_duplicate_spec_extensions,
+        cmd_init_at, generate_rewrite_parity_template_both, generate_rewrite_parity_template_en,
+        generate_rewrite_parity_template_zh, generate_template_both, generate_template_en,
+        generate_template_zh, is_spec_file, load_checkpoint, merge_checkpoint_results,
+        parse_ai_mode, render_brief_output, render_contract_output, resolve_command_change_paths,
+        resolve_guard_change_paths, save_checkpoint, vcs, warn_duplicate_spec_extensions,
     };
 
     const SAMPLE: &str = r#"spec: task
@@ -3226,9 +3225,10 @@ Scenario: verification metadata stays visible
             repo_root().join("specs/roadmap/task-phase2-run-history-and-vcs-context.spec.md"),
         )
         .unwrap();
-        let phase3 =
-            fs::read_to_string(repo_root().join("specs/roadmap/task-phase3-spec-governance.spec.md"))
-                .unwrap();
+        let phase3 = fs::read_to_string(
+            repo_root().join("specs/roadmap/task-phase3-spec-governance.spec.md"),
+        )
+        .unwrap();
         let phase4 = fs::read_to_string(
             repo_root().join("specs/roadmap/task-phase4-ai-verification-expansion.spec.md"),
         )
@@ -3555,18 +3555,18 @@ Scenario: verification metadata stays visible
         let root = repo_root();
 
         // Codex integration
-        let agents_md = fs::read_to_string(root.join("AGENTS.md")).unwrap();
+        let agents_md = fs::read_to_string(root.join("docs/codex-integration.md")).unwrap();
         assert!(
             agents_md.contains("agent-spec contract"),
-            "AGENTS.md should reference contract command"
+            "docs/codex-integration.md should reference contract command"
         );
         assert!(
             agents_md.contains("agent-spec lifecycle"),
-            "AGENTS.md should reference lifecycle command"
+            "docs/codex-integration.md should reference lifecycle command"
         );
         assert!(
             agents_md.contains("agent-spec guard"),
-            "AGENTS.md should reference guard command"
+            "docs/codex-integration.md should reference guard command"
         );
 
         // Cursor integration
@@ -4409,7 +4409,11 @@ Scenario: pass
 
         let estimates: Vec<f64> = nodes
             .iter()
-            .map(|n| n.estimate.as_deref().map_or(0.0, super::parse_estimate_days))
+            .map(|n| {
+                n.estimate
+                    .as_deref()
+                    .map_or(0.0, super::parse_estimate_days)
+            })
             .collect();
         let critical = super::compute_critical_path(nodes.len(), &edges, &estimates);
         let dot = super::generate_dot(&nodes, &edges, &critical);
@@ -4448,7 +4452,10 @@ Scenario: pass
         }];
 
         let dot = super::generate_dot(&nodes, &[], &[]);
-        assert!(dot.contains("2d"), "DOT node label should contain estimate '2d'");
+        assert!(
+            dot.contains("2d"),
+            "DOT node label should contain estimate '2d'"
+        );
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -4555,13 +4562,20 @@ Scenario: pass
 
         let estimates: Vec<f64> = nodes
             .iter()
-            .map(|n| n.estimate.as_deref().map_or(0.0, super::parse_estimate_days))
+            .map(|n| {
+                n.estimate
+                    .as_deref()
+                    .map_or(0.0, super::parse_estimate_days)
+            })
             .collect();
         let critical = super::compute_critical_path(nodes.len(), &edges, &estimates);
         let dot = super::generate_dot(&nodes, &edges, &critical);
 
         // Critical path A -> B -> C should be marked red
-        assert!(dot.contains("color=red"), "Critical path edges should be colored red");
+        assert!(
+            dot.contains("color=red"),
+            "Critical path edges should be colored red"
+        );
 
         let _ = fs::remove_dir_all(dir);
     }

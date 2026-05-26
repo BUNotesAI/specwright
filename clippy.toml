@@ -1,0 +1,33 @@
+# Source Restoration Note:
+# Restored from the pre-translation template lines 1-12. The content has been
+# translated and revised in place to preserve the mechanical Rust line-length
+# guardrail emitted by harness-init-or-migrate.
+#
+# Workspace-level clippy configuration emitted to the target project workspace
+# root by harness-init-or-migrate.
+#
+# The function length threshold is intentionally stricter than clippy's default
+# of 100 lines. Rust code should usually split before a function reaches this
+# size, especially in use cases, command handlers, adapters, and TUI logic.
+#
+# Pair this file with a crate-root lint in each lib.rs or main.rs:
+#
+#   #![warn(clippy::too_many_lines)]
+#
+# With the standard close gate:
+#
+#   cargo clippy --workspace --all-targets -- -D warnings
+#
+# the warning becomes a hard failure.
+#
+# Exception rule:
+#
+# - New code should be refactored instead of exempted.
+# - Existing oversized code may use a single-site allow only when refactoring
+#   is outside the current task scope.
+# - Any allow must include an English reason:
+#
+#   #[allow(clippy::too_many_lines)] // Exception: legacy parser table, tracked by task_xxxxxxxx.
+#
+# Do not add broad module-level or crate-level allows for this lint.
+too-many-lines-threshold = 80

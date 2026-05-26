@@ -1972,14 +1972,15 @@ impl SpecLinter for CircularDependencyLinter {
         for s in &scenarios {
             if !visited.contains(s.name.as_str()) {
                 let mut path = Vec::new();
-                if let Some(cycle) =
-                    dfs_find_cycle(s.name.as_str(), &adj, &mut visited, &mut on_stack, &mut path)
-                {
+                if let Some(cycle) = dfs_find_cycle(
+                    s.name.as_str(),
+                    &adj,
+                    &mut visited,
+                    &mut on_stack,
+                    &mut path,
+                ) {
                     let cycle_display = cycle.join(" -> ");
-                    let span = span_map
-                        .get(s.name.as_str())
-                        .copied()
-                        .unwrap_or_default();
+                    let span = span_map.get(s.name.as_str()).copied().unwrap_or_default();
                     diags.push(LintDiagnostic {
                         rule: "circular-dependency".into(),
                         severity: Severity::Error,
@@ -2120,7 +2121,9 @@ impl SpecLinter for PseudoScenarioLinter {
                         continue;
                     };
 
-                    let (severity, verdict_label, hint) = match classify_scenario_double(test_double) {
+                    let (severity, verdict_label, hint) = match classify_scenario_double(
+                        test_double,
+                    ) {
                         ScenarioVerdict::Behavior => continue,
                         ScenarioVerdict::Structural => (
                             Severity::Warning,

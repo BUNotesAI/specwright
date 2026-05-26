@@ -212,8 +212,7 @@ impl SpecGateway {
         let boundaries = BoundariesVerifier;
         let test = TestVerifier;
         let complexity = ComplexityVerifier;
-        let verifiers: Vec<&dyn Verifier> =
-            vec![&structural, &boundaries, &test, &ai, &complexity];
+        let verifiers: Vec<&dyn Verifier> = vec![&structural, &boundaries, &test, &ai, &complexity];
         run_verification(&ctx, &verifiers)
     }
 
@@ -1004,10 +1003,7 @@ tags: [test]
         let gw = SpecGateway::from_input(CRITICAL_SAMPLE).unwrap();
         let report = make_report(
             "门禁测试",
-            &[
-                ("普通场景", Verdict::Pass),
-                ("关键场景", Verdict::Fail),
-            ],
+            &[("普通场景", Verdict::Pass), ("关键场景", Verdict::Fail)],
         );
 
         let gate = gw.gate_status(&report);
@@ -1020,10 +1016,7 @@ tags: [test]
         let gw = SpecGateway::from_input(CRITICAL_SAMPLE).unwrap();
         let report = make_report(
             "门禁测试",
-            &[
-                ("普通场景", Verdict::Pass),
-                ("关键场景", Verdict::Pass),
-            ],
+            &[("普通场景", Verdict::Pass), ("关键场景", Verdict::Pass)],
         );
 
         let gate = gw.gate_status(&report);
@@ -1036,10 +1029,7 @@ tags: [test]
         let gw = SpecGateway::from_input(SAMPLE).unwrap();
         let report = make_report(
             "测试任务",
-            &[
-                ("正常路径", Verdict::Pass),
-                ("错误路径", Verdict::Fail),
-            ],
+            &[("正常路径", Verdict::Pass), ("错误路径", Verdict::Fail)],
         );
 
         let gate = gw.gate_status(&report);
@@ -1077,10 +1067,7 @@ tags: [test]
         assert_eq!(scenario.display_name(), "用户注册成功");
 
         // Verify gate_status works with the display name
-        let report = make_report(
-            "后缀测试",
-            &[("用户注册成功（critical）", Verdict::Fail)],
-        );
+        let report = make_report("后缀测试", &[("用户注册成功（critical）", Verdict::Fail)]);
         let gate = gw.gate_status(&report);
         assert!(gate.gate_blocked);
         assert_eq!(gate.blocked_gates, vec!["用户注册成功"]);
@@ -1092,10 +1079,7 @@ tags: [test]
         let gw = SpecGateway::from_input(CRITICAL_SAMPLE).unwrap();
         let report = make_report(
             "门禁测试",
-            &[
-                ("普通场景", Verdict::Fail),
-                ("关键场景", Verdict::Fail),
-            ],
+            &[("普通场景", Verdict::Fail), ("关键场景", Verdict::Fail)],
         );
 
         let passing = gw.is_passing(&report);
@@ -1129,10 +1113,7 @@ name: "人类审核"
         .unwrap();
 
         // Simulate a PendingReview result (test verifier would produce this)
-        let report = make_report(
-            "人类审核",
-            &[("需要人类审核", Verdict::PendingReview)],
-        );
+        let report = make_report("人类审核", &[("需要人类审核", Verdict::PendingReview)]);
 
         assert_eq!(report.summary.pending_review, 1);
         assert_eq!(report.results[0].verdict, Verdict::PendingReview);
@@ -1160,10 +1141,7 @@ name: "审核模式"
         )
         .unwrap();
 
-        let report = make_report(
-            "审核模式",
-            &[("审核场景", Verdict::PendingReview)],
-        );
+        let report = make_report("审核模式", &[("审核场景", Verdict::PendingReview)]);
 
         // Auto mode: PendingReview counts as pass
         assert!(gw.is_passing_with_review_mode(&report, "auto"));
@@ -1190,10 +1168,7 @@ name: "严格模式"
         )
         .unwrap();
 
-        let report = make_report(
-            "严格模式",
-            &[("严格审核", Verdict::PendingReview)],
-        );
+        let report = make_report("严格模式", &[("严格审核", Verdict::PendingReview)]);
 
         // Strict mode: PendingReview counts as NOT passing
         assert!(!gw.is_passing_with_review_mode(&report, "strict"));
@@ -1242,10 +1217,7 @@ tags: [test]
         // Build a report where optimize scenario passes
         let report = make_report(
             "优化模式测试",
-            &[
-                ("普通场景", Verdict::Pass),
-                ("优化场景", Verdict::Pass),
-            ],
+            &[("普通场景", Verdict::Pass), ("优化场景", Verdict::Pass)],
         );
 
         // is_passing should be true (all pass)
@@ -1274,10 +1246,7 @@ tags: [test]
         let gw = SpecGateway::from_input(OPTIMIZE_SAMPLE).unwrap();
         let report = make_report(
             "优化模式测试",
-            &[
-                ("普通场景", Verdict::Pass),
-                ("优化场景", Verdict::Fail),
-            ],
+            &[("普通场景", Verdict::Pass), ("优化场景", Verdict::Fail)],
         );
 
         // Optimize scenario failing should cause is_passing to be false
@@ -1327,10 +1296,7 @@ tags: [test]
         // Build report where A fails
         let mut report = make_report(
             "依赖测试",
-            &[
-                ("场景 A", Verdict::Fail),
-                ("场景 B", Verdict::Pass),
-            ],
+            &[("场景 A", Verdict::Fail), ("场景 B", Verdict::Pass)],
         );
 
         // Apply dependency skips

@@ -144,10 +144,10 @@ ln -s "$(pwd)/skills/agent-spec-estimate" ~/.claude/skills/
 
 #### Install for Codex
 
-The equivalent guidance for Codex lives in [`AGENTS.md`](AGENTS.md). Copy it to your project root:
+The equivalent guidance for Codex lives in [`docs/codex-integration.md`](docs/codex-integration.md). Copy it to your project root as `AGENTS.md`:
 
 ```bash
-cp AGENTS.md /path/to/your/project/
+cp docs/codex-integration.md /path/to/your/project/AGENTS.md
 ```
 
 #### Install for Cursor
@@ -448,7 +448,7 @@ If you use Claude Code, Codex, Cursor, or another AI coding agent, install the s
 
 The `agent-spec-tool-first` skill tells the agent to read the Contract first, implement within its Boundaries, run `lifecycle` to verify, and retry on failure without modifying the spec. The `agent-spec-authoring` skill helps the agent draft or revise Task Contracts in the DSL. The `agent-spec-estimate` skill maps Contract elements to round-based effort estimates for sprint planning.
 
-For agents without skill support, the project includes `AGENTS.md` (Codex), `.cursorrules` (Cursor), and `.aider.conf.yml` (Aider) with the essential command reference.
+For agents without skill support, the project includes [`docs/codex-integration.md`](docs/codex-integration.md) (Codex), `.cursorrules` (Cursor), and `.aider.conf.yml` (Aider) with the essential command reference.
 
 ### What we review
 
