@@ -8,8 +8,8 @@ use crate::spec_core::{LintReport, SpecResult, Verdict, VerificationReport};
 use crate::spec_lint::LintPipeline;
 use crate::spec_report::OutputFormat;
 use crate::spec_verify::{
-    AiBackend, AiMode, AiVerifier, BoundariesVerifier, ComplexityVerifier, StructuralVerifier,
-    TestVerifier, VerificationContext, Verifier, run_verification,
+    AiBackend, AiMode, AiVerifier, BoundariesVerifier, ComplexityVerifier, RunnerResolution,
+    StructuralVerifier, TestVerifier, Verifier, probe_and_build_context, run_verification,
 };
 
 use super::TaskContract;
@@ -18,6 +18,11 @@ use super::TaskContract;
 pub struct SpecGateway {
     doc: crate::spec_core::SpecDocument,
     resolved: crate::spec_core::ResolvedSpec,
+}
+
+pub struct VerificationRun {
+    pub report: VerificationReport,
+    pub runner_resolution: RunnerResolution,
 }
 
 impl SpecGateway {
@@ -116,11 +121,30 @@ impl SpecGateway {
         change_paths: &[PathBuf],
         ai_mode: AiMode,
     ) -> SpecResult<VerificationReport> {
+        Ok(self
+            .run_verify(
+                vec![code_path.as_ref().to_path_buf()],
+                change_paths.to_vec(),
+                ai_mode,
+                AiVerifier::from_mode(ai_mode),
+                None,
+            )?
+            .report)
+    }
+
+    pub fn verify_with_changes_ai_mode_and_runner(
+        &self,
+        code_path: impl AsRef<Path>,
+        change_paths: &[PathBuf],
+        ai_mode: AiMode,
+        runner: Option<&str>,
+    ) -> SpecResult<VerificationRun> {
         self.run_verify(
             vec![code_path.as_ref().to_path_buf()],
             change_paths.to_vec(),
             ai_mode,
             AiVerifier::from_mode(ai_mode),
+            runner,
         )
     }
 
@@ -130,12 +154,15 @@ impl SpecGateway {
         change_paths: &[PathBuf],
         backend: Arc<dyn AiBackend>,
     ) -> SpecResult<VerificationReport> {
-        self.run_verify(
-            vec![code_path.as_ref().to_path_buf()],
-            change_paths.to_vec(),
-            AiMode::External,
-            AiVerifier::with_backend(backend),
-        )
+        Ok(self
+            .run_verify(
+                vec![code_path.as_ref().to_path_buf()],
+                change_paths.to_vec(),
+                AiMode::External,
+                AiVerifier::with_backend(backend),
+                None,
+            )?
+            .report)
     }
 
     pub fn verify_paths(&self, code_paths: &[PathBuf]) -> SpecResult<VerificationReport> {
@@ -172,12 +199,15 @@ impl SpecGateway {
         change_paths: &[PathBuf],
         ai_mode: AiMode,
     ) -> SpecResult<VerificationReport> {
-        self.run_verify(
-            code_paths.to_vec(),
-            change_paths.to_vec(),
-            ai_mode,
-            AiVerifier::from_mode(ai_mode),
-        )
+        Ok(self
+            .run_verify(
+                code_paths.to_vec(),
+                change_paths.to_vec(),
+                ai_mode,
+                AiVerifier::from_mode(ai_mode),
+                None,
+            )?
+            .report)
     }
 
     pub fn verify_paths_with_changes_and_ai_backend(
@@ -186,12 +216,15 @@ impl SpecGateway {
         change_paths: &[PathBuf],
         backend: Arc<dyn AiBackend>,
     ) -> SpecResult<VerificationReport> {
-        self.run_verify(
-            code_paths.to_vec(),
-            change_paths.to_vec(),
-            AiMode::External,
-            AiVerifier::with_backend(backend),
-        )
+        Ok(self
+            .run_verify(
+                code_paths.to_vec(),
+                change_paths.to_vec(),
+                AiMode::External,
+                AiVerifier::with_backend(backend),
+                None,
+            )?
+            .report)
     }
 
     fn run_verify(
@@ -200,20 +233,27 @@ impl SpecGateway {
         change_paths: Vec<PathBuf>,
         ai_mode: AiMode,
         ai: AiVerifier,
-    ) -> SpecResult<VerificationReport> {
-        let ctx = VerificationContext {
+        runner: Option<&str>,
+    ) -> SpecResult<VerificationRun> {
+        let ctx = probe_and_build_context(
             code_paths,
             change_paths,
             ai_mode,
-            resolved_spec: self.resolved.clone(),
-        };
+            self.resolved.clone(),
+            runner,
+        )?;
+        let runner_resolution = ctx.runner_resolution.clone();
 
         let structural = StructuralVerifier;
         let boundaries = BoundariesVerifier;
         let test = TestVerifier;
         let complexity = ComplexityVerifier;
         let verifiers: Vec<&dyn Verifier> = vec![&structural, &boundaries, &test, &ai, &complexity];
-        run_verification(&ctx, &verifiers)
+        let report = run_verification(&ctx, &verifiers)?;
+        Ok(VerificationRun {
+            report,
+            runner_resolution,
+        })
     }
 
     // ── Stage 4: DECIDE ─────────────────────────────────────────

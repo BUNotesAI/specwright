@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
@@ -32,11 +30,11 @@ impl Verifier for TestVerifier {
 
     #[allow(clippy::too_many_lines)] // Exception: legacy Cargo verifier path; runner refactor will split this under task_3455b7d6.
     fn verify(&self, ctx: &VerificationContext) -> SpecResult<Vec<ScenarioResult>> {
-        let Some(workspace_root) = find_workspace_root(&ctx.code_paths) else {
+        let Some(workspace_root) = ctx.runner_workspace.root.as_ref() else {
             return Ok(Vec::new());
         };
 
-        let legacy_bindings = collect_legacy_comment_bindings(&ctx.code_paths)?;
+        let legacy_bindings = ctx.runner.scan_legacy_bindings(&ctx.runner_workspace)?;
         let mut results = Vec::new();
 
         for scenario in &ctx.resolved_spec.all_scenarios {
@@ -44,14 +42,27 @@ impl Verifier for TestVerifier {
                 continue;
             };
 
+            if let super::PreflightOutcome::MissingCapability { capability, reason } = ctx
+                .runner
+                .preflight(&ctx.runner_workspace, &binding.selector)?
+            {
+                results.push(skip_for_missing_capability(scenario, &capability, &reason));
+                continue;
+            }
+
             let started = Instant::now();
-            let command_args = build_cargo_test_args(&binding.selector);
-            let output = Command::new("cargo")
-                .args(&command_args)
-                .current_dir(&workspace_root)
+            let command = ctx
+                .runner
+                .build_test_command(&ctx.runner_workspace, &binding.selector)?;
+            let output = Command::new(&command.program)
+                .args(&command.args)
+                .current_dir(workspace_root)
                 .output()
                 .map_err(|err| {
-                    SpecError::Verification(format!("failed to run cargo test: {err}"))
+                    SpecError::Verification(format!(
+                        "failed to run {} test command: {err}",
+                        ctx.runner.id()
+                    ))
                 })?;
             let duration_ms = started.elapsed().as_millis() as u64;
 
@@ -126,51 +137,6 @@ impl Verifier for TestVerifier {
     }
 }
 
-fn find_workspace_root(code_paths: &[PathBuf]) -> Option<PathBuf> {
-    for path in code_paths {
-        let mut current = if path.is_file() {
-            path.parent()?.to_path_buf()
-        } else {
-            path.clone()
-        };
-
-        loop {
-            if current.join("Cargo.toml").is_file() {
-                return Some(current);
-            }
-            if !current.pop() {
-                break;
-            }
-        }
-    }
-
-    None
-}
-
-fn collect_legacy_comment_bindings(code_paths: &[PathBuf]) -> SpecResult<HashMap<String, String>> {
-    let mut bindings = HashMap::new();
-    let mut files = Vec::new();
-
-    for path in code_paths {
-        if path.is_file() {
-            if path.extension().is_some_and(|ext| ext == "rs") {
-                files.push(path.clone());
-            }
-        } else if path.is_dir() {
-            collect_rust_files(path, &mut files);
-        }
-    }
-
-    for file in files {
-        let content = fs::read_to_string(&file)?;
-        for (scenario, test_name) in extract_bindings(&content) {
-            bindings.entry(scenario).or_insert(test_name);
-        }
-    }
-
-    Ok(bindings)
-}
-
 fn resolve_test_binding(
     scenario: &Scenario,
     legacy_bindings: &HashMap<String, String>,
@@ -190,83 +156,28 @@ fn resolve_test_binding(
         })
 }
 
-fn build_cargo_test_args(selector: &TestSelector) -> Vec<String> {
-    let mut args = vec!["test".to_string(), "-q".to_string()];
-    if let Some(package) = &selector.package {
-        args.push("-p".to_string());
-        args.push(package.clone());
-    }
-    args.push(selector.filter.clone());
-    args
-}
+fn skip_for_missing_capability(
+    scenario: &Scenario,
+    capability: &str,
+    reason: &str,
+) -> ScenarioResult {
+    let skip_reason = format!("{capability}: {reason}");
+    let step_results = scenario
+        .steps
+        .iter()
+        .map(|step| StepVerdict {
+            step_text: step.text.clone(),
+            verdict: Verdict::Skip,
+            reason: skip_reason.clone(),
+        })
+        .collect();
 
-fn collect_rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if let Some(name) = path.file_name().and_then(|name| name.to_str())
-                && (name.starts_with('.') || name == "target")
-            {
-                continue;
-            }
-            collect_rust_files(&path, files);
-        } else if path.extension().is_some_and(|ext| ext == "rs") {
-            files.push(path);
-        }
-    }
-}
-
-fn extract_bindings(source: &str) -> Vec<(String, String)> {
-    let mut bindings = Vec::new();
-    let mut pending_specs = Vec::new();
-    let mut saw_test_attr = false;
-
-    for line in source.lines() {
-        let trimmed = line.trim();
-
-        if let Some(spec_name) = trimmed
-            .strip_prefix("// @spec:")
-            .or_else(|| trimmed.strip_prefix("/// @spec:"))
-        {
-            pending_specs.push(spec_name.trim().to_string());
-            continue;
-        }
-
-        if trimmed.starts_with("#[test]") || trimmed.starts_with("#[tokio::test") {
-            saw_test_attr = true;
-            continue;
-        }
-
-        if saw_test_attr && trimmed.starts_with("fn ") {
-            if let Some(test_name) = extract_fn_name(trimmed) {
-                for spec_name in pending_specs.drain(..) {
-                    bindings.push((spec_name, test_name.clone()));
-                }
-            }
-            saw_test_attr = false;
-            continue;
-        }
-
-        if !trimmed.starts_with("#[") && !trimmed.is_empty() {
-            pending_specs.clear();
-            saw_test_attr = false;
-        }
-    }
-
-    bindings
-}
-
-fn extract_fn_name(line: &str) -> Option<String> {
-    let rest = line.strip_prefix("fn ")?;
-    let name = rest.split('(').next()?.trim();
-    if name.is_empty() {
-        None
-    } else {
-        Some(name.to_string())
+    ScenarioResult {
+        scenario_name: scenario.name.clone(),
+        verdict: Verdict::Skip,
+        step_results,
+        evidence: Vec::new(),
+        duration_ms: 0,
     }
 }
 
@@ -274,10 +185,18 @@ fn extract_fn_name(line: &str) -> Option<String> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
+    use std::sync::Arc;
 
-    use crate::spec_core::{Scenario, Span, TestSelector};
+    use crate::spec_core::{
+        ResolvedSpec, Scenario, Section, Span, SpecDocument, SpecLevel, SpecMeta, Step, StepKind,
+        TestSelector, Verdict,
+    };
+    use crate::spec_verify::{
+        AiMode, PreflightOutcome, ResolutionSource, RunnerResolution, RunnerWorkspace, TestCommand,
+        TestRunner, VerificationContext, Verifier, WorkspaceMarkers,
+    };
 
-    use super::{BindingSource, build_cargo_test_args, extract_bindings, resolve_test_binding};
+    use super::{BindingSource, TestVerifier, resolve_test_binding};
 
     #[test]
     fn extracts_spec_bindings_from_test_comments() {
@@ -288,7 +207,7 @@ mod tests {
 fn test_example() {}
 "#;
 
-        let bindings = extract_bindings(source);
+        let bindings = crate::spec_verify::extract_bindings(source);
         assert_eq!(bindings.len(), 2);
         assert_eq!(
             bindings[0],
@@ -307,7 +226,7 @@ fn test_example() {}
 fn helper() {}
 "#;
 
-        assert!(extract_bindings(source).is_empty());
+        assert!(crate::spec_verify::extract_bindings(source).is_empty());
     }
 
     #[test]
@@ -363,8 +282,126 @@ fn helper() {}
         assert_eq!(binding.source, BindingSource::LegacyComment);
     }
 
+    struct MissingInstrumentedRunner;
+
+    impl TestRunner for MissingInstrumentedRunner {
+        fn id(&self) -> &'static str {
+            "android"
+        }
+
+        fn detect(&self, _markers: &WorkspaceMarkers) -> bool {
+            true
+        }
+
+        fn build_test_command(
+            &self,
+            _workspace: &RunnerWorkspace,
+            _selector: &TestSelector,
+        ) -> crate::spec_core::SpecResult<TestCommand> {
+            panic!("preflight skip should avoid spawning a command")
+        }
+
+        fn scan_legacy_bindings(
+            &self,
+            _workspace: &RunnerWorkspace,
+        ) -> crate::spec_core::SpecResult<HashMap<String, String>> {
+            Ok(HashMap::new())
+        }
+
+        fn preflight(
+            &self,
+            _workspace: &RunnerWorkspace,
+            selector: &TestSelector,
+        ) -> crate::spec_core::SpecResult<PreflightOutcome> {
+            if selector.level.as_deref() == Some("instrumented") {
+                return Ok(PreflightOutcome::MissingCapability {
+                    capability: "android-instrumented-on-windows".into(),
+                    reason: "Android instrumented tests are not supported on Windows hosts".into(),
+                });
+            }
+            Ok(PreflightOutcome::Ready)
+        }
+    }
+
+    fn instrumented_preflight_context() -> VerificationContext {
+        let scenario = Scenario {
+            name: "Android instrumented".into(),
+            steps: vec![Step {
+                kind: StepKind::Then,
+                text: "instrumented test is skipped".into(),
+                params: vec![],
+                table: vec![],
+                span: Span::line(1),
+            }],
+            test_selector: Some(TestSelector {
+                package: Some(":app".into()),
+                filter: "com.example.ExampleTest#runs".into(),
+                level: Some("instrumented".into()),
+                test_double: None,
+                targets: None,
+            }),
+            tags: Vec::new(),
+            review: Default::default(),
+            mode: Default::default(),
+            depends_on: vec![],
+            span: Span::line(1),
+        };
+        VerificationContext {
+            code_paths: vec![".".into()],
+            change_paths: vec![],
+            ai_mode: AiMode::Off,
+            resolved_spec: ResolvedSpec {
+                task: SpecDocument {
+                    meta: SpecMeta {
+                        level: SpecLevel::Task,
+                        name: "selector preflight".into(),
+                        inherits: None,
+                        lang: vec![],
+                        tags: vec![],
+                        runner: Some("android".into()),
+                        runner_config: Default::default(),
+                        depends: vec![],
+                        estimate: None,
+                    },
+                    sections: vec![Section::AcceptanceCriteria {
+                        scenarios: vec![scenario.clone()],
+                        span: Span::line(1),
+                    }],
+                    source_path: Default::default(),
+                },
+                inherited_constraints: vec![],
+                inherited_decisions: vec![],
+                all_scenarios: vec![scenario],
+            },
+            runner: Arc::new(MissingInstrumentedRunner),
+            runner_workspace: RunnerWorkspace::for_test("."),
+            runner_resolution: RunnerResolution {
+                name: "android".into(),
+                source: ResolutionSource::SpecFrontmatter,
+                overridden_spec: None,
+                config_warnings: Vec::new(),
+            },
+            config_warnings: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_preflight_uses_bound_selector_and_skips_without_spawn() {
+        let ctx = instrumented_preflight_context();
+
+        let results = TestVerifier.verify(&ctx).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].verdict, Verdict::Skip);
+        assert_eq!(
+            results[0].step_results[0].reason,
+            "android-instrumented-on-windows: Android instrumented tests are not supported on Windows hosts"
+        );
+    }
+
     #[test]
     fn test_build_cargo_test_command_with_package_selector() {
+        let runner = crate::spec_verify::CargoRunner;
         let selector = TestSelector {
             package: Some("spec-parser".into()),
             filter: "test_parse_structured_test_selector_block".into(),
@@ -373,9 +410,15 @@ fn helper() {}
             targets: None,
         };
 
-        let args = build_cargo_test_args(&selector);
+        let command = crate::spec_verify::TestRunner::build_test_command(
+            &runner,
+            &crate::spec_verify::RunnerWorkspace::for_test("."),
+            &selector,
+        )
+        .unwrap();
+        assert_eq!(command.program, "cargo");
         assert_eq!(
-            args,
+            command.args,
             vec![
                 "test".to_string(),
                 "-q".to_string(),

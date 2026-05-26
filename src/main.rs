@@ -72,6 +72,9 @@ enum Commands {
         /// AI verification mode: off, stub
         #[arg(long, default_value = "off")]
         ai_mode: String,
+        /// Explicit test runner override
+        #[arg(long)]
+        runner: Option<String>,
         /// Output format: text, json, md
         #[arg(long, default_value = "text")]
         format: String,
@@ -107,6 +110,9 @@ enum Commands {
         /// AI verification mode: off, stub
         #[arg(long, default_value = "off")]
         ai_mode: String,
+        /// Explicit test runner override
+        #[arg(long)]
+        runner: Option<String>,
         /// Minimum quality score
         #[arg(long, default_value = "0.6")]
         min_score: f64,
@@ -273,8 +279,17 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             change,
             change_scope,
             ai_mode,
+            runner,
             format,
-        } => cmd_verify(&spec, &code, &change, &change_scope, &ai_mode, &format),
+        } => cmd_verify(
+            &spec,
+            &code,
+            &change,
+            &change_scope,
+            &ai_mode,
+            runner.as_deref(),
+            &format,
+        ),
         Commands::Init {
             level,
             name,
@@ -287,6 +302,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             change,
             change_scope,
             ai_mode,
+            runner,
             min_score,
             format,
             run_log_dir,
@@ -300,6 +316,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             &change,
             &change_scope,
             &ai_mode,
+            runner.as_deref(),
             min_score,
             &format,
             run_log_dir.as_deref(),
@@ -446,28 +463,16 @@ fn cmd_verify(
     change: &[PathBuf],
     change_scope: &str,
     ai_mode: &str,
+    runner: Option<&str>,
     format: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let doc = crate::spec_parser::parse_spec(spec)?;
-    let resolved = crate::spec_parser::resolve_spec(doc, &[])?;
+    let gw = crate::spec_gateway::SpecGateway::load(spec)?;
     let change_scope = GitChangeScope::parse(change_scope)?;
     let ai_mode = parse_ai_mode(ai_mode)?;
     let effective_changes = resolve_command_change_paths(spec, code, change, change_scope)?;
-
-    let ctx = crate::spec_verify::VerificationContext {
-        code_paths: vec![code.to_path_buf()],
-        change_paths: effective_changes,
-        ai_mode,
-        resolved_spec: resolved,
-    };
-
-    let structural = crate::spec_verify::StructuralVerifier;
-    let boundaries = crate::spec_verify::BoundariesVerifier;
-    let test = crate::spec_verify::TestVerifier;
-    let ai = crate::spec_verify::AiVerifier::from_mode(ai_mode);
-    let verifiers: Vec<&dyn crate::spec_verify::Verifier> =
-        vec![&structural, &boundaries, &test, &ai];
-    let report = crate::spec_verify::run_verification(&ctx, &verifiers)?;
+    let run =
+        gw.verify_with_changes_ai_mode_and_runner(code, &effective_changes, ai_mode, runner)?;
+    let report = run.report;
 
     let out_format = parse_output_format(format);
     println!(
@@ -497,6 +502,7 @@ fn cmd_lifecycle(
     change: &[PathBuf],
     change_scope: &str,
     ai_mode: &str,
+    runner: Option<&str>,
     min_score: f64,
     format: &str,
     run_log_dir: Option<&Path>,
@@ -570,7 +576,10 @@ fn cmd_lifecycle(
     };
 
     // Stage 2: Verify (respecting layers filter)
-    let verify_report = gw.verify_with_changes_and_ai_mode(code, &effective_changes, ai_mode)?;
+    let verification_run =
+        gw.verify_with_changes_ai_mode_and_runner(code, &effective_changes, ai_mode, runner)?;
+    let runner_resolution = verification_run.runner_resolution;
+    let verify_report = verification_run.report;
 
     // If layers filter is active, filter results to only matching layers
     let verify_report = if let Some(ref layer_list) = active_layers {
@@ -614,12 +623,13 @@ fn cmd_lifecycle(
             .filter(|r| r.verdict == crate::spec_core::Verdict::Skip)
             .collect();
         if !skipped.is_empty() {
-            let ctx = crate::spec_verify::VerificationContext {
-                code_paths: vec![code.to_path_buf()],
-                change_paths: effective_changes.clone(),
+            let ctx = crate::spec_verify::probe_and_build_context(
+                vec![code.to_path_buf()],
+                effective_changes.clone(),
                 ai_mode,
-                resolved_spec: gw.resolved().clone(),
-            };
+                gw.resolved().clone(),
+                runner,
+            )?;
             let requests: Vec<crate::spec_core::AiRequest> = skipped
                 .iter()
                 .filter_map(|r| {
@@ -667,6 +677,7 @@ fn cmd_lifecycle(
         if let Some(ref layer_list) = active_layers {
             json_out["layers"] = serde_json::json!(layer_list);
         }
+        add_runner_trace_fields(&mut json_out, &runner_resolution);
         if !optimization_candidates.is_empty() {
             json_out["optimization_candidates"] = serde_json::json!(optimization_candidates);
         }
@@ -719,6 +730,21 @@ fn cmd_lifecycle(
         Ok(())
     } else {
         Err(format_non_passing_summary(&verify_report.summary).into())
+    }
+}
+
+fn add_runner_trace_fields(
+    json_out: &mut serde_json::Value,
+    resolution: &crate::spec_verify::RunnerResolution,
+) {
+    if resolution.overridden_spec.is_some() || !resolution.config_warnings.is_empty() {
+        json_out["runner"] = serde_json::json!(resolution.name);
+    }
+    if let Some(overridden_spec) = &resolution.overridden_spec {
+        json_out["overridden_spec"] = serde_json::json!(overridden_spec);
+    }
+    if !resolution.config_warnings.is_empty() {
+        json_out["config_warnings"] = serde_json::json!(resolution.config_warnings);
     }
 }
 
@@ -3706,6 +3732,127 @@ Scenario: verification metadata stays visible
         );
         assert_eq!(filtered.summary.total, 2);
         assert_eq!(filtered.summary.uncertain, 0, "ai layer should be excluded");
+    }
+
+    #[test]
+    fn test_cargo_lifecycle_json_byte_equivalent_baseline() {
+        let mut json = base_lifecycle_json_for_runner_tests();
+        let baseline = serde_json::to_string_pretty(&json).unwrap();
+        let resolution = crate::spec_verify::RunnerResolution {
+            name: "cargo".into(),
+            source: crate::spec_verify::ResolutionSource::Detected,
+            overridden_spec: None,
+            config_warnings: Vec::new(),
+        };
+
+        super::add_runner_trace_fields(&mut json, &resolution);
+
+        assert_eq!(serde_json::to_string_pretty(&json).unwrap(), baseline);
+        assert!(json.get("runner").is_none());
+        assert!(json.get("config_warnings").is_none());
+    }
+
+    #[test]
+    fn test_lifecycle_json_skips_empty_config_warnings() {
+        let mut json = base_lifecycle_json_for_runner_tests();
+        let resolution = crate::spec_verify::RunnerResolution {
+            name: "cargo".into(),
+            source: crate::spec_verify::ResolutionSource::Detected,
+            overridden_spec: None,
+            config_warnings: Vec::new(),
+        };
+
+        super::add_runner_trace_fields(&mut json, &resolution);
+
+        assert!(json.get("config_warnings").is_none());
+        assert!(json.get("runner").is_none());
+    }
+
+    #[test]
+    fn test_cli_runner_override_no_conflict_keeps_json_byte_equivalent() {
+        use clap::Parser;
+
+        let parsed = super::Cli::try_parse_from([
+            "agent-spec",
+            "lifecycle",
+            "specs/project.spec.md",
+            "--code",
+            ".",
+            "--runner",
+            "cargo",
+        ]);
+
+        assert!(
+            parsed.is_ok(),
+            "`agent-spec lifecycle --runner cargo` should be accepted"
+        );
+
+        let mut json = base_lifecycle_json_for_runner_tests();
+        let baseline = serde_json::to_string_pretty(&json).unwrap();
+        let resolution = crate::spec_verify::RunnerResolution {
+            name: "cargo".into(),
+            source: crate::spec_verify::ResolutionSource::CliFlag,
+            overridden_spec: None,
+            config_warnings: Vec::new(),
+        };
+
+        super::add_runner_trace_fields(&mut json, &resolution);
+
+        assert_eq!(serde_json::to_string_pretty(&json).unwrap(), baseline);
+        assert!(json.get("runner").is_none());
+    }
+
+    #[test]
+    fn test_cli_runner_override_conflict_emits_trace_field() {
+        use clap::Parser;
+
+        let parsed = super::Cli::try_parse_from([
+            "agent-spec",
+            "verify",
+            "specs/project.spec.md",
+            "--code",
+            ".",
+            "--runner",
+            "pytest",
+        ]);
+
+        assert!(
+            parsed.is_ok(),
+            "`agent-spec verify --runner pytest` should be accepted before conflict tracing"
+        );
+
+        let mut json = base_lifecycle_json_for_runner_tests();
+        let resolution = crate::spec_verify::RunnerResolution {
+            name: "cargo".into(),
+            source: crate::spec_verify::ResolutionSource::CliFlag,
+            overridden_spec: Some("maven".into()),
+            config_warnings: Vec::new(),
+        };
+
+        super::add_runner_trace_fields(&mut json, &resolution);
+
+        assert_eq!(json["runner"], "cargo");
+        assert_eq!(json["overridden_spec"], "maven");
+    }
+
+    fn base_lifecycle_json_for_runner_tests() -> serde_json::Value {
+        serde_json::json!({
+            "stage": "complete",
+            "passed": true,
+            "verification": {
+                "summary": {
+                    "total": 0,
+                    "passed": 0,
+                    "failed": 0,
+                    "skipped": 0,
+                    "uncertain": 0,
+                    "pending_review": 0,
+                },
+                "results": [],
+                "spec_name": "baseline",
+            },
+            "failure_summary": null,
+        })
     }
 
     #[test]

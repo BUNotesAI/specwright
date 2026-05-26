@@ -301,6 +301,15 @@ mod tests {
         })
     }
 
+    fn make_ctx(resolved_spec: ResolvedSpec, change_paths: Vec<PathBuf>) -> VerificationContext {
+        VerificationContext::for_test(
+            vec![PathBuf::from(".")],
+            change_paths,
+            AiMode::Off,
+            resolved_spec,
+        )
+    }
+
     #[test]
     fn matches_double_star_path_patterns() {
         assert!(path_matches_pattern(
@@ -334,12 +343,10 @@ name: "边界"
 
         let verifier = BoundariesVerifier;
         let results = verifier
-            .verify(&VerificationContext {
-                code_paths: vec![PathBuf::from(".")],
-                change_paths: vec![PathBuf::from("crates/spec-parser/src/parser.rs")],
-                ai_mode: AiMode::Off,
-                resolved_spec: resolved,
-            })
+            .verify(&make_ctx(
+                resolved,
+                vec![PathBuf::from("crates/spec-parser/src/parser.rs")],
+            ))
             .unwrap();
 
         assert_eq!(results.len(), 1);
@@ -363,16 +370,14 @@ name: "boundary"
 
         let verifier = BoundariesVerifier;
         let results = verifier
-            .verify(&VerificationContext {
-                code_paths: vec![PathBuf::from(".")],
-                change_paths: vec![
+            .verify(&make_ctx(
+                resolved,
+                vec![
                     std::env::current_dir()
                         .unwrap()
                         .join("src/spec_verify/boundaries.rs"),
                 ],
-                ai_mode: AiMode::Off,
-                resolved_spec: resolved,
-            })
+            ))
             .unwrap();
 
         assert_eq!(results.len(), 1);
@@ -397,12 +402,10 @@ name: "boundary"
 
         let verifier = BoundariesVerifier;
         let results = verifier
-            .verify(&VerificationContext {
-                code_paths: vec![PathBuf::from(".")],
-                change_paths: vec![PathBuf::from("Cargo.toml"), PathBuf::from("Cargo.lock")],
-                ai_mode: AiMode::Off,
-                resolved_spec: resolved,
-            })
+            .verify(&make_ctx(
+                resolved,
+                vec![PathBuf::from("Cargo.toml"), PathBuf::from("Cargo.lock")],
+            ))
             .unwrap();
 
         assert_eq!(results.len(), 1);
@@ -426,12 +429,10 @@ name: "边界"
 
         let verifier = BoundariesVerifier;
         let results = verifier
-            .verify(&VerificationContext {
-                code_paths: vec![PathBuf::from(".")],
-                change_paths: vec![PathBuf::from("crates/spec-gateway/src/lifecycle.rs")],
-                ai_mode: AiMode::Off,
-                resolved_spec: resolved,
-            })
+            .verify(&make_ctx(
+                resolved,
+                vec![PathBuf::from("crates/spec-gateway/src/lifecycle.rs")],
+            ))
             .unwrap();
 
         assert_eq!(results.len(), 1);
@@ -463,12 +464,10 @@ name: "边界"
 
         let verifier = BoundariesVerifier;
         let results = verifier
-            .verify(&VerificationContext {
-                code_paths: vec![PathBuf::from(".")],
-                change_paths: vec![PathBuf::from("crates/spec-gateway/src/lib.rs")],
-                ai_mode: AiMode::Off,
-                resolved_spec: resolved,
-            })
+            .verify(&make_ctx(
+                resolved,
+                vec![PathBuf::from("crates/spec-gateway/src/lib.rs")],
+            ))
             .unwrap();
 
         assert_eq!(results.len(), 1);
@@ -490,6 +489,8 @@ name: "边界"
                     inherits: None,
                     lang: vec![],
                     tags: vec![],
+                    runner: None,
+                    runner_config: Default::default(),
                     depends: vec![],
                     estimate: None,
                 },
@@ -502,14 +503,7 @@ name: "边界"
         };
 
         let verifier = BoundariesVerifier;
-        let results = verifier
-            .verify(&VerificationContext {
-                code_paths: vec![PathBuf::from(".")],
-                change_paths: Vec::new(),
-                ai_mode: AiMode::Off,
-                resolved_spec: resolved,
-            })
-            .unwrap();
+        let results = verifier.verify(&make_ctx(resolved, Vec::new())).unwrap();
 
         assert!(results.is_empty());
     }

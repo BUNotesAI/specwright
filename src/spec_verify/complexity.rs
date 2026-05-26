@@ -298,6 +298,8 @@ mod tests {
                     inherits: None,
                     lang: vec![],
                     tags: vec![],
+                    runner: None,
+                    runner_config: Default::default(),
                     depends: vec![],
                     estimate: None,
                 },
@@ -314,12 +316,12 @@ mod tests {
     }
 
     fn make_ctx(constraints: Vec<Constraint>, change_paths: Vec<PathBuf>) -> VerificationContext {
-        VerificationContext {
-            code_paths: vec![PathBuf::from(".")],
+        VerificationContext::for_test(
+            vec![PathBuf::from(".")],
             change_paths,
-            ai_mode: AiMode::Off,
-            resolved_spec: make_resolved_spec(constraints),
-        }
+            AiMode::Off,
+            make_resolved_spec(constraints),
+        )
     }
 
     fn line_ratio_constraint(ratio: &str) -> Constraint {

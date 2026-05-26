@@ -223,11 +223,11 @@ mod tests {
             span: Span::line(1),
         };
 
-        VerificationContext {
-            code_paths: vec![PathBuf::from("crates/spec-verify/src/ai_verifier.rs")],
-            change_paths: vec![PathBuf::from("src/changed.rs")],
-            ai_mode: AiMode::Stub,
-            resolved_spec: ResolvedSpec {
+        VerificationContext::for_test(
+            vec![PathBuf::from("crates/spec-verify/src/ai_verifier.rs")],
+            vec![PathBuf::from("src/changed.rs")],
+            AiMode::Stub,
+            ResolvedSpec {
                 task: SpecDocument {
                     meta: SpecMeta {
                         level: SpecLevel::Task,
@@ -235,6 +235,8 @@ mod tests {
                         inherits: None,
                         lang: vec![],
                         tags: vec![],
+                        runner: None,
+                        runner_config: Default::default(),
                         depends: vec![],
                         estimate: None,
                     },
@@ -266,7 +268,7 @@ mod tests {
                 inherited_decisions: vec![],
                 all_scenarios: vec![scenario],
             },
-        }
+        )
     }
 
     #[test]

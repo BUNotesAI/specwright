@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Spec hierarchy level.
@@ -26,6 +27,12 @@ pub struct SpecMeta {
     pub inherits: Option<String>,
     pub lang: Vec<Lang>,
     pub tags: Vec<String>,
+    /// Preferred test runner id for this spec.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner: Option<String>,
+    /// Runner-specific configuration from front-matter.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub runner_config: BTreeMap<String, String>,
     /// Spec-level dependencies: names of other specs this spec depends on.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends: Vec<String>,

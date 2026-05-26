@@ -1,19 +1,29 @@
 mod ai_verifier;
 mod boundaries;
 mod complexity;
+mod runners;
 mod structural;
 mod test_verifier;
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::spec_core::{
-    ResolvedSpec, ScenarioResult, SpecResult, StepVerdict, Verdict, VerificationReport,
+    ResolvedSpec, ScenarioResult, SpecError, SpecResult, StepVerdict, Verdict, VerificationReport,
 };
 
 pub use ai_verifier::{AiBackend, AiVerifier, build_ai_request};
 pub use boundaries::BoundariesVerifier;
 pub use complexity::ComplexityVerifier;
+#[cfg(test)]
+pub use runners::{CargoRunner, ResolutionSource, extract_bindings};
+#[allow(unused_imports)]
+pub use runners::{HostPlatform, RunnerSelection, RunnerWarning, TestCommand};
+pub use runners::{
+    PreflightOutcome, RunnerRegistry, RunnerResolution, RunnerSourceFile, RunnerWorkspace,
+    TestRunner, WorkspaceMarkers, resolve_detected_runner, resolve_runner_choice,
+};
 pub use structural::StructuralVerifier;
 pub use test_verifier::TestVerifier;
 
@@ -33,6 +43,138 @@ pub struct VerificationContext {
     pub change_paths: Vec<PathBuf>,
     pub ai_mode: AiMode,
     pub resolved_spec: ResolvedSpec,
+    pub runner: Arc<dyn TestRunner>,
+    pub runner_workspace: RunnerWorkspace,
+    pub runner_resolution: RunnerResolution,
+    pub config_warnings: Vec<RunnerWarning>,
+}
+
+pub fn probe_and_build_context(
+    code_paths: Vec<PathBuf>,
+    change_paths: Vec<PathBuf>,
+    ai_mode: AiMode,
+    resolved_spec: ResolvedSpec,
+    cli_runner: Option<&str>,
+) -> SpecResult<VerificationContext> {
+    probe_and_build_context_with_registry(
+        RunnerRegistry::default(),
+        code_paths,
+        change_paths,
+        ai_mode,
+        resolved_spec,
+        cli_runner,
+    )
+}
+
+pub fn probe_and_build_context_with_registry(
+    registry: RunnerRegistry,
+    code_paths: Vec<PathBuf>,
+    change_paths: Vec<PathBuf>,
+    ai_mode: AiMode,
+    resolved_spec: ResolvedSpec,
+    cli_runner: Option<&str>,
+) -> SpecResult<VerificationContext> {
+    probe_and_build_context_with_registry_and_host(
+        registry,
+        code_paths,
+        change_paths,
+        ai_mode,
+        resolved_spec,
+        cli_runner,
+        current_host_platform(),
+    )
+}
+
+fn probe_and_build_context_with_registry_and_host(
+    registry: RunnerRegistry,
+    code_paths: Vec<PathBuf>,
+    change_paths: Vec<PathBuf>,
+    ai_mode: AiMode,
+    resolved_spec: ResolvedSpec,
+    cli_runner: Option<&str>,
+    host_platform: HostPlatform,
+) -> SpecResult<VerificationContext> {
+    let selection = resolve_runner_choice(&registry, &resolved_spec, cli_runner)?;
+
+    if let RunnerSelection::ByName { name, .. } = &selection
+        && let Some(runner) = registry.get(name)
+    {
+        ensure_runner_supported_on_host(runner.as_ref(), host_platform)?;
+    }
+
+    let root = find_workspace_root(&code_paths);
+    let markers = probe_workspace_markers(root.as_deref());
+    let (runner, mut runner_resolution) = resolve_detected_runner(&registry, selection, &markers)?;
+    ensure_runner_supported_on_host(runner.as_ref(), host_platform)?;
+    let source_files = collect_source_files(&code_paths)?;
+    let runner_workspace = RunnerWorkspace::new(
+        root,
+        code_paths.clone(),
+        resolved_spec.task.meta.runner_config.clone(),
+        markers,
+        source_files,
+    );
+    let config_warnings = build_config_warnings(runner.as_ref(), &runner_workspace);
+    runner_resolution.config_warnings = config_warnings.clone();
+
+    Ok(VerificationContext {
+        code_paths,
+        change_paths,
+        ai_mode,
+        resolved_spec,
+        runner,
+        runner_workspace,
+        runner_resolution,
+        config_warnings,
+    })
+}
+
+fn build_config_warnings(
+    runner: &dyn TestRunner,
+    workspace: &RunnerWorkspace,
+) -> Vec<RunnerWarning> {
+    let recognized = runner.recognized_config_keys();
+    workspace
+        .config
+        .keys()
+        .filter(|key| !recognized.contains(&key.as_str()))
+        .map(|key| RunnerWarning {
+            runner: runner.id().to_string(),
+            key: key.clone(),
+            reason: format!(
+                "unknown `{key}` runner_config key for `{}` runner",
+                runner.id()
+            ),
+        })
+        .collect()
+}
+
+fn ensure_runner_supported_on_host(
+    runner: &dyn TestRunner,
+    host_platform: HostPlatform,
+) -> SpecResult<()> {
+    let supported = runner.supported_host_platforms();
+    if supported
+        .iter()
+        .any(|platform| *platform == HostPlatform::All || *platform == host_platform)
+    {
+        return Ok(());
+    }
+
+    Err(SpecError::Verification(format!(
+        "`{}` test runner is not supported on `{}` host",
+        runner.id(),
+        host_platform.as_str()
+    )))
+}
+
+fn current_host_platform() -> HostPlatform {
+    match std::env::consts::OS {
+        "linux" => HostPlatform::Linux,
+        "macos" => HostPlatform::MacOS,
+        "windows" => HostPlatform::Windows,
+        _ => HostPlatform::Other,
+    }
 }
 
 /// Trait for scenario verifiers.
@@ -89,20 +231,128 @@ pub fn run_verification(
     ))
 }
 
+fn find_workspace_root(code_paths: &[PathBuf]) -> Option<PathBuf> {
+    for path in code_paths {
+        let mut current = if path.is_file() {
+            path.parent()?.to_path_buf()
+        } else {
+            path.clone()
+        };
+
+        loop {
+            if current.join("Cargo.toml").is_file() {
+                return Some(current);
+            }
+            if !current.pop() {
+                break;
+            }
+        }
+    }
+
+    None
+}
+
+fn probe_workspace_markers(root: Option<&Path>) -> WorkspaceMarkers {
+    let mut markers = Vec::new();
+    if let Some(root) = root
+        && root.join("Cargo.toml").is_file()
+    {
+        markers.push("Cargo.toml");
+    }
+    WorkspaceMarkers::from_files(markers)
+}
+
+fn collect_source_files(code_paths: &[PathBuf]) -> SpecResult<Vec<RunnerSourceFile>> {
+    let mut files = Vec::new();
+    let mut paths = Vec::new();
+
+    for path in code_paths {
+        if path.is_file() {
+            paths.push(path.clone());
+        } else if path.is_dir() {
+            collect_source_paths(path, &mut paths);
+        }
+    }
+
+    for path in paths {
+        if path.extension().is_some_and(|ext| ext == "rs") {
+            files.push(RunnerSourceFile {
+                content: std::fs::read_to_string(&path)?,
+                path,
+            });
+        }
+    }
+
+    Ok(files)
+}
+
+fn collect_source_paths(dir: &Path, files: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(name) = path.file_name().and_then(|name| name.to_str())
+                && (name.starts_with('.') || name == "target")
+            {
+                continue;
+            }
+            collect_source_paths(&path, files);
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            files.push(path);
+        }
+    }
+}
+
+#[cfg(test)]
+impl VerificationContext {
+    pub(crate) fn for_test(
+        code_paths: Vec<PathBuf>,
+        change_paths: Vec<PathBuf>,
+        ai_mode: AiMode,
+        resolved_spec: ResolvedSpec,
+    ) -> Self {
+        Self {
+            code_paths,
+            change_paths,
+            ai_mode,
+            resolved_spec,
+            runner: Arc::new(CargoRunner),
+            runner_workspace: RunnerWorkspace::for_test("."),
+            runner_resolution: RunnerResolution {
+                name: "cargo".into(),
+                source: ResolutionSource::Detected,
+                overridden_spec: None,
+                config_warnings: Vec::new(),
+            },
+            config_warnings: Vec::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use std::collections::{BTreeMap, HashMap};
     use std::path::PathBuf;
+    use std::sync::Arc;
 
     use crate::spec_core::{
         ResolvedSpec, Scenario, ScenarioResult, Section, Span, SpecDocument, SpecLevel, SpecMeta,
-        Step, StepKind, Verdict,
+        Step, StepKind, TestSelector, Verdict,
     };
 
-    use super::{AiMode, VerificationContext, Verifier, run_verification};
+    use super::{
+        AiMode, CargoRunner, HostPlatform, ResolutionSource, RunnerRegistry, RunnerResolution,
+        RunnerWarning, RunnerWorkspace, TestCommand, TestRunner, VerificationContext, Verifier,
+        WorkspaceMarkers, probe_and_build_context_with_registry_and_host, run_verification,
+    };
 
     struct FirstVerifier;
     struct SecondVerifier;
+    struct ConfigRunner;
 
     impl Verifier for FirstVerifier {
         fn name(&self) -> &str {
@@ -142,6 +392,38 @@ mod tests {
         }
     }
 
+    impl TestRunner for ConfigRunner {
+        fn id(&self) -> &'static str {
+            "config_runner"
+        }
+
+        fn detect(&self, _markers: &WorkspaceMarkers) -> bool {
+            false
+        }
+
+        fn build_test_command(
+            &self,
+            _workspace: &RunnerWorkspace,
+            _selector: &TestSelector,
+        ) -> crate::spec_core::SpecResult<TestCommand> {
+            Ok(TestCommand {
+                program: "cargo".into(),
+                args: vec!["test".into()],
+            })
+        }
+
+        fn scan_legacy_bindings(
+            &self,
+            _workspace: &RunnerWorkspace,
+        ) -> crate::spec_core::SpecResult<HashMap<String, String>> {
+            Ok(HashMap::new())
+        }
+
+        fn recognized_config_keys(&self) -> &'static [&'static str] {
+            &["known"]
+        }
+    }
+
     #[test]
     fn run_verification_keeps_first_result_for_same_scenario() {
         let scenario = Scenario {
@@ -172,6 +454,8 @@ mod tests {
                         inherits: None,
                         lang: vec![],
                         tags: vec![],
+                        runner: None,
+                        runner_config: Default::default(),
                         depends: vec![],
                         estimate: None,
                     },
@@ -185,6 +469,15 @@ mod tests {
                 inherited_decisions: vec![],
                 all_scenarios: vec![scenario],
             },
+            runner: Arc::new(CargoRunner),
+            runner_workspace: RunnerWorkspace::for_test("."),
+            runner_resolution: RunnerResolution {
+                name: "cargo".into(),
+                source: ResolutionSource::Detected,
+                overridden_spec: None,
+                config_warnings: Vec::new(),
+            },
+            config_warnings: Vec::new(),
         };
 
         let first = FirstVerifier;
@@ -193,5 +486,156 @@ mod tests {
 
         assert_eq!(report.results.len(), 1);
         assert_eq!(report.results[0].verdict, Verdict::Pass);
+    }
+
+    #[test]
+    fn test_probe_context_collects_unknown_runner_config_warnings() {
+        let mut registry = RunnerRegistry::new();
+        registry.register(Arc::new(ConfigRunner));
+        let ctx = probe_and_build_context_with_registry_and_host(
+            registry,
+            vec![PathBuf::from("src/spec_verify/mod.rs")],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_config(BTreeMap::from([
+                ("known".to_string(), "ok".to_string()),
+                ("typo".to_string(), "bad".to_string()),
+            ])),
+            Some("config_runner"),
+            HostPlatform::Linux,
+        )
+        .unwrap();
+
+        let expected = vec![RunnerWarning {
+            runner: "config_runner".into(),
+            key: "typo".into(),
+            reason: "unknown `typo` runner_config key for `config_runner` runner".into(),
+        }];
+        assert_eq!(ctx.config_warnings, expected);
+        assert_eq!(ctx.runner_resolution.config_warnings, expected);
+    }
+
+    fn resolved_spec_with_config(config: BTreeMap<String, String>) -> ResolvedSpec {
+        ResolvedSpec {
+            task: SpecDocument {
+                meta: SpecMeta {
+                    level: SpecLevel::Task,
+                    name: "config spec".into(),
+                    inherits: None,
+                    lang: vec![],
+                    tags: vec![],
+                    runner: None,
+                    runner_config: config,
+                    depends: vec![],
+                    estimate: None,
+                },
+                sections: vec![Section::AcceptanceCriteria {
+                    scenarios: vec![],
+                    span: Span::line(1),
+                }],
+                source_path: PathBuf::new(),
+            },
+            inherited_constraints: vec![],
+            inherited_decisions: vec![],
+            all_scenarios: vec![],
+        }
+    }
+
+    #[test]
+    fn test_single_verification_context_literal_in_production() {
+        let paths = [
+            "src/main.rs",
+            "src/spec_gateway/lifecycle.rs",
+            "src/spec_verify/mod.rs",
+        ];
+        let constructors: Vec<String> = paths
+            .iter()
+            .flat_map(|path| {
+                let source = std::fs::read_to_string(path).unwrap();
+                let production = production_source_before_tests(&source);
+                production
+                    .lines()
+                    .enumerate()
+                    .filter_map(move |(index, line)| {
+                        if line.contains("VerificationContext {")
+                            && !line.contains("struct")
+                            && !line.contains("impl ")
+                        {
+                            Some(format!("{path}:{}", index + 1))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        assert_eq!(
+            constructors.len(),
+            1,
+            "VerificationContext construction should be centralized in probe_and_build_context: {constructors:?}"
+        );
+        assert!(
+            constructors[0].starts_with("src/spec_verify/mod.rs:"),
+            "single constructor should live in src/spec_verify/mod.rs: {constructors:?}"
+        );
+    }
+
+    fn production_source_before_tests(source: &str) -> &str {
+        source
+            .split("\n#[cfg(test)]\n#[allow(clippy::unwrap_used)]\nmod tests")
+            .next()
+            .and_then(|prefix| prefix.split("\n#[cfg(test)]\nmod tests").next())
+            .unwrap_or(source)
+    }
+
+    #[test]
+    fn test_runners_module_io_grep_guard() {
+        let runners_dir = std::path::Path::new("src/spec_verify/runners");
+        assert!(
+            runners_dir.is_dir(),
+            "runner-specific code should live under src/spec_verify/runners"
+        );
+
+        let mut files = Vec::new();
+        collect_rs_files(runners_dir, &mut files);
+        assert!(
+            !files.is_empty(),
+            "runner module should contain Rust source files"
+        );
+
+        let offenders: Vec<String> = files
+            .iter()
+            .flat_map(|path| {
+                let source = std::fs::read_to_string(path).unwrap();
+                source
+                    .lines()
+                    .enumerate()
+                    .filter_map(move |(index, line)| {
+                        if line.contains("fs::") || line.contains("Command::new") {
+                            Some(format!("{}:{}", path.display(), index + 1))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        assert!(
+            offenders.is_empty(),
+            "runner methods outside preflight should stay IO-free: {offenders:?}"
+        );
+    }
+
+    fn collect_rs_files(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                collect_rs_files(&path, files);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                files.push(path);
+            }
+        }
     }
 }

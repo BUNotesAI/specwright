@@ -1,4 +1,5 @@
 use crate::spec_core::{Lang, SpecLevel, SpecMeta};
+use std::collections::BTreeMap;
 
 /// Parse front-matter block (before `---`) into SpecMeta.
 #[allow(clippy::too_many_lines)] // Exception: legacy front-matter parser; refactor is outside this migration checkpoint.
@@ -10,6 +11,8 @@ pub fn parse_meta(lines: &[&str]) -> Result<SpecMeta, String> {
     let mut tags = Vec::new();
     let mut depends = Vec::new();
     let mut estimate = None;
+    let mut runner = None;
+    let mut runner_config = BTreeMap::new();
 
     for line in lines {
         let trimmed = line.trim();
@@ -74,6 +77,15 @@ pub fn parse_meta(lines: &[&str]) -> Result<SpecMeta, String> {
                     estimate = Some(v.to_string());
                 }
             }
+            "runner" => {
+                let v = value.trim();
+                if !v.is_empty() {
+                    runner = Some(v.to_string());
+                }
+            }
+            "runner_config" => {
+                runner_config = parse_inline_string_map(value)?;
+            }
             _ => {} // ignore unknown keys
         }
     }
@@ -88,9 +100,60 @@ pub fn parse_meta(lines: &[&str]) -> Result<SpecMeta, String> {
             lang
         },
         tags,
+        runner,
+        runner_config,
         depends,
         estimate,
     })
+}
+
+fn parse_inline_string_map(value: &str) -> Result<BTreeMap<String, String>, String> {
+    let mut map = BTreeMap::new();
+    let value = value.trim();
+    if value.is_empty() || value == "{}" {
+        return Ok(map);
+    }
+    let body = value
+        .strip_prefix('{')
+        .and_then(|v| v.strip_suffix('}'))
+        .ok_or_else(|| "runner_config must use inline map syntax".to_string())?;
+
+    for part in split_inline_map_entries(body) {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = part.split_once(':') else {
+            return Err(format!("invalid runner_config entry: {part}"));
+        };
+        let key = key.trim().trim_matches('"');
+        let value = value.trim().trim_matches('"');
+        if !key.is_empty() {
+            map.insert(key.to_string(), value.to_string());
+        }
+    }
+
+    Ok(map)
+}
+
+fn split_inline_map_entries(body: &str) -> Vec<&str> {
+    let mut entries = Vec::new();
+    let mut start = 0;
+    let mut in_quotes = false;
+
+    for (index, ch) in body.char_indices() {
+        match ch {
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => {
+                entries.push(&body[start..index]);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+
+    entries.push(&body[start..]);
+    entries
 }
 
 #[cfg(test)]
@@ -157,5 +220,36 @@ mod tests {
         let meta = parse_meta(&lines).unwrap();
         assert!(meta.depends.is_empty());
         assert!(meta.estimate.is_none());
+    }
+
+    #[test]
+    fn test_runner_workspace_carries_runner_config_map() {
+        let lines = vec![
+            "spec: task",
+            r#"name: "Runner config""#,
+            "runner: ios",
+            r#"runner_config: { destination: "platform=iOS Simulator,name=iPhone 15", scheme: "App" }"#,
+        ];
+
+        let meta = parse_meta(&lines).unwrap();
+        let value = serde_json::to_value(&meta).unwrap();
+
+        assert_eq!(value["runner"], "ios");
+        assert_eq!(
+            value["runner_config"]["destination"],
+            "platform=iOS Simulator,name=iPhone 15"
+        );
+        assert_eq!(value["runner_config"]["scheme"], "App");
+    }
+
+    #[test]
+    fn test_empty_runner_config_round_trips_byte_equivalent() {
+        let lines = vec!["spec: task", r#"name: "No runner config""#];
+        let meta = parse_meta(&lines).unwrap();
+        let value = serde_json::to_value(&meta).unwrap();
+
+        assert!(meta.runner_config.is_empty());
+        assert!(value.get("runner_config").is_none());
+        assert!(value.get("runner").is_none());
     }
 }

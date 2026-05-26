@@ -1,0 +1,20 @@
+{
+  "failure_summary": "## Verification Failed\n\n0 of 0 scenarios are non-passing.\n\n### Non-passing Scenarios\n\n### Action Required\n\nResolve the failures or missing verification coverage above and re-run verification.\n",
+  "layers": [
+    "test"
+  ],
+  "passed": false,
+  "stage": "complete",
+  "verification": {
+    "results": [],
+    "spec_name": "Cargo lifecycle default baseline",
+    "summary": {
+      "failed": 0,
+      "passed": 0,
+      "pending_review": 0,
+      "skipped": 0,
+      "total": 0,
+      "uncertain": 0
+    }
+  }
+}
