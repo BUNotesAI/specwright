@@ -5,76 +5,57 @@ description: |
   write spec, create spec, edit spec, new spec, spec authoring, task contract,
   .spec file, .spec.md file, BDD scenario, acceptance criteria, completion criteria,
   test selector, boundary, constraint, intent, decision, out of scope,
-  "how to write a spec", "spec format", "spec syntax", "contract quality",
-  写 spec, 创建规格, 编辑合约, 任务合约, 验收标准, 完成条件,
-  BDD 场景, 测试选择器, 约束, 意图, 决策, 边界, 排除范围,
-  "怎么写 spec", "spec 格式", "spec 语法", "合约质量"
+  "how to write a spec", "spec format", "spec syntax", "contract quality"
 ---
 
 # Agent Spec Authoring
 
-> **Version:** 3.3.0 | **Last Updated:** 2026-05-27
+> **Version:** 3.4.0 | **Last Updated:** 2026-05-28
 
 You are an expert at writing agent-spec Task Contracts. Help users by:
-- **Creating specs**: Scaffold new `.spec.md` files with correct structure (`.spec` also supported)
-- **Editing specs**: Improve intent, constraints, boundaries, scenarios
-- **Writing scenarios**: BDD-style with proper test selectors and step tables
-- **Debugging specs**: Fix lint warnings, improve quality scores
-- **Self-hosting**: Maintain specs for the agent-spec project itself
-- **Runner-aware contracts**: Choose Cargo, Maven, Gradle, Android, or iOS execution semantics in frontmatter
 
-## IMPORTANT: CLI Prerequisite Check
+- **Creating specs**: scaffold new `.spec.md` files with correct structure (`.spec` is also supported).
+- **Editing specs**: improve intent, constraints, boundaries, decisions, and scenarios.
+- **Writing scenarios**: BDD-style scenarios with explicit test selectors and deterministic steps.
+- **Debugging specs**: fix parse errors, lint warnings, and weak quality scores.
+- **Self-hosting**: maintain specs for the agent-spec project itself.
+- **Runner-aware contracts**: choose Cargo, Maven, Gradle, Android, or iOS execution semantics in frontmatter.
 
-**Before running any `agent-spec` command, Claude MUST check:**
+## Language Boundary
+
+Skill files are reusable assets and must be English-only. Do not include non-English examples in this skill file or its references. The `agent-spec` parser may support non-English aliases, but this skill should describe that support in English and emit English examples unless a vault task explicitly requires Chinese output.
+
+When this skill is used inside the harness workflow:
+
+- vault task specs should use Chinese visible prose by default;
+- code, comments, tests, CLI strings, skills, templates, and git commit messages remain English-only;
+- paths, commands, frontmatter keys, test selectors, runner ids, and code identifiers keep their canonical technical spelling.
+
+## CLI Prerequisite Check
+
+Before running any `agent-spec` command, check:
 
 ```bash
 command -v agent-spec || cargo install agent-spec
 ```
 
-If `agent-spec` is not installed, inform the user:
-> `agent-spec` CLI not found. Install with: `cargo install agent-spec`
+If `agent-spec` is not installed, tell the user:
+
+```text
+agent-spec CLI not found. Install with: cargo install agent-spec
+```
 
 ## Core Philosophy
 
-A Contract is **not a vague Issue** — it's a precise specification that shifts the review point:
+A Contract is not a vague issue. It is a precise specification that moves review effort from reading code diffs to defining correctness:
 
+```text
+Traditional:  Human reviews 500 lines of code diff.
+agent-spec:   Human writes 50-80 lines of Contract.
+              Machine verifies code against Contract.
 ```
-Traditional:  Human reviews 500 lines of code diff (slow, error-prone)
-agent-spec:   Human writes 50-80 lines of Contract (fast, high-value)
-              Machine verifies code against Contract (deterministic)
-```
 
-Writing a Contract is the **highest-value human activity** in the agent-spec workflow. You're defining "what is correct" — the machine handles "is the code correct".
-
-## Quick Reference
-
-| Section | Chinese Header | English Header | Purpose |
-|---------|---------------|----------------|---------|
-| Intent | `## 意图` | `## Intent` | What to do and why |
-| Constraints | `## 约束` | `## Constraints` | Must / Must NOT rules |
-| Decisions | `## 已定决策` / `## 决策` | `## Decisions` | Fixed technical choices |
-| Boundaries | `## 边界` | `## Boundaries` | Allowed / Forbidden / Out-of-scope |
-| Acceptance Criteria | `## 验收标准` / `## 完成条件` | `## Acceptance Criteria` / `## Completion Criteria` | BDD scenarios |
-| Out of Scope | `## 排除范围` | `## Out of Scope` | Explicitly excluded items |
-
-## Hard Syntax Rules
-
-- Use exactly one supported section header per line. Good: `## Intent` or `## 意图`. Bad: `## Intent / 意图`.
-- Write scenarios as bare DSL lines under the acceptance section. Good: `Scenario:` / `场景:`. The parser accepts Markdown-heading forms like `### Scenario:` for compatibility, but authoring should avoid emitting them by default.
-- Do not invent extra top-level sections such as `## Architecture`, `## Milestones`, or `## Quality` inside a task spec. Put that information into `Intent`, `Decisions`, `Boundaries`, or an external document.
-- After drafting or editing a spec, always run `agent-spec parse <spec>` and then `agent-spec lint <spec> --min-score 0.7`.
-
-## Documentation
-
-Refer to the local files for authoring patterns and examples:
-- `./references/patterns.md` - Complete authoring patterns with examples
-
-## IMPORTANT: Documentation Completeness Check
-
-**Before answering questions, Claude MUST:**
-1. Read `./references/patterns.md` for authoring patterns
-2. If file read fails: Inform user "references/patterns.md is missing, answering from SKILL.md patterns"
-3. Still answer based on SKILL.md patterns + built-in knowledge
+The contract defines what is correct. The lifecycle gate checks whether the code satisfies it.
 
 ## Required Self-Check
 
@@ -85,221 +66,144 @@ agent-spec parse specs/task.spec.md
 agent-spec lint specs/task.spec.md --min-score 0.7
 ```
 
-Do not hand a spec to an agent if:
-- `agent-spec parse` shows `Acceptance Criteria: 0 scenarios`
-- lint reports missing explicit test selectors
-- lint score is below threshold
+Do not hand a spec to an implementation agent if:
 
-## Behavior Surface Checklist
+- parse shows zero acceptance scenarios;
+- lint reports missing explicit test selectors;
+- lint score is below the required threshold.
 
-When authoring a contract for CLI tools, MCP servers, protocols, or parity rewrites,
-do not stop at the main happy path. Check these observable surfaces explicitly:
+## Contract Sections
 
-### Observable Behavior
-- stdout vs stderr behavior
-- `--json` or machine-readable output
-- `-o/--output` and file side effects
-- local vs remote behavior
-- warm cache vs cold start
-- fallback / precedence order
-- partial failure vs hard failure
-- on-disk state changes and persisted files
+Use the supported top-level sections. Keep one section header per line. Do not combine languages in one heading.
 
-### Flag Combinations (lint: `flag-combination-coverage`)
-- Multi-value parameters (multi-ID, batch) combined with output flags
-- Single vs multiple entry behavior for `-o`, `--full`, `--json`
-- If your command has 2+ output-affecting flags, add at least one scenario that tests a combination
+| Section | Purpose |
+|---|---|
+| `## Intent` | What to do and why. |
+| `## Constraints` | Must and must-not rules. |
+| `## Decisions` | Fixed technical choices. |
+| `## Boundaries` | Allowed changes, forbidden changes, and out-of-scope areas. |
+| `## Acceptance Criteria` or `## Completion Criteria` | BDD scenarios and test bindings. |
+| `## Out of Scope` | Explicitly excluded work. |
 
-### Platform-Specific Decisions (lint: `platform-decision-tag`)
-- When copying decisions from a reference implementation, tag platform-specific terms
-- Use markers like `[JS-only]`, `[platform-specific]`, or `不适用` to flag phantom requirements
-- The linter flags untagged references to npm, pip, cargo install, dist/, bundled dist, etc.
+The parser may accept localized aliases, but reusable skills and references must stay English-only.
 
-### Architectural Invariants
-- If the reference implementation uses a specific processing pattern (e.g., "collect all results then output once"), state this as a decision — per-item vs batch output are architecturally different
-- These invariants are invisible to per-feature tests but break on combinations
+## Hard Syntax Rules
 
-If the task is a rewrite, migration, or parity effort, treat this as mandatory.
-Do not hand the contract to an agent until these observable behaviors are either:
-- covered by scenarios, or
-- explicitly declared out of scope
+- Use exactly one supported section header per line.
+- Write scenarios as bare DSL lines under the acceptance section.
+- Prefer `Scenario:` and `Test:` lines over Markdown-heading compatibility forms.
+- Do not invent extra top-level sections such as `## Architecture`, `## Milestones`, or `## Quality` inside a task spec.
+- Put architecture notes into `Decisions`, `Boundaries`, or a separate design artifact.
+- Always run parse and lint after drafting or editing.
 
-For these tasks, prefer starting from the parity-aware scaffold instead of the generic task template:
+## The Four Elements
 
-```bash
-agent-spec init --level task --template rewrite-parity --lang en --name "CLI Parity Contract"
-```
+### 1. Intent
 
-## Before Writing a Contract
-
-Not every task needs a Contract. Ask yourself:
-
-| Question | If No |
-|----------|-------|
-| Can I define what "done" looks like? | Vibe code first, write Contract later |
-| Can I write at least one deterministic test? | Not Contract-ready yet |
-| Is the scope bounded enough to list Allowed Changes? | Split into smaller tasks |
-| Do I know the key technical decisions? | Do a spike/prototype first |
-
-If all "yes" — proceed with authoring. If not, doing exploratory work first is the right call.
-
-## The Four Elements of a Contract
-
-### 1. Intent — What and Why
-
-One focused paragraph. Not a feature list — a clear statement of purpose.
+One focused paragraph. Explain what changes, why it matters, and where it fits.
 
 ```spec
 ## Intent
 
-为现有的认证模块添加用户注册 endpoint。新用户通过邮箱+密码注册，
-注册成功后发送验证邮件。这是用户体系的第一步，后续会在此基础上
-添加登录和密码重置。
+Add a registration endpoint to the existing authentication module. New users register with email and password, and successful registration sends a verification email. This is the first step in the account system and later work will add login and password reset.
 ```
 
-**Rules:**
-- Focus on "what to do and why"
-- Mention context (what already exists, where this fits)
-- Keep it to 2-4 sentences
-- Do not combine bilingual section labels on the same header line
+Rules:
 
-### 2. Decisions — Fixed Technical Choices
+- Keep it to 2-4 sentences.
+- Mention existing context.
+- Avoid implementation detail unless it is part of the contract.
 
-Already-decided choices. Not aspirational. Not options to explore.
+### 2. Decisions
+
+Already-decided technical choices. Not options to explore.
 
 ```spec
 ## Decisions
 
-- 路由: POST /api/v1/auth/register
-- 密码哈希: bcrypt, cost factor = 12
-- 验证 Token: crypto.randomUUID(), 存数据库, 24h 过期
-- 邮件: 使用现有 EmailService，不新建
+- Route: `POST /api/v1/auth/register`.
+- Password hashing: bcrypt with cost factor 12.
+- Verification token: `crypto.randomUUID()`, persisted for 24 hours.
+- Email: use the existing `EmailService`; do not create a new provider.
 ```
 
-**Rules:**
-- Only choices that are **already fixed** — not "we should consider..."
-- Include specific technologies, versions, parameters
-- Agent follows these without questioning — they're not open for debate
-- **Every decision should be covered by at least one scenario** — lint warns if a decision has no matching scenario (checked by `decision-coverage` linter via backtick identifiers and keywords)
-- **Avoid universal claims without proportional coverage** — if a decision says "all entry points" or "every binary", lint (`universal-claim`) requires 2+ scenarios to verify each instance
+Rules:
 
-### 3. Boundaries — What to Touch, What Not to Touch
+- Include specific technologies, versions, parameters, and compatibility choices.
+- Every decision should be covered by at least one scenario when it affects behavior.
+- Avoid universal claims unless coverage is proportional.
 
-Triple constraint: Allowed, Forbidden, Out-of-scope.
+### 3. Boundaries
+
+Bound what may change and what must not change.
 
 ```spec
 ## Boundaries
 
 ### Allowed Changes
+
 - crates/api/src/auth/**
 - crates/api/tests/auth/**
 - migrations/
 
 ### Forbidden
-- 不要添加新的 npm/cargo 依赖
-- 不要修改现有的登录 endpoint
-- 不要在注册流程中创建 session
+
+- Do not add new npm or Cargo dependencies.
+- Do not change the existing login endpoint.
+- Do not create a session during registration.
 
 ## Out of Scope
 
-- 登录功能
-- 密码重置
-- OAuth 第三方登录
+- Login.
+- Password reset.
+- OAuth login.
 ```
 
-**Rules:**
-- Path globs (`crates/auth/**`) are **mechanically enforced** by BoundariesVerifier
-- Natural language prohibitions are checked by lint but not file-path enforced
-- Out of Scope prevents scope creep — Agent knows what NOT to attempt
-- **If Boundaries list 2+ entry points** (e.g. `bin/cli.rs`, `bin/server.rs`), lint (`boundary-entry-point`) warns if scenarios don't reference each one — shared logic across entry points needs separate verification
+Rules:
 
-### 4. Completion Criteria — Deterministic Pass/Fail
+- Path globs are mechanically checked by `BoundariesVerifier`.
+- Natural-language prohibitions are linted but not file-path enforced.
+- If boundaries list multiple entry points, scenarios should reference each one or explain why shared verification covers them.
 
-BDD scenarios with explicit test bindings.
+### 4. Completion Criteria
 
-**Critical principle: Exception scenarios >= happy path scenarios.** Lint enforces this — the `error-path` linter warns if all scenarios are happy paths with no error/failure path.
+Scenarios must be deterministic and test-bound.
 
 ```spec
 ## Completion Criteria
 
-场景: 注册成功                                    ← 1 happy path
-  测试: test_register_returns_201
-  假设 不存在邮箱为 "alice@example.com" 的用户
-  当 客户端提交注册请求:
-    | 字段     | 值                |
-    | email    | alice@example.com |
-    | password | Str0ng!Pass#2026  |
-  那么 响应状态码为 201
-  并且 响应体包含 "user_id"
+Scenario: Registration succeeds
+  Test: test_register_returns_201
+  Given no user exists with email "alice@example.com"
+  When the client submits a valid registration request
+  Then the response status is 201
+  And the response body contains "user_id"
 
-场景: 重复邮箱被拒绝                              ← exception path 1
-  测试: test_register_rejects_duplicate_email
-  假设 已存在邮箱为 "alice@example.com" 的用户
-  当 客户端提交相同邮箱的注册请求
-  那么 响应状态码为 409
+Scenario: Duplicate email is rejected
+  Test: test_register_rejects_duplicate_email
+  Given a user already exists with email "alice@example.com"
+  When the client submits a registration request with the same email
+  Then the response status is 409
 
-场景: 弱密码被拒绝                                ← exception path 2
-  测试: test_register_rejects_weak_password
-  假设 不存在邮箱为 "bob@example.com" 的用户
-  当 客户端提交密码为 "123" 的注册请求
-  那么 响应状态码为 400
-
-场景: 缺少必填字段                                ← exception path 3
-  测试: test_register_rejects_missing_fields
-  当 客户端提交缺少 email 字段的注册请求
-  那么 响应状态码为 400
+Scenario: Weak password is rejected
+  Test: test_register_rejects_weak_password
+  Given no user exists with email "bob@example.com"
+  When the client submits password "123"
+  Then the response status is 400
 ```
 
-This forces you to think through edge cases **before coding begins**. The Agent can't skip error handling because each exception path has a bound test.
+Rules:
 
-## Rewrite / Parity Contracts
+- Exception scenarios should be at least as numerous as happy path scenarios.
+- Every scenario needs an explicit `Test:` selector.
+- Steps should assert observable behavior, not internal implementation shape.
 
-For rewrite, migration, and parity tasks, write a behavior matrix before writing scenarios.
-At minimum, ask whether the contract covers:
-
-- command x output mode
-- local x remote
-- warm cache x cold start
-- success x partial failure x hard failure
-- CLI x MCP entry points, if both are user-visible
-
-If these dimensions matter to the task, they should appear in scenarios, not only in Decisions.
-
-## Spec File Structure
-
-### Frontmatter (YAML)
-
-```spec
-spec: task           # Level: org, project, task
-name: "Task Name"   # Human-readable name
-inherits: project    # Parent spec (optional)
-tags: [feature, api] # Tags for filtering
-runner: cargo        # Optional: cargo, maven, gradle, android, ios
-runner_config: {}    # Optional inline map for runner-specific settings
----
-```
-
-### Three-Layer Inheritance
-
-```
-org.spec(.md) → project.spec(.md) → task.spec(.md)
-```
-
-| Layer | Scope | Example Content |
-|-------|-------|-----------------|
-| `org.spec.md` | Organization-wide | Coding standards, security rules, forbidden patterns |
-| `project.spec.md` | Project-level | Tech stack decisions, API conventions, test requirements |
-| `task.spec.md` | Single task | Intent, boundaries, specific acceptance criteria |
-
-Both `.spec` and `.spec.md` extensions are recognized. `.spec.md` is preferred for new files (enables Markdown preview in editors and GitHub).
-
-Constraints and decisions are **inherited downward**. Task specs inherit from project, which inherits from org.
-
-### Runner-Aware Frontmatter
+## Runner-Aware Frontmatter
 
 Use `runner` when the task contract must bind scenarios to a non-Cargo execution environment or when auto-detection would be ambiguous.
 
 ```spec
+---
 spec: task
 name: "iOS XCTest mini fixture"
 runner: ios
@@ -309,33 +213,19 @@ runner_config: { scheme: "IosMini", destination: "platform=iOS Simulator,name=iP
 
 Built-in runner choices:
 
-| Runner | Use when | Frontmatter/config notes |
+| Runner | Use when | Notes |
 |---|---|---|
-| `cargo` | Rust crates and workspaces | Usually detected from `Cargo.toml`; `Package` maps to `cargo test -p`. |
-| `maven` | Java/Kotlin Maven projects | Detected from `pom.xml`; `Package` maps to `-pl`. |
-| `gradle` | Java/Kotlin Gradle projects | Detected from `build.gradle` / `build.gradle.kts`; `Package` maps to Gradle project path. |
-| `android` | Android Gradle projects | Use selector `Level: unit` or `Level: instrumented`; instrumented tests require ADB and a device/emulator. |
-| `ios` | Swift Package or Xcode project XCTest | macOS only; `runner_config` may set `scheme` and `destination`. |
+| `cargo` | Rust crates and workspaces | Usually detected from `Cargo.toml`. |
+| `maven` | Java/Kotlin Maven projects | Detected from `pom.xml`. |
+| `gradle` | Java/Kotlin Gradle projects | Detected from Gradle build files. |
+| `android` | Android Gradle projects | Use selector `Level: unit` or `Level: instrumented`. |
+| `ios` | Swift Package or Xcode XCTest | macOS only; may need `scheme` and `destination`. |
 
-Rules:
-
-- `runner_config` must use inline map syntax: `{ key: "value" }`.
-- Unknown runner config keys are warnings, not hard parse errors. Treat them as likely contract bugs during review.
-- Mobile real-path scenarios must state toolchain prerequisites in Decisions or Open Environment Notes when they are close gates.
-
-## BDD Step Keywords
-
-| English | Chinese | Usage |
-|---------|---------|-------|
-| `Given` | `假设` | Precondition |
-| `When` | `当` | Action |
-| `Then` | `那么` | Expected result |
-| `And` | `并且` | Additional step (same type as previous) |
-| `But` | `但是` | Negative additional step |
+`runner_config` must use inline map syntax: `{ key: "value" }`. Unknown keys are warnings; review them as likely contract bugs.
 
 ## Test Selector Patterns
 
-### Simple selector
+Simple selector:
 
 ```spec
 Scenario: Happy path
@@ -345,7 +235,7 @@ Scenario: Happy path
   Then result
 ```
 
-### Structured selector (cross-crate)
+Structured selector:
 
 ```spec
 Scenario: Cross-crate verification
@@ -357,9 +247,7 @@ Scenario: Cross-crate verification
   Then passes
 ```
 
-### Structured selector with runner level
-
-Use `Level` for runners that expose multiple execution modes.
+Runner level:
 
 ```spec
 Scenario: Android instrumented flow
@@ -372,235 +260,73 @@ Scenario: Android instrumented flow
   Then the instrumented test command is selected
 ```
 
-### Chinese equivalents
+## Behavior Surface Checklist
 
-```spec
-场景: 正常路径
-  测试: test_happy_path
+For CLI tools, MCP servers, protocols, and parity rewrites, cover observable surfaces explicitly:
 
-场景: 跨包验证
-  测试:
-    包: spec-gateway
-    过滤: test_contract_prompt_format
-```
+- stdout vs stderr;
+- machine-readable output;
+- output-file side effects;
+- local vs remote behavior;
+- warm cache vs cold start;
+- fallback and precedence order;
+- partial failure vs hard failure;
+- persisted state changes.
 
-## Step Tables
+If these surfaces matter, they belong in scenarios or explicit out-of-scope notes.
 
-For structured inputs, use tables instead of inventing custom prose:
+## Pseudo-Scenario Rule
 
-```spec
-Scenario: Batch validation
-  Test: test_batch_validation
-  Given the following input records:
-    | name  | email           | valid |
-    | Alice | alice@test.com  | true  |
-    | Bob   | invalid         | false |
-  When the validator processes the batch
-  Then "1" record passes and "1" record fails
-```
+Scenarios must describe runtime behavior or externally observable interfaces, not source layout preferences.
 
-## Boundary Patterns
+Structural anti-patterns:
 
-### Machine-enforced (path globs)
+- "file exists";
+- "function is exported";
+- "module was split into N files";
+- "grep finds a literal string";
+- "git log contains a trailer".
 
-```spec
-### Allowed Changes
-- crates/spec-parser/**
-- tests/parser_contract.rs
-```
+Behavioral replacements:
 
-BoundariesVerifier checks actual changed files against these globs.
+- user-visible UI renders expected content;
+- CLI returns the expected status and JSON shape;
+- public API returns the expected type or error;
+- generated boundary files remain byte-equivalent when that is the public compatibility surface.
 
-### Natural language prohibitions
-
-```spec
-### Forbidden
-- Do not break the existing JSON shape
-- Do not introduce .unwrap()
-```
-
-Checked by lint, not mechanically enforced against file paths.
-
-**Use both when needed.** Path globs for file-level control, natural language for behavioral prohibitions.
+Commit trailer checks belong in close discipline, not BDD runtime scenarios.
 
 ## Common Errors
 
-| Lint Warning | Cause | Fix |
-|-------------|-------|-----|
-| `vague-verb` | "handle", "manage", "process", "处理" | Be specific: "validate email format" not "handle email" |
-| `unquantified` | "fast", "efficient", "应该快速" | Add metrics: "respond within 200ms" not "respond quickly" |
-| `testability` | Steps that can't be mechanically verified | Use observable assertions: "returns error code X" |
-| `coverage` | Constraint with no covering scenario | Add a scenario that exercises the constraint |
-| `determinism` | Non-deterministic step wording | Remove "should", "might"; use definitive assertions |
-| `implicit-dep` | Missing `Test:` selector on scenario | Add `Test: test_name` or structured `Test:` block |
-| `sycophancy` | Bug-finding bias language | Remove "find all bugs", "must find issues" |
+| Lint warning | Cause | Fix |
+|---|---|---|
+| `vague-verb` | vague verbs such as "handle" or "manage" | Use a precise verb such as "validate" or "persist". |
+| `unquantified` | unmeasured terms such as "fast" | Add a threshold such as "within 200ms". |
+| `testability` | assertion cannot be mechanically verified | Assert observable output or state. |
+| `coverage` | constraint has no scenario | Add a scenario that exercises it. |
+| `determinism` | non-deterministic wording | Use definitive assertions. |
+| `implicit-dep` | missing `Test:` selector | Add `Test:` or a structured selector. |
+| `explicit-test-binding` | scenario without a test binding | Bind it to a test, command, or evidence artifact. |
+| `sycophancy` | biased bug-finding language | State neutral acceptance criteria. |
 
 ## Authoring Checklist
 
-Before handing a Contract to an Agent, verify:
+Before handing a Contract to an implementation agent, verify:
 
 | # | Check | Why |
-|---|-------|-----|
-| 1 | Intent is 2-4 focused sentences | Agent needs clear direction, not a novel |
-| 2 | Decisions are specific (tech, version, params) | Agent shouldn't be choosing technology |
-| 3 | Boundaries have path globs for Allowed Changes | Enables mechanical enforcement |
-| 4 | Exception scenarios >= happy path scenarios | Forces edge-case thinking upfront |
-| 5 | Every scenario has a `Test:` selector | Required for TestVerifier to run |
-| 6 | Steps use deterministic wording | "returns 201" not "should return 201" |
-| 7 | `agent-spec lint` score >= 0.7 | Quality gate before Agent starts |
-
-## Common Rationalizations When Writing Specs
-
-| Excuse | Reality |
-|--------|---------|
-| "This is too simple to need a spec" | Simple tasks take 5 min to spec. Un-specced simple tasks scope-creep into complex ones. |
-| "I'll write code first, then add the spec" | Specs written after code conform to what was built, not what's correct. |
-| "Exception paths don't matter much" | Bugs live in exception paths. Lint enforces exception >= happy path count. |
-| "I'll add Test selectors later" | Scenarios without `Test:` get `skip` verdicts — they verify nothing. |
-| "Boundaries are too restrictive" | Boundaries are a safety net for the agent, not a limitation on you. |
-| "One happy path scenario is enough" | One scenario = one test = zero confidence in edge cases. |
-| "The intent is obvious, no need to write it" | Obvious to you ≠ obvious to the agent. Write it. |
-
-If you catch yourself using any of these, stop and write the spec properly.
-
-## Deprecated Patterns (Don't Use)
-
-| Deprecated | Use Instead | Reason |
-|------------|-------------|--------|
-| Scenarios without `Test:` | Always add `Test:` selector | Required for mechanical verification |
-| Vague boundaries like "be careful" | Specific path globs or prohibitions | Must be mechanically checkable |
-| "should" / "might" in steps | Definitive "returns" / "is" / "becomes" | Non-deterministic wording fails lint |
-| `brief` command to preview | `contract` command | `brief` is a legacy alias |
-| Only happy path scenarios | Include exception paths (>= happy) | Edge cases are where bugs live |
-
-## Self-Hosting Rules
-
-When authoring specs for the `agent-spec` project itself:
-
-- Put task specs under `specs/`
-- Roadmap specs go in `specs/roadmap/`, promote to `specs/` when active
-- Update tests when DSL or verification behavior changes
-- Preserve the four verdicts: `pass`, `fail`, `skip`, `uncertain`
-- Do not let a task spec rely on implicit test-name matching
+|---|---|---|
+| 1 | Intent is 2-4 focused sentences | The agent needs clear direction. |
+| 2 | Decisions are specific | The agent should not choose core technology. |
+| 3 | Boundaries have path globs | Enables mechanical enforcement. |
+| 4 | Exception scenarios cover error paths | Forces edge-case thinking upfront. |
+| 5 | Every scenario has a `Test:` selector | Required for mechanical verification. |
+| 6 | Steps use deterministic wording | Avoids ambiguous verification. |
+| 7 | `agent-spec lint` score is at least 0.7 | Quality gate before execution. |
 
 ## Escalation
 
-**Authoring → Planning**: After the Contract passes `agent-spec lint` with score >= 0.7, generate plan context with `agent-spec plan <spec> --code . --format prompt` to give the AI Agent codebase awareness before coding.
-
-**Authoring → Implementation**: Switch to `agent-spec-tool-first` after the Contract is drafted and passes `agent-spec lint` with score >= 0.7.
-
-**Implementation → Authoring**: Switch back here if the Agent discovers during implementation that:
-- A missing exception path needs to be added to Completion Criteria
-- A Boundary is too restrictive and needs expanding
-- A Decision was wrong and needs changing
+- **Authoring to planning**: after lint passes, run `agent-spec plan <spec> --code . --format prompt`.
+- **Authoring to implementation**: switch to `agent-spec-tool-first` after the contract passes lint.
+- **Implementation to authoring**: return here if a scenario, boundary, or decision must change.
 
 Update the Contract first, re-lint, then resume implementation. The Contract is a living document until the task is stamped.
-
-## § Scenario 必须是行为契约
-
-**核心原则**:Scenario 锁定的是运行时表现 / 外部可观察接口 —— 不是源码形态。代码结构、文件分布、模块边界这类"作者设计偏好"应该写到 `design-v{N}.md`,**不**写到 spec.md。
-
-新加入的 `pseudo-scenario` lint 规则(由 `PseudoScenarioLinter` 实现)按 scenario 的 `Test Double:` / `替身:` 字段判定三种 verdict:
-
-| Verdict | 触发关键词(出现在替身字段) | Lint 输出 |
-|---|---|---|
-| **Behavior**(放行) | `vitest` / `RTL` / `React Testing Library` / `cargo test` / `pnpm test` / `vi.fn` / `toHaveBeenCalled` / `renderHook` / `git diff src/bindings.ts` / `git diff bindings.ts` | 无 diagnostic |
-| **Structural**(警告) | `fs.readFile` / `fs.readdir` / `fs.exists` / `静态扫描` / `源码字面量` / `源码扫描` / `grep` / `wc -l` / `行数` / `line count` / `git log --grep` / `commit message` | Warning,扣 quality score |
-| **Ambiguous**(提示澄清) | 含 `git diff` 但路径不在公共接口边界(如裸 `git diff` / `git diff src/foo.rs`) | Info,要求 agent 明确替身 |
-
-Structural 优先级高于 Behavior:替身字段含 `vitest + fs.readFile 静态扫描` 也判为 Structural。识别大小写不敏感(CJK 字符 `to_lowercase` 不变)。
-
-### 反模式 → 正例对照
-
-#### 例 1:静态扫描"文件存在 + 命中次数"
-
-```
-反:
-场景: commands/ 目录新增 11 个 entity 文件
-  测试:
-    过滤: dir_has_11_files
-    层级: unit
-    替身: fs.readdir + 源码静态扫描
-  那么 commands/ 含 11 个 .rs 文件
-  并且 累计 #[tauri::command] 命中次数 == 58
-
-正:
-场景: 拆解后既有 IPC 调用全部继续工作
-  测试:
-    过滤: ipc_invocations_still_work
-    层级: e2e
-    替身: cargo test export_bindings + pnpm test
-  当 跑端到端测试覆盖前端通过 invoke 调 card_get / section_get / task_query_all 等 11 个 entity 各代表命令
-  那么 全部 IPC 调用返回正确 typed 数据
-  并且 src/bindings.ts 字节不变(外部接口边界 diff = 行为代理)
-```
-
-理由:author 想拆 11 个文件是设计偏好,写到 design;spec 锁的是"拆完后外部行为不变"。
-
-#### 例 2:源码 grep 检查 import / export
-
-```
-反:
-场景: TaskPreview.tsx 文件存在并 export TaskPreview
-  测试:
-    过滤: task_preview_exported
-    层级: unit
-    替身: 源码字面量 grep
-  那么 src/components/.../TaskPreview.tsx 含 `export function TaskPreview` 字串
-
-正:
-场景: 点击 task 节点后 sidebar 渲染 task 的 body markdown
-  测试:
-    过滤: task_click_renders_body_in_drawer
-    层级: integration
-    替身: vitest + RTL
-  假设 task 含 content="# Heading\n\nBody text"
-  当 点击 task 节点
-  那么 sidebar drawer 展开
-  并且 DOM 文本含 "Heading" 和 "Body text"
-```
-
-理由:文件存在 + export 名字是实施细节;真契约是"点击后用户看到正确渲染"。
-
-#### 例 3:`git log --grep` 检查 commit trailer
-
-```
-反:
-场景: 每个 phase commit 含 Task-Id trailer
-  测试:
-    过滤: each_phase_has_task_id
-    层级: unit
-    替身: git log --grep
-  那么 `git log --grep="^Task-Id: task_xxx$" --oneline` 命中数 ≥ 2
-
-正:
-将 commit trailer 检查移到 close 阶段的 grep 兜底(harness-task-close-discipline
-的 7 项 code review),不写为 BDD scenario。spec.md 的"结构约束清单"段可以列。
-```
-
-理由:commit trailer 是 author 的 git 操作纪律,不是被测代码的运行时行为。
-
-### 例外:外部接口边界文件 diff = 行为代理
-
-`git diff src/bindings.ts` 或 `git diff bindings.ts`(明确指向公共 IPC / API 边界文件)算 **Behavior** verdict,因为"前端类型接口字节不变"是"外部行为不变"的可观察代理 —— 跨模块调用方都能感知。
-
-裸 `git diff`(无具体路径)或 `git diff src/某非边界文件.rs` 是 **Ambiguous**,要求 agent 在替身字段里写清楚到底 diff 哪个边界。
-
-### 作者偏好的去处
-
-想锁定"具体拆分方案 / 文件分布 / 模块边界 / 命名约定 / 行数上限"这类作者设计偏好?写到:
-
-- **`design-v{N}-cc.md`**:架构决策段落(沉淀方案选择背景)
-- **`spec.md` 的「已定决策」段**:作为 prose 决策(由 `DecisionCoverageLinter` 验证有对应 scenario 覆盖)
-- **`spec.md` 的「结构约束清单」段**:用 H3 子段在 Decisions 末尾列条目,close 阶段 grep 兜底
-- **code review checklist**(`harness-task-close-discipline` 内 7 项):reviewer 人工对照 design 的方案 walkthrough
-
-**不要**写为 BDD scenario,否则 pseudo-scenario linter 会报 Structural warn,且这种 scenario 的 Red→Green 转换没有信息量。
-
-### 自查命令
-
-```bash
-agent-spec lint <spec>.md           # 跑全部 linter,看 pseudo-scenario warn/info
-```
-
-quality score 扣分超过 5 分时,优先重写为 Behavior scenario,而不是 acknowledge warn。

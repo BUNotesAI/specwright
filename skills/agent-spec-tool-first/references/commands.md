@@ -188,7 +188,7 @@ The decisions file format:
 ```json
 [
   {
-    "scenario_name": "场景名称",
+    "scenario_name": "scenario name",
     "model": "claude-agent",
     "confidence": 0.92,
     "verdict": "pass",

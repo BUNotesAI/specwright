@@ -1,227 +1,115 @@
-# Authoring Patterns Reference
+# Agent Spec Authoring Patterns
 
-## Spec Frontmatter
+This reference is English-only because skill references are reusable assets.
 
-```yaml
-spec: task           # org | project | task
-name: "Task Name"   # Required, human-readable
-inherits: project    # Optional, parent spec name
-tags: [tag1, tag2]   # Optional, for filtering
-runner: cargo        # Optional: cargo, maven, gradle, android, ios
-runner_config: {}    # Optional inline map, e.g. { scheme: "App" }
-```
+## Section Headers
 
-## Runner-Aware Contracts
+Use one supported top-level section per line:
 
-Use runner frontmatter when the spec must bind verification to a specific language or platform runner:
+| Section | Purpose |
+|---|---|
+| `## Intent` | What to do and why. |
+| `## Constraints` | Must and must-not rules. |
+| `## Decisions` | Fixed technical choices. |
+| `## Boundaries` | Allowed, forbidden, and out-of-scope changes. |
+| `## Acceptance Criteria` | BDD scenarios. |
+| `## Completion Criteria` | BDD scenarios. |
+| `## Out of Scope` | Explicitly excluded work. |
 
-```spec
-spec: task
-name: "iOS XCTest contract"
-runner: ios
-runner_config: { scheme: "IosMini", destination: "platform=iOS Simulator,name=iPhone 16 Pro" }
----
-```
+The parser may support localized aliases, but this reusable reference keeps examples in English.
 
-Built-in runners:
+## Invalid Near Misses
 
-| Runner | Markers | Selector notes |
-|---|---|---|
-| `cargo` | `Cargo.toml` | `Package` maps to Cargo package. |
-| `maven` | `pom.xml` | `Package` maps to Maven module with `-pl`. |
-| `gradle` | `build.gradle` / `build.gradle.kts` | `Package` maps to Gradle project path. |
-| `android` | Android manifest plus Gradle | `Level: unit` or `Level: instrumented`. |
-| `ios` | `Package.swift` or `*.xcodeproj` | `runner_config.scheme` and `runner_config.destination` feed `xcodebuild test`. |
-
-`runner_config` must be an inline string map. Unknown keys are verification warnings; review them as likely typos.
-
-## Section Headers (Bilingual)
-
-| Section | Chinese | English |
-|---------|---------|---------|
-| Intent | `## 意图` | `## Intent` |
-| Constraints | `## 约束` | `## Constraints` |
-| Decisions | `## 已定决策` / `## 决策` | `## Decisions` |
-| Boundaries | `## 边界` | `## Boundaries` |
-| Acceptance Criteria | `## 验收标准` / `## 完成条件` | `## Acceptance Criteria` / `## Completion Criteria` |
-| Out of Scope | `## 排除范围` | `## Out of Scope` |
-
-## Invalid Near-Misses
-
-These look plausible to a general-purpose LLM, but should not be emitted:
+Do not emit combined or invented headings:
 
 ```spec
-## Intent / 意图
-## Completion Criteria / 完成标准
+## Intent / Requirements
+## Completion Criteria / Done
 ## Milestones
 ## Quality
 ## Architecture
 ```
 
-Use one supported header language per line and only the supported top-level sections.
+Put architecture into Decisions, Boundaries, or a separate design artifact.
 
-## Parser Accepts But Authoring Should Avoid By Default
-
-The parser accepts these compatibility forms, but the authoring style should still prefer bare DSL lines:
+## Frontmatter
 
 ```spec
-### Scenario: Happy path
-### Test: test_happy_path
-```
-
-Prefer:
-
-```spec
-Scenario: Happy path
-  Test: test_happy_path
-```
-
-## Rewrite / Parity Checklist
-
-For rewrite, migration, and parity contracts, start from observable behavior, not modules.
-
-Check whether the spec covers:
-
-- command x output mode
-- local x remote
-- warm cache x cold start
-- success x partial failure x hard failure
-- CLI x MCP entry points when both are public
-
-If these dimensions matter and are only mentioned in Decisions, the contract is not ready yet.
-
-## Complete Task Contract Example
-
-```spec
+---
 spec: task
-name: "用户注册API"
+name: "Add Refund API"
 inherits: project
-tags: [api, auth]
+tags: [payment, refund]
+runner: cargo
+runner_config: {}
+---
+```
+
+## Complete Example
+
+```spec
+---
+spec: task
+name: "User Registration API"
+inherits: project
+runner: cargo
 ---
 
-## 意图
+## Intent
 
-为现有的认证模块添加用户注册 endpoint。新用户通过邮箱+密码注册，
-注册成功后发送验证邮件。这是用户体系的第一步，后续会在此基础上
-添加登录和密码重置。
+Add a registration endpoint to the existing authentication module. New users register with email and password, and successful registration sends a verification email.
 
-## 已定决策
+## Decisions
 
-- 路由: POST /api/v1/auth/register
-- 密码哈希: bcrypt, cost factor = 12
-- 验证 Token: crypto.randomUUID(), 存数据库, 24h 过期
-- 邮件: 使用现有 EmailService，不新建
+- Route: `POST /api/v1/auth/register`.
+- Password hashing: bcrypt with cost factor 12.
+- Verification token: `crypto.randomUUID()`, persisted for 24 hours.
+- Email: use the existing `EmailService`.
 
-## 边界
+## Boundaries
 
-### 允许修改
+### Allowed Changes
+
 - crates/api/src/auth/**
 - crates/api/tests/auth/**
 - migrations/
 
-### 禁止做
-- 不要添加新的 npm/cargo 依赖
-- 不要修改现有的登录 endpoint
-- 不要在注册流程中创建 session
-
-## 验收标准
-
-场景: 注册成功
-  测试: test_register_returns_201_for_new_user
-  假设 不存在邮箱为 "alice@example.com" 的用户
-  当 客户端提交注册请求:
-    | 字段     | 值                |
-    | email    | alice@example.com |
-    | password | Str0ng!Pass#2026  |
-  那么 响应状态码为 201
-  并且 响应体包含 "user_id"
-  并且 EmailService.sendVerification 被调用
-
-场景: 重复邮箱被拒绝
-  测试: test_register_rejects_duplicate_email
-  假设 已存在邮箱为 "alice@example.com" 的用户
-  当 客户端提交相同邮箱的注册请求
-  那么 响应状态码为 409
-
-场景: 弱密码被拒绝
-  测试: test_register_rejects_weak_password
-  假设 不存在邮箱为 "bob@example.com" 的用户
-  当 客户端提交密码为 "123" 的注册请求
-  那么 响应状态码为 400
-  并且 响应体包含密码强度要求
-
-场景: 缺少必填字段
-  测试: test_register_rejects_missing_fields
-  当 客户端提交缺少 email 字段的注册请求
-  那么 响应状态码为 400
-
-## 排除范围
-
-- 登录功能
-- 密码重置
-- OAuth 第三方登录
-```
-
-**Note**: 1 happy path + 3 exception paths. Exception scenarios >= happy path is the core authoring principle.
-
-## Rewrite / Parity Example
-
-See [`examples/rewrite-parity-contract.spec`](../../../examples/rewrite-parity-contract.spec) for a compatibility-oriented contract that binds output modes, cache state, source type, and failure paths.
-
-## Mandatory Validation
-
-After drafting a spec, run:
-
-```bash
-agent-spec parse specs/task.spec.md
-agent-spec lint specs/task.spec.md --min-score 0.7
-```
-
-If `parse` reports `0 scenarios`, the spec is not ready for `contract`, `lifecycle`, or `guard`.
-
-## Boundary Sub-Headers
-
-```spec
-## Boundaries
-
-### Allowed Changes
-- crates/spec-parser/**
-- tests/parser_contract.rs
-
 ### Forbidden
-- Do not change the public API shape
-- crates/spec-core/src/ast.rs
 
-### Out of Scope
-- Authentication system
+- Do not add new npm or Cargo dependencies.
+- Do not change the existing login endpoint.
+- Do not create a session during registration.
+
+## Completion Criteria
+
+Scenario: Registration succeeds
+  Test: test_register_returns_201_for_new_user
+  Given no user exists with email "alice@example.com"
+  When the client submits a valid registration request
+  Then the response status is 201
+  And the response body contains "user_id"
+  And `EmailService.sendVerification` was called
+
+Scenario: Duplicate email is rejected
+  Test: test_register_rejects_duplicate_email
+  Given a user already exists with email "alice@example.com"
+  When the client submits a registration request with the same email
+  Then the response status is 409
+
+Scenario: Weak password is rejected
+  Test: test_register_rejects_weak_password
+  Given no user exists with email "bob@example.com"
+  When the client submits password "123"
+  Then the response status is 400
+
+## Out of Scope
+
+- Login.
+- Password reset.
+- OAuth login.
 ```
 
-Category keywords recognized:
-- Allowed: `允许`, `allowed`, `allow`
-- Forbidden: `禁止`, `forbidden`, `forbid`, `deny`
-- Out of Scope: `排除`, `out of scope`, `scope`
-
-## Scenario Patterns
-
-### Simple test selector
-
-```spec
-Scenario: Happy path
-  Test: test_happy_path
-  Given precondition
-  When action
-  Then result
-```
-
-```spec
-场景: 正常路径
-  测试: test_happy_path
-  假设 前置条件
-  当 执行操作
-  那么 预期结果
-```
-
-### Structured test selector
+## Structured Selectors
 
 ```spec
 Scenario: Cross-crate verification
@@ -233,150 +121,63 @@ Scenario: Cross-crate verification
   Then passes
 ```
 
-### Structured selector with runner level
+Use `Level` for runners with multiple execution modes:
 
 ```spec
-Scenario: Android instrumented verification
+Scenario: Android instrumented flow
   Test:
     Package: app
     Filter: com.example.PaymentTest#rejectsExpiredCard
     Level: instrumented
   Given an Android project
   When lifecycle verification runs
-  Then the connected-device test command is selected
+  Then the instrumented test command is selected
 ```
+
+## Step Tables
+
+Use tables for structured input:
 
 ```spec
-场景: 跨 crate 验证
-  测试:
-    包: spec-gateway
-    过滤: test_contract_prompt_format
-  假设 一个任务 spec
-  当 验证时
-  那么 通过
+Scenario: Batch validation
+  Test: test_batch_validation
+  Given the following input records:
+    | name  | email           | valid |
+    | Alice | alice@test.com  | true  |
+    | Bob   | invalid         | false |
+  When the validator processes the batch
+  Then "1" record passes and "1" record fails
 ```
 
-### Step tables
+## Behavior Not Structure
 
-```spec
-Scenario: Batch processing
-  Test: test_batch_processing
-  Given the following records:
-    | id  | name  | status  |
-    | 1   | Alice | active  |
-    | 2   | Bob   | pending |
-  When the processor runs
-  Then "2" records are processed
-```
+Good scenarios verify observable behavior:
 
-## Step Keywords
+- CLI output and exit status;
+- API response shape;
+- UI text visible to the user;
+- generated public boundary files;
+- persisted state changes.
 
-| English | Chinese | Type |
-|---------|---------|------|
-| Given | 假设 | Precondition |
-| When | 当 | Action |
-| Then | 那么 | Assertion |
-| And | 并且 | Continue previous |
-| But | 但是 | Negative continue |
+Poor scenarios verify implementation preferences:
 
-## Parameters
+- file count;
+- helper function names;
+- source grep hits;
+- module split shape;
+- commit log content.
 
-Quoted strings are extracted as parameters:
+Move author preferences into design documents, Decisions prose, or close review checklists instead of BDD scenarios.
 
-```spec
-假设 存在一笔金额为 "100.00" 元的交易 "TXN-001"
-```
-
-Extracts: `["100.00", "TXN-001"]`
-
-Both ASCII quotes `"..."` and Chinese quotes `\u{201C}...\u{201D}` are supported.
-
-## Three-Layer Inheritance Example
-
-### org.spec.md
-
-```spec
-spec: org
-name: "ACME Corp Standards"
----
-
-## Constraints
-
-- All public APIs must have integration tests
-- No .unwrap() in production code
-```
-
-### project.spec.md
-
-```spec
-spec: project
-name: "Payment Gateway"
-inherits: org
----
-
-## Constraints
-
-- All monetary amounts use Decimal type
-- Response time under 500ms for payment endpoints
-
-## Decisions
-
-- Use PostgreSQL for transaction storage
-- Use Redis for session caching
-```
-
-### task.spec.md
-
-```spec
-spec: task
-name: "Add Refund API"
-inherits: project
-tags: [payment, refund]
----
-
-## Intent
-
-Add refund endpoint to the payment gateway.
-
-## Completion Criteria
-
-Scenario: Full refund
-  Test: test_full_refund
-  Given a completed transaction "TXN-001" for "100.00"
-  When a full refund is requested
-  Then the refund status is "processing"
-```
-
-The task spec inherits constraints from both project and org.
-
-## Lint Rules and Fixes
+## Lint Rules
 
 | Rule | Trigger | Fix |
-|------|---------|-----|
-| `vague-verb` | "handle", "manage", "process", "处理", "管理" | Use specific verbs: "validate", "persist", "计算" |
-| `unquantified` | "fast", "efficient", "应该快速" | Add numbers: "within 200ms", "200ms 内" |
-| `testability` | Non-observable assertions | Use "returns X", "status becomes Y" |
-| `coverage` | Constraint without matching scenario | Add scenario exercising the constraint |
-| `determinism` | "should", "might", "may" in steps | Use definitive: "returns", "is", "becomes" |
-| `implicit-dep` | Scenario missing `Test:` selector | Add `Test: test_name` line |
-| `explicit-test-binding` | Scenario without test binding | Add `Test:` or structured selector |
-| `sycophancy` | "find all bugs", "找出所有" | Remove bias language, state neutral criteria |
-
-## Quality Score
-
-The quality score (0.0 - 1.0) is computed from three dimensions:
-
-- **Determinism**: Penalty for non-deterministic step wording
-- **Testability**: Penalty for untestable steps
-- **Coverage**: Ratio of constraints with covering scenarios
-
-Default minimum score for `lifecycle` and `guard`: `0.6`
-
-## Time Comparison
-
-```
-Traditional:  Write Issue 5min + Read diff 30min + Comment 15min + Re-review 15min = ~65min
-agent-spec:   Write Contract 15min + Read explain 5min + Approve 2min = ~22min
-```
-
-The 15 minutes spent writing a Contract is higher-value than the 30 minutes spent reading a diff, because you're defining "what is correct" instead of guessing "is this code correct".
+|---|---|---|
+| `vague-verb` | vague verbs | Use precise verbs such as "validate" or "persist". |
+| `unquantified` | broad performance claims | Add numbers. |
+| `testability` | unobservable assertions | Assert output, status, or state. |
+| `coverage` | uncovered constraints | Add a scenario. |
+| `determinism` | non-definitive wording | Use definitive assertions. |
+| `implicit-dep` | missing `Test:` selector | Add a selector. |
+| `explicit-test-binding` | scenario without a binding | Bind it to test, command, or evidence. |
+| `sycophancy` | biased bug-finding language | State neutral criteria. |
