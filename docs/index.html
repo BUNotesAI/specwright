@@ -674,10 +674,10 @@ footer a:hover { text-decoration: underline; }
     <div class="skills-install reveal">
       <div class="skills-install-box" id="skills-copy" title="Click to copy">
         <span class="cmd-prompt">$</span>
-        <span class="cmd-text">./install-skills.sh</span>
+        <span class="cmd-text">cargo install --path . --force</span>
         <span class="copy-hint">click to copy</span>
       </div>
-      <div class="skills-install-note">Installs agent-spec CLI + all 3 skills into ~/.claude/skills/ with one command</div>
+      <div class="skills-install-note">Installs the agent-spec CLI only; sync the 3 skills into your agent's skills directory manually</div>
     </div>
 
     <div class="skills-grid reveal">
@@ -1122,8 +1122,8 @@ footer a:hover { text-decoration: underline; }
     </div>
 
     <div class="install-block reveal">
-      <span class="comment"># Install CLI + Skills (one command)</span><br>
-      <span class="cmd">git clone https://github.com/ZhangHanDong/agent-spec && cd agent-spec && ./install-skills.sh</span><br><br>
+      <span class="comment"># Install the CLI from source</span><br>
+      <span class="cmd">git clone https://github.com/ZhangHanDong/agent-spec && cd agent-spec && cargo install --path . --force</span><br><br>
       <span class="comment"># Or install CLI only</span><br>
       <span class="cmd">cargo install agent-spec</span><br><br>
       <span class="comment"># Create a task contract</span><br>
@@ -1209,7 +1209,7 @@ document.querySelectorAll('.lang-btn').forEach(btn => {
 const skillsCopy = document.getElementById('skills-copy');
 if (skillsCopy) {
   skillsCopy.addEventListener('click', () => {
-    const cmd = './install-skills.sh';
+    const cmd = 'cargo install --path . --force';
     navigator.clipboard.writeText(cmd).then(() => {
       skillsCopy.classList.add('copied');
       const hint = skillsCopy.querySelector('.copy-hint');

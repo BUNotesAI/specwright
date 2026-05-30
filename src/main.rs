@@ -87,8 +87,8 @@ enum Commands {
         /// Spec name
         #[arg(long)]
         name: Option<String>,
-        /// Language: zh, en, both
-        #[arg(long, default_value = "zh")]
+        /// Language: en, zh, both
+        #[arg(long, default_value = "en")]
         lang: String,
         /// Template profile: standard, rewrite-parity
         #[arg(long, default_value = "standard")]
@@ -2955,8 +2955,7 @@ Scenario: Contract alias
     #[test]
     fn test_claude_code_tool_first_skill_exists_and_mentions_contract_lifecycle_guard() {
         let skill =
-            fs::read_to_string(repo_root().join(".claude/skills/agent-spec-tool-first/SKILL.md"))
-                .unwrap();
+            fs::read_to_string(repo_root().join("skills/agent-spec-tool-first/SKILL.md")).unwrap();
 
         assert!(skill.contains("agent-spec parse"));
         assert!(skill.contains("agent-spec contract"));
@@ -2966,10 +2965,24 @@ Scenario: Contract alias
     }
 
     #[test]
+    fn test_agent_spec_skills_default_spec_authoring_to_english() {
+        // Regression guard: both authoring skills must state English as the
+        // spec.md default and must not tell agents that vault specs may use
+        // Chinese visible prose by default.
+        let authoring =
+            fs::read_to_string(repo_root().join("skills/agent-spec-authoring/SKILL.md")).unwrap();
+        let tool_first =
+            fs::read_to_string(repo_root().join("skills/agent-spec-tool-first/SKILL.md")).unwrap();
+        assert!(!authoring.contains("Chinese visible prose"));
+        assert!(!tool_first.contains("Chinese visible prose"));
+        assert!(authoring.contains("default to English visible prose"));
+        assert!(tool_first.contains("defaults to English (visible prose and DSL tokens)"));
+    }
+
+    #[test]
     fn test_claude_code_authoring_skill_exists_and_mentions_task_contract_sections() {
         let skill =
-            fs::read_to_string(repo_root().join(".claude/skills/agent-spec-authoring/SKILL.md"))
-                .unwrap();
+            fs::read_to_string(repo_root().join("skills/agent-spec-authoring/SKILL.md")).unwrap();
 
         assert!(skill.contains("Intent"));
         assert!(skill.contains("Decisions"));
@@ -2983,21 +2996,19 @@ Scenario: Contract alias
     #[test]
     fn test_authoring_skill_includes_behavior_surface_checklist() {
         let skill =
-            fs::read_to_string(repo_root().join(".claude/skills/agent-spec-authoring/SKILL.md"))
-                .unwrap();
+            fs::read_to_string(repo_root().join("skills/agent-spec-authoring/SKILL.md")).unwrap();
 
         assert!(skill.contains("Behavior Surface Checklist"));
-        assert!(skill.contains("stdout vs stderr behavior"));
-        assert!(skill.contains("`--json`"));
-        assert!(skill.contains("`-o/--output`"));
+        assert!(skill.contains("stdout vs stderr"));
+        assert!(skill.contains("machine-readable output"));
+        assert!(skill.contains("output-file side effects"));
         assert!(skill.contains("warm cache vs cold start"));
     }
 
     #[test]
     fn test_tool_first_skill_mentions_unbound_observable_behavior_review_step() {
         let skill =
-            fs::read_to_string(repo_root().join(".claude/skills/agent-spec-tool-first/SKILL.md"))
-                .unwrap();
+            fs::read_to_string(repo_root().join("skills/agent-spec-tool-first/SKILL.md")).unwrap();
 
         assert!(skill.contains("Unbound Observable Behavior review"));
         assert!(skill.contains("command x output mode"));
@@ -4215,6 +4226,28 @@ Scenario: verification metadata stays visible
         cmd_init_at(&dir, "task", Some("test-task"), "en", "default").unwrap();
         assert!(dir.join("test-task.spec.md").exists());
         assert!(!dir.join("test-task.spec").exists());
+    }
+
+    #[test]
+    fn test_init_default_lang_is_english() {
+        // With no --lang, the parsed default must be English, not Chinese.
+        let cli = super::Cli::parse_from(["agent-spec", "init"]);
+        let super::Commands::Init { lang, .. } = cli.command else {
+            panic!("expected Init command");
+        };
+        assert_eq!(lang.as_str(), "en");
+    }
+
+    #[test]
+    fn test_init_default_template_uses_english_dsl_not_chinese() {
+        // The default ("en") template must emit English DSL tokens only.
+        let dir = make_temp_dir("init-default-en");
+        cmd_init_at(&dir, "task", Some("t"), "en", "default").unwrap();
+        let body = std::fs::read_to_string(dir.join("t.spec.md")).unwrap();
+        assert!(body.contains("Scenario:"));
+        assert!(body.contains("## Completion Criteria"));
+        assert!(!body.contains("场景:"));
+        assert!(!body.contains("测试:"));
     }
 
     #[test]

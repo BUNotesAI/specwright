@@ -27,7 +27,7 @@ Skill files are reusable assets and must be English-only. Do not include non-Eng
 
 When this skill is used inside the harness workflow:
 
-- vault task specs should use Chinese visible prose by default;
+- vault task specs default to English visible prose and English DSL tokens; use Chinese only when explicitly requested or when Chinese text is the content under test;
 - code, comments, tests, CLI strings, skills, templates, and git commit messages remain English-only;
 - paths, commands, frontmatter keys, test selectors, runner ids, and code identifiers keep their canonical technical spelling.
 

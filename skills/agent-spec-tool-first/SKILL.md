@@ -45,7 +45,7 @@ Humans define "what is correct" (Contract). Machines verify "is the code correct
 
 ## Language Boundary
 
-Skill files and skill references are reusable assets and must be English-only. Use English examples in this skill. When this skill is used inside the harness workflow, vault specs may use Chinese visible prose while code, comments, tests, CLI strings, skills, templates, and git commit messages remain English-only.
+Skill files and skill references are reusable assets and must be English-only. Use English examples in this skill. When this skill is used inside the harness workflow, agent-spec task `spec.md` defaults to English (visible prose and DSL tokens); Chinese only on explicit request or as content under test. Code, comments, tests, CLI strings, skills, templates, and git commit messages remain English-only.
 
 ## Quick Reference
 

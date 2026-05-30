@@ -67,7 +67,7 @@ Scenario: Successful registration
   And response body should contain "user_id"
 ```
 
-Chinese authoring is also supported:
+English is the default. Chinese DSL aliases stay parser-compatible for legacy specs — use them only on explicit request or when Chinese is the content under test, not as the default authoring style:
 
 ```spec
 ## 意图
@@ -117,51 +117,36 @@ For rewrite/parity work, the authoring path should explicitly bind observable be
 
 See [`examples/rewrite-parity-contract.spec`](examples/rewrite-parity-contract.spec) for a concrete parity-oriented contract.
 
-#### One-line install (CLI + skills)
+#### Install
+
+> There is no installer script (`install-skills.sh` was **removed**). Skill directories
+> are environment-specific (Claude Code, Codex, and other agents use different roots),
+> so skills are synced manually.
+
+Install the CLI from this checkout:
 
 ```bash
-./install-skills.sh
+cargo install --path . --force
 ```
 
-This installs the `agent-spec` CLI from the current checkout with `cargo install --path . --force` and copies all three skills to `~/.claude/skills/`.
-
-Use `AGENT_SPEC_SKILL_DIR` when your agent skills live somewhere else:
+Then copy the three skills into **your agent's** skills directory. That directory
+is environment-specific — for example `~/.claude/skills/` for Claude Code, or
+`~/.codex/skills/` for Codex. Pick the one your agent actually loads; the path
+below is an example, not a universal location:
 
 ```bash
-AGENT_SPEC_SKILL_DIR=~/dotfiles/claude/.claude/skills ./install-skills.sh
+SKILL_DIR="$HOME/.claude/skills"   # environment-specific; adjust to your agent
+for s in agent-spec-tool-first agent-spec-authoring agent-spec-estimate; do
+  rm -rf "${SKILL_DIR}/${s}" && cp -r "skills/${s}" "${SKILL_DIR}/${s}"
+done
 ```
 
-Use `AGENT_SPEC_INSTALL_CLI=0` when you only want to sync skills:
+Verify the active copies match the repo source-of-truth (`skills/`):
 
 ```bash
-AGENT_SPEC_INSTALL_CLI=0 AGENT_SPEC_SKILL_DIR=/path/to/skills ./install-skills.sh
-```
-
-#### Manual install for Claude Code
-
-```bash
-# Copy to your global skills directory
-SKILL_DIR=~/dotfiles/claude/.claude/skills
-cp -r skills/agent-spec-tool-first "${SKILL_DIR}/"
-cp -r skills/agent-spec-authoring "${SKILL_DIR}/"
-cp -r skills/agent-spec-estimate "${SKILL_DIR}/"
-```
-
-Or symlink for auto-updates:
-
-```bash
-SKILL_DIR=~/dotfiles/claude/.claude/skills
-ln -s "$(pwd)/skills/agent-spec-tool-first" "${SKILL_DIR}/"
-ln -s "$(pwd)/skills/agent-spec-authoring" "${SKILL_DIR}/"
-ln -s "$(pwd)/skills/agent-spec-estimate" "${SKILL_DIR}/"
-```
-
-After copying, verify the local agent skills match the repository copies:
-
-```bash
-diff -qr skills/agent-spec-tool-first "${SKILL_DIR}/agent-spec-tool-first"
-diff -qr skills/agent-spec-authoring "${SKILL_DIR}/agent-spec-authoring"
-diff -qr skills/agent-spec-estimate "${SKILL_DIR}/agent-spec-estimate"
+for s in agent-spec-tool-first agent-spec-authoring agent-spec-estimate; do
+  diff -qr "skills/${s}" "${SKILL_DIR}/${s}"
+done
 ```
 
 #### Install for Codex
@@ -257,7 +242,7 @@ Outputs git trailers (`Spec-Name`, `Spec-Passing`, `Spec-Summary`) for the commi
 
 ## Explicit Test Binding
 
-Task-level scenarios should declare an explicit `Test:` / `测试:` selector.
+Task-level scenarios should declare an explicit `Test:` selector.
 
 ```spec
 Scenario: Duplicate email is rejected
@@ -272,6 +257,8 @@ Scenario: Duplicate email is rejected
     Package: user-service
     Filter: test_register_api_rejects_duplicate_email
 ```
+
+The same selector with legacy Chinese aliases is parser-compatible (not the default):
 
 ```spec
 场景: 超限退款返回稳定错误码
