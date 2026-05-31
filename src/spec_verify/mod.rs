@@ -5,7 +5,7 @@ mod runners;
 mod structural;
 mod test_verifier;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -19,7 +19,10 @@ pub use complexity::ComplexityVerifier;
 #[cfg(test)]
 pub use runners::{CargoRunner, ResolutionSource, extract_bindings};
 #[allow(unused_imports)]
-pub use runners::{HostPlatform, RunnerSelection, RunnerWarning, TestCommand};
+pub use runners::{
+    HostPlatform, NodePackageManager, NodePackageManagerDecision, NodePackageManagerSource,
+    NodeProjectMetadata, RunnerSelection, RunnerWarning, RunnerWorkspaceMetadata, TestCommand,
+};
 pub use runners::{
     PreflightOutcome, RunnerRegistry, RunnerResolution, RunnerSourceFile, RunnerWorkspace,
     TestRunner, WorkspaceMarkers, resolve_detected_runner, resolve_runner_choice,
@@ -106,13 +109,24 @@ fn probe_and_build_context_with_registry_and_host(
     let markers = probe_workspace_markers(root.as_deref());
     let (runner, mut runner_resolution) = resolve_detected_runner(&registry, selection, &markers)?;
     ensure_runner_supported_on_host(runner.as_ref(), host_platform)?;
-    let source_files = collect_source_files(&code_paths, runner.source_extensions())?;
+    let source_files = collect_source_files(
+        &code_paths,
+        runner.source_extensions(),
+        runner.ignored_source_dirs(),
+    )?;
+    let metadata = build_workspace_metadata(
+        runner.as_ref(),
+        root.as_deref(),
+        &markers,
+        &resolved_spec.task.meta.runner_config,
+    )?;
     let runner_workspace = RunnerWorkspace::new(
         root,
         code_paths.clone(),
         resolved_spec.task.meta.runner_config.clone(),
         markers,
         source_files,
+        metadata,
     );
     let config_warnings = build_config_warnings(runner.as_ref(), &runner_workspace);
     runner_resolution.config_warnings = config_warnings.clone();
@@ -147,6 +161,137 @@ fn build_config_warnings(
             ),
         })
         .collect()
+}
+
+fn build_workspace_metadata(
+    runner: &dyn TestRunner,
+    root: Option<&Path>,
+    markers: &WorkspaceMarkers,
+    config: &BTreeMap<String, String>,
+) -> SpecResult<RunnerWorkspaceMetadata> {
+    if runner.id() != "node" {
+        return Ok(RunnerWorkspaceMetadata::default());
+    }
+
+    Ok(RunnerWorkspaceMetadata {
+        node: Some(build_node_project_metadata(root, markers, config)?),
+    })
+}
+
+fn build_node_project_metadata(
+    root: Option<&Path>,
+    markers: &WorkspaceMarkers,
+    config: &BTreeMap<String, String>,
+) -> SpecResult<NodeProjectMetadata> {
+    let root = root.ok_or_else(|| {
+        SpecError::Verification("node runner requires a workspace root with package.json".into())
+    })?;
+    let package_json_path = root.join("package.json");
+    let package_json = std::fs::read_to_string(&package_json_path).map_err(|err| {
+        SpecError::Verification(format!(
+            "node runner requires readable package.json at {}: {err}",
+            package_json_path.display()
+        ))
+    })?;
+    let parsed: serde_json::Value = serde_json::from_str(&package_json).map_err(|err| {
+        SpecError::Verification(format!(
+            "node runner could not parse package.json at {}: {err}",
+            package_json_path.display()
+        ))
+    })?;
+    let scripts = parsed
+        .get("scripts")
+        .and_then(serde_json::Value::as_object)
+        .map(|scripts| scripts.keys().cloned().collect::<BTreeSet<_>>())
+        .unwrap_or_default();
+    let package_json_package_manager = parsed
+        .get("packageManager")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let lockfiles = node_lockfiles_from_markers(markers);
+    let package_manager =
+        select_node_package_manager(config, package_json_package_manager.as_deref(), &lockfiles)?;
+
+    Ok(NodeProjectMetadata {
+        package_manager,
+        scripts,
+        package_json_package_manager,
+        lockfiles,
+    })
+}
+
+fn node_lockfiles_from_markers(markers: &WorkspaceMarkers) -> BTreeSet<String> {
+    NODE_LOCKFILES
+        .iter()
+        .filter(|lockfile| markers.contains(lockfile))
+        .map(|lockfile| (*lockfile).to_string())
+        .collect()
+}
+
+fn select_node_package_manager(
+    config: &BTreeMap<String, String>,
+    package_json_package_manager: Option<&str>,
+    lockfiles: &BTreeSet<String>,
+) -> SpecResult<NodePackageManagerDecision> {
+    if let Some(configured) = config.get("package_manager") {
+        let manager = parse_node_package_manager(configured, "package_manager")?;
+        return Ok(NodePackageManagerDecision {
+            manager,
+            source: NodePackageManagerSource::RunnerConfig,
+        });
+    }
+
+    if let Some(raw) = package_json_package_manager {
+        let name = raw.split('@').next().unwrap_or(raw);
+        let manager = parse_node_package_manager(name, "packageManager")?;
+        return Ok(NodePackageManagerDecision {
+            manager,
+            source: NodePackageManagerSource::PackageJson,
+        });
+    }
+
+    if lockfiles.len() > 1 {
+        return Err(SpecError::Verification(format!(
+            "multiple node lockfiles found without package-manager selection: {}",
+            lockfiles.iter().cloned().collect::<Vec<_>>().join(", ")
+        )));
+    }
+
+    if let Some(lockfile) = lockfiles.iter().next() {
+        return Ok(NodePackageManagerDecision {
+            manager: node_manager_for_lockfile(lockfile)?,
+            source: NodePackageManagerSource::Lockfile(lockfile.clone()),
+        });
+    }
+
+    Ok(NodePackageManagerDecision {
+        manager: NodePackageManager::Npm,
+        source: NodePackageManagerSource::DefaultNpm,
+    })
+}
+
+fn parse_node_package_manager(value: &str, field_name: &str) -> SpecResult<NodePackageManager> {
+    match value {
+        "npm" => Ok(NodePackageManager::Npm),
+        "pnpm" => Ok(NodePackageManager::Pnpm),
+        "yarn" => Ok(NodePackageManager::Yarn),
+        "bun" => Ok(NodePackageManager::Bun),
+        other => Err(SpecError::Verification(format!(
+            "invalid node {field_name} value `{other}`; expected npm, pnpm, yarn, or bun"
+        ))),
+    }
+}
+
+fn node_manager_for_lockfile(lockfile: &str) -> SpecResult<NodePackageManager> {
+    match lockfile {
+        "pnpm-lock.yaml" => Ok(NodePackageManager::Pnpm),
+        "bun.lock" | "bun.lockb" => Ok(NodePackageManager::Bun),
+        "yarn.lock" => Ok(NodePackageManager::Yarn),
+        "package-lock.json" => Ok(NodePackageManager::Npm),
+        other => Err(SpecError::Verification(format!(
+            "unsupported node lockfile marker `{other}`"
+        ))),
+    }
 }
 
 fn ensure_runner_supported_on_host(
@@ -253,14 +398,22 @@ fn find_workspace_root(code_paths: &[PathBuf]) -> Option<PathBuf> {
         } else {
             path.clone()
         };
+        let mut node_candidate = None;
 
         loop {
-            if has_workspace_marker(&current) {
+            if has_non_node_workspace_marker(&current) {
                 return Some(current);
+            }
+            if node_candidate.is_none() && has_node_workspace_marker(&current) {
+                node_candidate = Some(current.clone());
             }
             if !current.pop() {
                 break;
             }
+        }
+
+        if node_candidate.is_some() {
+            return node_candidate;
         }
     }
 
@@ -282,6 +435,7 @@ fn probe_workspace_markers(root: Option<&Path>) -> WorkspaceMarkers {
 fn collect_source_files(
     code_paths: &[PathBuf],
     source_extensions: &[&str],
+    ignored_source_dirs: &[&str],
 ) -> SpecResult<Vec<RunnerSourceFile>> {
     let mut files = Vec::new();
     let mut paths = Vec::new();
@@ -292,7 +446,7 @@ fn collect_source_files(
                 paths.push(path.clone());
             }
         } else if path.is_dir() {
-            collect_source_paths(path, source_extensions, &mut paths);
+            collect_source_paths(path, source_extensions, ignored_source_dirs, &mut paths);
         }
     }
 
@@ -306,7 +460,12 @@ fn collect_source_files(
     Ok(files)
 }
 
-fn collect_source_paths(dir: &Path, source_extensions: &[&str], files: &mut Vec<PathBuf>) {
+fn collect_source_paths(
+    dir: &Path,
+    source_extensions: &[&str],
+    ignored_source_dirs: &[&str],
+    files: &mut Vec<PathBuf>,
+) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -315,18 +474,21 @@ fn collect_source_paths(dir: &Path, source_extensions: &[&str], files: &mut Vec<
         let path = entry.path();
         if path.is_dir() {
             if let Some(name) = path.file_name().and_then(|name| name.to_str())
-                && (name.starts_with('.') || name == "target" || name == "build")
+                && (name.starts_with('.')
+                    || name == "target"
+                    || name == "build"
+                    || ignored_source_dirs.contains(&name))
             {
                 continue;
             }
-            collect_source_paths(&path, source_extensions, files);
+            collect_source_paths(&path, source_extensions, ignored_source_dirs, files);
         } else if has_source_extension(&path, source_extensions) {
             files.push(path);
         }
     }
 }
 
-const WORKSPACE_ROOT_MARKERS: &[&str] = &[
+const NON_NODE_WORKSPACE_ROOT_MARKERS: &[&str] = &[
     "Cargo.toml",
     "AndroidManifest.xml",
     "Package.swift",
@@ -337,6 +499,8 @@ const WORKSPACE_ROOT_MARKERS: &[&str] = &[
     "settings.gradle",
     "settings.gradle.kts",
 ];
+
+const NODE_WORKSPACE_ROOT_MARKERS: &[&str] = &["package.json"];
 
 const WORKSPACE_MARKERS: &[&str] = &[
     "Cargo.toml",
@@ -352,10 +516,30 @@ const WORKSPACE_MARKERS: &[&str] = &[
     "mvnw.cmd",
     "gradlew",
     "gradlew.bat",
+    "package.json",
+    "pnpm-lock.yaml",
+    "bun.lock",
+    "bun.lockb",
+    "yarn.lock",
+    "package-lock.json",
 ];
 
-fn has_workspace_marker(dir: &Path) -> bool {
-    WORKSPACE_ROOT_MARKERS
+const NODE_LOCKFILES: &[&str] = &[
+    "pnpm-lock.yaml",
+    "bun.lock",
+    "bun.lockb",
+    "yarn.lock",
+    "package-lock.json",
+];
+
+fn has_non_node_workspace_marker(dir: &Path) -> bool {
+    NON_NODE_WORKSPACE_ROOT_MARKERS
+        .iter()
+        .any(|marker| workspace_marker_exists(dir, marker))
+}
+
+fn has_node_workspace_marker(dir: &Path) -> bool {
+    NODE_WORKSPACE_ROOT_MARKERS
         .iter()
         .any(|marker| workspace_marker_exists(dir, marker))
 }
@@ -419,7 +603,7 @@ impl VerificationContext {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
@@ -429,9 +613,11 @@ mod tests {
     };
 
     use super::{
-        AiMode, CargoRunner, HostPlatform, ResolutionSource, RunnerRegistry, RunnerResolution,
+        AiMode, CargoRunner, HostPlatform, NodePackageManager, NodePackageManagerDecision,
+        NodePackageManagerSource, ResolutionSource, RunnerRegistry, RunnerResolution,
         RunnerWarning, RunnerWorkspace, TestCommand, TestRunner, VerificationContext, Verifier,
         WorkspaceMarkers, probe_and_build_context_with_registry_and_host, run_verification,
+        select_node_package_manager,
     };
 
     struct FirstVerifier;
@@ -712,6 +898,434 @@ mod tests {
         }];
         assert_eq!(ctx.config_warnings, expected);
         assert_eq!(ctx.runner_resolution.config_warnings, expected);
+    }
+
+    #[test]
+    fn test_node_markers_do_not_steal_nested_cargo_workspace_root() {
+        let root = temp_workspace_path("node-marker-cargo-root-regression");
+        write_file(
+            &root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("frontend/package.json"),
+            "{\"scripts\":{\"test\":\"node test.js\"}}\n",
+        );
+        write_file(
+            &root.join("frontend/src/app.ts"),
+            "export const value = 1;\n",
+        );
+
+        let ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root.join("frontend/src/app.ts")],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(None),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+
+        assert_eq!(ctx.runner_workspace.root, Some(root));
+        assert_eq!(ctx.runner_resolution.name, "cargo");
+    }
+
+    #[test]
+    fn test_node_mixed_workspace_detection_precedence_and_explicit_override() {
+        let root = temp_workspace_path("node-cargo-mixed-root");
+        write_file(
+            &root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("package.json"),
+            "{\"scripts\":{\"test\":\"node test.js\"}}\n",
+        );
+
+        let auto = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root.clone()],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(None),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        assert_eq!(auto.runner_resolution.name, "cargo");
+        assert!(auto.runner_workspace.metadata.node.is_none());
+
+        let explicit = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(Some("node")),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        assert_eq!(explicit.runner_resolution.name, "node");
+        assert!(explicit.runner_workspace.metadata.node.is_some());
+    }
+
+    #[test]
+    fn test_node_workspace_markers_feed_probe_metadata() {
+        let root = temp_workspace_path("node-markers-metadata");
+        write_file(
+            &root.join("package.json"),
+            r#"{"packageManager":"pnpm@9.0.0","scripts":{"test":"node test.js","build":"node build.js"}}"#,
+        );
+        for lockfile in [
+            "pnpm-lock.yaml",
+            "bun.lock",
+            "bun.lockb",
+            "yarn.lock",
+            "package-lock.json",
+        ] {
+            write_file(&root.join(lockfile), "");
+        }
+
+        let ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(None),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        let metadata = ctx.runner_workspace.metadata.node.as_ref().unwrap();
+
+        assert_eq!(ctx.runner_resolution.name, "node");
+        assert_eq!(
+            metadata.package_json_package_manager.as_deref(),
+            Some("pnpm@9.0.0")
+        );
+        assert_eq!(
+            metadata.package_manager,
+            NodePackageManagerDecision {
+                manager: NodePackageManager::Pnpm,
+                source: NodePackageManagerSource::PackageJson,
+            }
+        );
+        assert!(metadata.scripts.contains("test"));
+        assert!(metadata.scripts.contains("build"));
+        assert_eq!(
+            metadata.lockfiles,
+            BTreeSet::from([
+                "bun.lock".to_string(),
+                "bun.lockb".to_string(),
+                "package-lock.json".to_string(),
+                "pnpm-lock.yaml".to_string(),
+                "yarn.lock".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_node_project_metadata_is_probed_once_and_carried_to_workspace() {
+        let root = temp_workspace_path("node-probed-metadata");
+        write_file(
+            &root.join("package.json"),
+            r#"{"packageManager":"yarn@4.0.0","scripts":{"test":"node test.js","typecheck":"node typecheck.js"}}"#,
+        );
+        write_file(
+            &root.join("src/example.test.ts"),
+            "// @spec: node example\ntest(\"node example\", () => {})\n",
+        );
+
+        let ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(Some("node")),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        let metadata = ctx.runner_workspace.metadata.node.as_ref().unwrap();
+
+        assert_eq!(
+            metadata.package_json_package_manager.as_deref(),
+            Some("yarn@4.0.0")
+        );
+        assert_eq!(metadata.package_manager.manager, NodePackageManager::Yarn);
+        assert!(metadata.scripts.contains("test"));
+        assert!(metadata.scripts.contains("typecheck"));
+        assert_eq!(ctx.runner_workspace.source_files.len(), 1);
+        assert!(
+            ctx.runner
+                .build_test_command(
+                    &ctx.runner_workspace,
+                    &TestSelector {
+                        package: None,
+                        filter: "-".into(),
+                        level: Some("unit".into()),
+                        test_double: None,
+                        targets: None,
+                    }
+                )
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_node_package_manager_precedence_matrix() {
+        assert_eq!(
+            select_node_package_manager(
+                &BTreeMap::from([("package_manager".to_string(), "bun".to_string())]),
+                Some("pnpm@9.0.0"),
+                &BTreeSet::from(["yarn.lock".to_string()])
+            )
+            .unwrap(),
+            NodePackageManagerDecision {
+                manager: NodePackageManager::Bun,
+                source: NodePackageManagerSource::RunnerConfig,
+            }
+        );
+        assert_eq!(
+            select_node_package_manager(
+                &BTreeMap::new(),
+                Some("pnpm@9.0.0"),
+                &BTreeSet::from(["yarn.lock".to_string()])
+            )
+            .unwrap(),
+            NodePackageManagerDecision {
+                manager: NodePackageManager::Pnpm,
+                source: NodePackageManagerSource::PackageJson,
+            }
+        );
+        assert_eq!(
+            select_node_package_manager(
+                &BTreeMap::new(),
+                None,
+                &BTreeSet::from(["bun.lock".to_string()])
+            )
+            .unwrap(),
+            NodePackageManagerDecision {
+                manager: NodePackageManager::Bun,
+                source: NodePackageManagerSource::Lockfile("bun.lock".into()),
+            }
+        );
+        assert_eq!(
+            select_node_package_manager(&BTreeMap::new(), None, &BTreeSet::new()).unwrap(),
+            NodePackageManagerDecision {
+                manager: NodePackageManager::Npm,
+                source: NodePackageManagerSource::DefaultNpm,
+            }
+        );
+
+        let multiple_lockfiles = select_node_package_manager(
+            &BTreeMap::new(),
+            None,
+            &BTreeSet::from([
+                "package-lock.json".to_string(),
+                "pnpm-lock.yaml".to_string(),
+            ]),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(multiple_lockfiles.contains("multiple node lockfiles"));
+    }
+
+    #[test]
+    fn test_node_invalid_package_manager_value_errors() {
+        let err = select_node_package_manager(
+            &BTreeMap::from([("package_manager".to_string(), "deno".to_string())]),
+            Some("pnpm@9.0.0"),
+            &BTreeSet::new(),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("package_manager"));
+        assert!(err.contains("deno"));
+    }
+
+    #[test]
+    fn test_node_invalid_package_json_package_manager_value_errors() {
+        let root = temp_workspace_path("node-invalid-package-json-package-manager");
+        write_file(
+            &root.join("package.json"),
+            r#"{"packageManager":"deno@2.0.0","scripts":{"test":"node test.js"}}"#,
+        );
+
+        let err = match probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(Some("node")),
+            None,
+            HostPlatform::MacOS,
+        ) {
+            Ok(_) => panic!("invalid packageManager should fail verification"),
+            Err(err) => err,
+        };
+        let message = err.to_string();
+
+        assert!(message.contains("packageManager"));
+        assert!(message.contains("deno"));
+        assert!(!message.contains("RunnerWarning"));
+    }
+
+    #[test]
+    fn test_node_unknown_runner_config_keys_warn() {
+        let root = temp_workspace_path("node-unknown-config-warning");
+        write_file(
+            &root.join("package.json"),
+            r#"{"scripts":{"test":"node test.js"}}"#,
+        );
+
+        let ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner_and_config(
+                Some("node"),
+                BTreeMap::from([
+                    ("unit_filter_style".to_string(), "none".to_string()),
+                    ("unit_fitler_style".to_string(), "typo".to_string()),
+                ]),
+            ),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+
+        assert_eq!(
+            ctx.config_warnings,
+            vec![RunnerWarning {
+                runner: "node".into(),
+                key: "unit_fitler_style".into(),
+                reason: "unknown `unit_fitler_style` runner_config key for `node` runner".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn test_node_explicit_runner_requires_parseable_package_json() {
+        let missing_root = temp_workspace_path("node-missing-package-json");
+        std::fs::create_dir_all(&missing_root).unwrap();
+        let missing_err = match probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![missing_root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(Some("node")),
+            None,
+            HostPlatform::MacOS,
+        ) {
+            Ok(_) => panic!("missing package.json should fail verification"),
+            Err(err) => err.to_string(),
+        };
+        assert!(missing_err.contains("package.json"));
+
+        let malformed_root = temp_workspace_path("node-malformed-package-json");
+        write_file(&malformed_root.join("package.json"), "{ invalid json");
+        let malformed_err = match probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![malformed_root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(Some("node")),
+            None,
+            HostPlatform::MacOS,
+        ) {
+            Ok(_) => panic!("malformed package.json should fail verification"),
+            Err(err) => err.to_string(),
+        };
+        assert!(malformed_err.contains("package.json"));
+    }
+
+    #[test]
+    fn test_node_source_collection_prunes_generated_and_vendor_dirs() {
+        let node_root = temp_workspace_path("node-source-prune");
+        write_file(
+            &node_root.join("package.json"),
+            "{\"scripts\":{\"test\":\"node test.js\"}}\n",
+        );
+        write_file(
+            &node_root.join("tests/owned.test.ts"),
+            "// @spec: owned\ntest(\"owned\", () => {})\n",
+        );
+        for dir in ["node_modules", "dist", "coverage", "playwright-report"] {
+            write_file(
+                &node_root.join(dir).join("ignored.test.ts"),
+                "// @spec: ignored\ntest(\"ignored\", () => {})\n",
+            );
+        }
+
+        let node_ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![node_root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(Some("node")),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        let source_names: Vec<String> = node_ctx
+            .runner_workspace
+            .source_files
+            .iter()
+            .map(|source| source.path.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(source_names.len(), 1);
+        assert!(source_names[0].contains("owned.test.ts"));
+
+        let cargo_root = temp_workspace_path("cargo-source-prune-regression");
+        write_file(
+            &cargo_root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(&cargo_root.join("dist/lib.rs"), "pub fn from_dist() {}\n");
+        write_file(
+            &cargo_root.join("coverage/lib.rs"),
+            "pub fn from_coverage() {}\n",
+        );
+        write_file(
+            &cargo_root.join("playwright-report/lib.rs"),
+            "pub fn from_report() {}\n",
+        );
+
+        let cargo_ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![cargo_root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(None),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        let cargo_sources: Vec<String> = cargo_ctx
+            .runner_workspace
+            .source_files
+            .iter()
+            .map(|source| source.path.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            cargo_sources
+                .iter()
+                .any(|path| path.contains("dist/lib.rs"))
+        );
+        assert!(
+            cargo_sources
+                .iter()
+                .any(|path| path.contains("coverage/lib.rs"))
+        );
+        assert!(
+            cargo_sources
+                .iter()
+                .any(|path| path.contains("playwright-report/lib.rs"))
+        );
     }
 
     fn resolved_spec_with_runner(runner: Option<&str>) -> ResolvedSpec {

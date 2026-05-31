@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::spec_core::{ResolvedSpec, SpecError, SpecResult};
 
 use super::{
-    AndroidRunner, CargoRunner, GradleRunner, IosRunner, MavenRunner, ResolutionSource,
+    AndroidRunner, CargoRunner, GradleRunner, IosRunner, MavenRunner, NodeRunner, ResolutionSource,
     RunnerResolution, RunnerSelection, TestRunner, WorkspaceMarkers,
 };
 
@@ -27,6 +27,7 @@ impl RunnerRegistry {
         registry.register(Arc::new(AndroidRunner::new()));
         registry.register(Arc::new(IosRunner::new()));
         registry.register(Arc::new(GradleRunner));
+        registry.register(Arc::new(NodeRunner));
         registry
     }
 
@@ -123,9 +124,7 @@ pub fn resolve_runner_choice(
     if let RunnerSelection::ByName { name, .. } = &selection
         && registry.get(name).is_none()
     {
-        return Err(SpecError::Verification(format!(
-            "unknown test runner `{name}`"
-        )));
+        return Err(unknown_runner_error(name));
     }
 
     Ok(selection)
@@ -157,9 +156,7 @@ pub fn resolve_detected_runner(
             overridden_spec,
         } => {
             let Some(runner) = registry.get(&name) else {
-                return Err(SpecError::Verification(format!(
-                    "unknown test runner `{name}`"
-                )));
+                return Err(unknown_runner_error(&name));
             };
             let resolution = RunnerResolution {
                 name,
@@ -169,6 +166,16 @@ pub fn resolve_detected_runner(
             };
             Ok((runner, resolution))
         }
+    }
+}
+
+fn unknown_runner_error(name: &str) -> SpecError {
+    if matches!(name, "vitest" | "jest" | "tsc" | "playwright") {
+        SpecError::Verification(format!(
+            "unknown test runner `{name}`; did you mean runner: node"
+        ))
+    } else {
+        SpecError::Verification(format!("unknown test runner `{name}`"))
     }
 }
 
@@ -231,7 +238,7 @@ mod tests {
     fn test_maven_runner_uses_mvnw_via_wrapper_family() {
         let registry = RunnerRegistry::with_defaults();
         let runner = registry.get("maven").unwrap();
-        let workspace = RunnerWorkspace::new(
+        let workspace = RunnerWorkspace::new_without_metadata(
             Some(PathBuf::from(".")),
             Vec::new(),
             Default::default(),
@@ -260,7 +267,7 @@ mod tests {
     fn test_jvm_scanner_method_level_emits_method_selector() {
         let registry = RunnerRegistry::with_defaults();
         let runner = registry.get("maven").unwrap();
-        let workspace = RunnerWorkspace::new(
+        let workspace = RunnerWorkspace::new_without_metadata(
             Some(PathBuf::from(".")),
             Vec::new(),
             Default::default(),
@@ -311,7 +318,7 @@ class RiskRulesTest {
     fn test_jvm_scanner_class_level_emits_single_class_selector() {
         let registry = RunnerRegistry::with_defaults();
         let runner = registry.get("maven").unwrap();
-        let workspace = RunnerWorkspace::new(
+        let workspace = RunnerWorkspace::new_without_metadata(
             Some(PathBuf::from(".")),
             Vec::new(),
             Default::default(),
@@ -671,8 +678,22 @@ class PaymentRiskRulesTest {
         assert_eq!(resolution.source, ResolutionSource::SpecFrontmatter);
     }
 
+    #[test]
+    fn test_node_runner_registered_and_framework_ids_hint_node() {
+        let registry = RunnerRegistry::with_defaults();
+
+        assert!(registry.get("node").is_some());
+        for framework in ["vitest", "jest", "tsc", "playwright"] {
+            let err = resolve_runner_choice(&registry, &resolved_spec(Some(framework)), None)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains(framework));
+            assert!(err.contains("did you mean runner: node"));
+        }
+    }
+
     fn android_workspace() -> RunnerWorkspace {
-        RunnerWorkspace::new(
+        RunnerWorkspace::new_without_metadata(
             Some(PathBuf::from(".")),
             Vec::new(),
             Default::default(),
@@ -682,7 +703,7 @@ class PaymentRiskRulesTest {
     }
 
     fn ios_workspace(config: BTreeMap<String, String>) -> RunnerWorkspace {
-        RunnerWorkspace::new(
+        RunnerWorkspace::new_without_metadata(
             Some(PathBuf::from(".")),
             Vec::new(),
             config,

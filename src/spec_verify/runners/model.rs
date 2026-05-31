@@ -102,6 +102,61 @@ impl WorkspaceMarkers {
     pub fn contains(&self, marker: &str) -> bool {
         self.files.contains(marker)
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &str> {
+        self.files.iter().map(String::as_str)
+    }
+}
+
+/// Runner-specific typed metadata produced by effectful workspace probing.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RunnerWorkspaceMetadata {
+    pub node: Option<NodeProjectMetadata>,
+}
+
+/// Typed Node project metadata consumed by the pure Node runner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeProjectMetadata {
+    pub package_manager: NodePackageManagerDecision,
+    pub scripts: BTreeSet<String>,
+    pub package_json_package_manager: Option<String>,
+    pub lockfiles: BTreeSet<String>,
+}
+
+/// Selected Node package manager and the source of that decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodePackageManagerDecision {
+    pub manager: NodePackageManager,
+    pub source: NodePackageManagerSource,
+}
+
+/// Supported Node package managers for the v1 runner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodePackageManager {
+    Npm,
+    Pnpm,
+    Yarn,
+    Bun,
+}
+
+impl NodePackageManager {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Npm => "npm",
+            Self::Pnpm => "pnpm",
+            Self::Yarn => "yarn",
+            Self::Bun => "bun",
+        }
+    }
+}
+
+/// Source used to select a Node package manager.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NodePackageManagerSource {
+    RunnerConfig,
+    PackageJson,
+    Lockfile(String),
+    DefaultNpm,
 }
 
 /// Runner-facing workspace model. It contains data, not hidden IO handles.
@@ -112,10 +167,29 @@ pub struct RunnerWorkspace {
     pub config: BTreeMap<String, String>,
     pub markers: WorkspaceMarkers,
     pub source_files: Vec<RunnerSourceFile>,
+    pub metadata: RunnerWorkspaceMetadata,
 }
 
 impl RunnerWorkspace {
     pub fn new(
+        root: Option<PathBuf>,
+        code_paths: Vec<PathBuf>,
+        config: BTreeMap<String, String>,
+        markers: WorkspaceMarkers,
+        source_files: Vec<RunnerSourceFile>,
+        metadata: RunnerWorkspaceMetadata,
+    ) -> Self {
+        Self {
+            root,
+            code_paths,
+            config,
+            markers,
+            source_files,
+            metadata,
+        }
+    }
+
+    pub fn new_without_metadata(
         root: Option<PathBuf>,
         code_paths: Vec<PathBuf>,
         config: BTreeMap<String, String>,
@@ -128,6 +202,7 @@ impl RunnerWorkspace {
             config,
             markers,
             source_files,
+            metadata: RunnerWorkspaceMetadata::default(),
         }
     }
 
@@ -138,6 +213,7 @@ impl RunnerWorkspace {
             config: BTreeMap::new(),
             markers: WorkspaceMarkers::from_files(["Cargo.toml"]),
             source_files: Vec::new(),
+            metadata: RunnerWorkspaceMetadata::default(),
         }
     }
 }
@@ -149,6 +225,10 @@ pub trait TestRunner: Send + Sync {
     fn detect(&self, markers: &WorkspaceMarkers) -> bool;
 
     fn source_extensions(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    fn ignored_source_dirs(&self) -> &'static [&'static str] {
         &[]
     }
 

@@ -302,6 +302,18 @@ fn helper() {}
             super::command_program_evidence("gradle", "./gradlew"),
             Some("./gradlew".to_string())
         );
+        assert_eq!(
+            super::command_program_evidence("node", "pnpm"),
+            Some("pnpm".to_string())
+        );
+    }
+
+    #[test]
+    fn test_node_command_program_evidence_records_package_manager() {
+        assert_eq!(
+            super::command_program_evidence("node", "pnpm"),
+            Some("pnpm".to_string())
+        );
     }
 
     struct MissingAdbRunner;

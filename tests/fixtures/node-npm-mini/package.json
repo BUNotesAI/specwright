@@ -1,0 +1,8 @@
+{
+  "packageManager": "npm@11.5.1",
+  "scripts": {
+    "test": "node scripts/unit.js",
+    "typecheck": "node scripts/typecheck.js",
+    "build": "node scripts/build.js"
+  }
+}

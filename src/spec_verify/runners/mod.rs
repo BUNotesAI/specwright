@@ -5,6 +5,7 @@ mod ios;
 mod jvm;
 mod maven;
 mod model;
+mod node;
 mod registry;
 
 pub use android::AndroidRunner;
@@ -15,7 +16,10 @@ pub use gradle::GradleRunner;
 pub use ios::IosRunner;
 pub use maven::MavenRunner;
 pub use model::{
-    HostPlatform, PreflightOutcome, ResolutionSource, RunnerResolution, RunnerSelection,
-    RunnerSourceFile, RunnerWarning, RunnerWorkspace, TestCommand, TestRunner, WorkspaceMarkers,
+    HostPlatform, NodePackageManager, NodePackageManagerDecision, NodePackageManagerSource,
+    NodeProjectMetadata, PreflightOutcome, ResolutionSource, RunnerResolution, RunnerSelection,
+    RunnerSourceFile, RunnerWarning, RunnerWorkspace, RunnerWorkspaceMetadata, TestCommand,
+    TestRunner, WorkspaceMarkers,
 };
+pub use node::NodeRunner;
 pub use registry::{RunnerRegistry, resolve_detected_runner, resolve_runner_choice};

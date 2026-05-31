@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn test_duplicate_legacy_binding_first_wins() {
         let runner = CargoRunner;
-        let workspace = RunnerWorkspace::new(
+        let workspace = RunnerWorkspace::new_without_metadata(
             Some(PathBuf::from(".")),
             Vec::new(),
             Default::default(),
