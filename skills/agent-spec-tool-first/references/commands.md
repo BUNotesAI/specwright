@@ -88,7 +88,7 @@ Full pipeline: lint -> verify -> report. Default format is `json`.
 Task specs can choose a runner in frontmatter:
 
 ```yaml
-runner: cargo | maven | gradle | android | ios
+runner: cargo | maven | gradle | android | ios | node
 runner_config: { scheme: "IosMini", destination: "platform=iOS Simulator,name=iPhone 16 Pro" }
 ```
 
@@ -99,8 +99,22 @@ Runner-specific behavior:
 - `gradle`: detects `build.gradle` or `build.gradle.kts`; prefers `./gradlew`; runs `test --tests <filter>`.
 - `android`: detects Gradle plus `AndroidManifest.xml`; `Test.level: instrumented` uses connected-device preflight.
 - `ios`: detects `Package.swift` or `*.xcodeproj`; macOS-only; uses `runner_config.scheme` and `runner_config.destination` for `xcodebuild test`.
+- `node`: detects `package.json`; runs JavaScript/TypeScript package scripts with `npm`, `pnpm`, `yarn`, or `bun`. Use `runner: node` for TanStack Start, Vite, Vitest, Jest, Playwright, Bun, and other package-script based projects; there is no TanStack Start-specific runner.
 
-When a required external tool or device is unavailable, mobile runner preflight reports `MissingCapability`; `TestVerifier` converts that scenario to `skip`.
+Node runner v1 details:
+
+- Package manager precedence: `runner_config.package_manager` > `package.json.packageManager` > a single lockfile marker > `npm`.
+- Supported package managers: `npm`, `pnpm`, `yarn`, `bun`.
+- Lockfiles: `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`, `yarn.lock`, `package-lock.json`.
+- Config keys: `package_manager`, `unit_script`, `typecheck_script`, `lint_script`, `build_script`, `e2e_script`, `unit_filter_style`, `workspace_filter`.
+- Default scripts: `unit` -> `test`, `typecheck` -> `typecheck`, `lint` -> `lint`, `build` -> `build`, `e2e` -> `e2e`.
+- `unit_filter_style` values: `vitest`, `jest`, `playwright`, `none`.
+- Unit filters are regex-escaped before being passed to the package script.
+- Non-unit levels require `Filter: -`.
+- `Package` selectors and `runner_config.workspace_filter` fail in Node v1.
+- Missing `package.json`, unreadable or invalid `package.json`, missing required scripts, invalid package-manager values, and ambiguous lockfiles fail verification.
+
+When a required external tool or device is unavailable, runner preflight reports `MissingCapability`; `TestVerifier` converts that scenario to `skip`. For Node, this applies to the selected package manager executable and to opt-in `Level: e2e` browser capability.
 
 ## guard
 

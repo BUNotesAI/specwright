@@ -3017,6 +3017,27 @@ Scenario: Contract alias
     }
 
     #[test]
+    fn test_agent_spec_skills_document_node_typescript_runner() {
+        let authoring =
+            fs::read_to_string(repo_root().join("skills/agent-spec-authoring/SKILL.md")).unwrap();
+        let tool_first =
+            fs::read_to_string(repo_root().join("skills/agent-spec-tool-first/SKILL.md")).unwrap();
+        let commands = fs::read_to_string(
+            repo_root().join("skills/agent-spec-tool-first/references/commands.md"),
+        )
+        .unwrap();
+
+        assert!(authoring.contains("runner: node"));
+        assert!(authoring.contains("TanStack Start"));
+        assert!(authoring.contains("unit_filter_style"));
+        assert!(tool_first.contains("runner: node"));
+        assert!(tool_first.contains("Node/TypeScript runner v1 behavior"));
+        assert!(tool_first.contains("Package` selectors"));
+        assert!(commands.contains("runner: cargo | maven | gradle | android | ios | node"));
+        assert!(commands.contains("Node runner v1 details"));
+    }
+
+    #[test]
     fn test_rewrite_parity_example_spec_exists_and_covers_behavior_matrix() {
         let example =
             fs::read_to_string(repo_root().join("examples/rewrite-parity-contract.spec")).unwrap();

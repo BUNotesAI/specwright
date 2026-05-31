@@ -11,7 +11,7 @@ description: |
 
 # Agent Spec Tool-First Workflow
 
-> **Version:** 3.3.0 | **Last Updated:** 2026-05-27
+> **Version:** 3.4.0 | **Last Updated:** 2026-05-31
 
 You are an expert at using `agent-spec` as a CLI tool for contract-driven AI coding. Help users by:
 - **Planning**: Render task contracts with `contract`, generate plan context with `plan`
@@ -19,7 +19,7 @@ You are an expert at using `agent-spec` as a CLI tool for contract-driven AI cod
 - **Verifying**: Run `lifecycle` / `guard` to check code against specs
 - **Reviewing**: Use `explain` for human-readable summaries, `stamp` for git trailers
 - **Debugging**: Interpret verification failures and fix code accordingly
-- **Runner-aware workflows**: Select Cargo, Maven, Gradle, Android, or iOS runners through spec frontmatter or CLI overrides
+- **Runner-aware workflows**: Select Cargo, Maven, Gradle, Android, iOS, or Node/TypeScript runners through spec frontmatter or CLI overrides
 
 ## IMPORTANT: CLI Prerequisite Check
 
@@ -84,6 +84,7 @@ Built-in runners:
 | `gradle` | `build.gradle` / `build.gradle.kts`, prefers `gradlew` when present | `gradle :<package>:test --tests <filter>` | Maven/Gradle mixed workspaces require exactly one wrapper family or an explicit runner. |
 | `android` | `AndroidManifest.xml` plus Gradle markers | Gradle unit or instrumented task selected by `Test.level` | `level: instrumented` requires ADB and a connected device/emulator; missing capability becomes Skip. |
 | `ios` | `Package.swift` or `*.xcodeproj` | `xcodebuild test -scheme <scheme> -destination <destination> -only-testing:<package>/<filter>` | macOS only. Requires Xcode and a booted iOS Simulator; missing capability becomes Skip. |
+| `node` | `package.json` | `<package-manager> run <script> [filter args]` | Generic JavaScript/TypeScript package-script runner. There is no TanStack Start-specific runner; TanStack Start projects use `runner: node`. |
 
 Structured selectors can include `Package`, `Filter`, and `Level`:
 
@@ -100,8 +101,20 @@ Known runner config keys:
 | Runner | Keys |
 |---|---|
 | `ios` | `scheme`, `destination` |
+| `node` | `package_manager`, `unit_script`, `typecheck_script`, `lint_script`, `build_script`, `e2e_script`, `unit_filter_style`, `workspace_filter` |
 
 Unknown `runner_config` keys are non-blocking warnings in the verification context. Treat spelling mistakes such as `destinaiton` as review findings even when the lifecycle status still passes.
+
+Node/TypeScript runner v1 behavior:
+
+- Use `runner: node` for TypeScript, JavaScript, Vite, Vitest, Jest, Playwright, Bun, and TanStack Start package-script verification. Do not use framework-specific runner ids such as `vitest`, `jest`, `playwright`, or `tanstack-start`; unknown framework ids should be corrected to `runner: node`.
+- Package manager precedence is `runner_config.package_manager` > `package.json.packageManager` > a single lockfile marker > `npm`. Supported values are `npm`, `pnpm`, `yarn`, and `bun`; invalid values and multiple lockfiles without a package-manager decision fail verification.
+- Script mapping defaults are `Level: unit` -> `test`, `typecheck` -> `typecheck`, `lint` -> `lint`, `build` -> `build`, and `e2e` -> `e2e`. Override these with the corresponding `*_script` runner config key.
+- Unit filters require `runner_config.unit_filter_style`: `vitest` emits `-- -t <escaped-filter>`, `jest` emits `-- --testNamePattern <escaped-filter>`, `playwright` emits `-- --grep <escaped-filter>`, and `none` requires `Filter: -`.
+- Non-unit levels (`typecheck`, `lint`, `build`, `e2e`) require the no-filter sentinel `Filter: -`.
+- `Package` selectors and `runner_config.workspace_filter` are out of scope for Node v1 and fail loudly. Use separate specs or script-level filtering for monorepos.
+- Missing package-manager executables on `PATH` are converted to Skip through `MissingCapability`. Missing or unreadable `package.json`, missing required scripts, and invalid runner config fail verification.
+- `Level: e2e` is opt-in and reports a browser capability skip by default; it is not part of the default close gate.
 
 ## Documentation
 

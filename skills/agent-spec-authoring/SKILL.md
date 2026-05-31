@@ -10,7 +10,7 @@ description: |
 
 # Agent Spec Authoring
 
-> **Version:** 3.4.0 | **Last Updated:** 2026-05-28
+> **Version:** 3.5.0 | **Last Updated:** 2026-05-31
 
 You are an expert at writing agent-spec Task Contracts. Help users by:
 
@@ -19,7 +19,7 @@ You are an expert at writing agent-spec Task Contracts. Help users by:
 - **Writing scenarios**: BDD-style scenarios with explicit test selectors and deterministic steps.
 - **Debugging specs**: fix parse errors, lint warnings, and weak quality scores.
 - **Self-hosting**: maintain specs for the agent-spec project itself.
-- **Runner-aware contracts**: choose Cargo, Maven, Gradle, Android, or iOS execution semantics in frontmatter.
+- **Runner-aware contracts**: choose Cargo, Maven, Gradle, Android, iOS, or Node/TypeScript execution semantics in frontmatter.
 
 ## Language Boundary
 
@@ -211,6 +211,17 @@ runner_config: { scheme: "IosMini", destination: "platform=iOS Simulator,name=iP
 ---
 ```
 
+For TypeScript or JavaScript projects, use the generic Node runner. Do not create framework-specific runner ids for TanStack Start, Vite, Vitest, Jest, Playwright, or Bun projects.
+
+```spec
+---
+spec: task
+name: "TypeScript package-script checks"
+runner: node
+runner_config: { package_manager: "pnpm", unit_filter_style: "vitest" }
+---
+```
+
 Built-in runner choices:
 
 | Runner | Use when | Notes |
@@ -220,8 +231,32 @@ Built-in runner choices:
 | `gradle` | Java/Kotlin Gradle projects | Detected from Gradle build files. |
 | `android` | Android Gradle projects | Use selector `Level: unit` or `Level: instrumented`. |
 | `ios` | Swift Package or Xcode XCTest | macOS only; may need `scheme` and `destination`. |
+| `node` | JavaScript and TypeScript package-script projects | Detected from `package.json`. Use this for TanStack Start, Vite, Vitest, Jest, Playwright, Bun, and similar stacks. |
 
 `runner_config` must use inline map syntax: `{ key: "value" }`. Unknown keys are warnings; review them as likely contract bugs.
+
+Node runner config keys:
+
+| Key | Purpose |
+|---|---|
+| `package_manager` | Select `npm`, `pnpm`, `yarn`, or `bun`; this overrides `package.json.packageManager` and lockfiles. |
+| `unit_script` | Override the default unit script name `test`. |
+| `typecheck_script` | Override the default typecheck script name `typecheck`. |
+| `lint_script` | Override the default lint script name `lint`. |
+| `build_script` | Override the default build script name `build`. |
+| `e2e_script` | Override the default e2e script name `e2e`. |
+| `unit_filter_style` | Select unit filter argv shape: `vitest`, `jest`, `playwright`, or `none`. |
+| `workspace_filter` | Reserved but unsupported in Node v1; using it fails verification. |
+
+Node runner authoring rules:
+
+- Package manager precedence is `runner_config.package_manager` > `package.json.packageManager` > a single lockfile marker > `npm`.
+- Supported lockfiles are `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`, `yarn.lock`, and `package-lock.json`.
+- Use `Level: unit`, `typecheck`, `lint`, `build`, or `e2e`.
+- Use `Filter: -` for `typecheck`, `lint`, `build`, and `e2e`.
+- For unit tests, either configure `unit_filter_style` and provide a real test-name filter, or set `unit_filter_style: "none"` and use `Filter: -`.
+- Do not use `Package` selectors for Node v1. Mixed Rust and TypeScript repositories should use separate specs or explicit `runner: node` for the TypeScript spec.
+- Missing package-manager executables or opt-in e2e browser capability become skipped scenarios. Missing `package.json`, invalid package-manager values, ambiguous lockfiles, and missing required scripts are verification failures.
 
 ## Test Selector Patterns
 
@@ -258,6 +293,18 @@ Scenario: Android instrumented flow
   Given an Android project
   When lifecycle verification runs
   Then the instrumented test command is selected
+```
+
+Node package-script levels:
+
+```spec
+Scenario: TypeScript typecheck passes
+  Test:
+    Filter: -
+    Level: typecheck
+  Given a TypeScript project with a package.json typecheck script
+  When lifecycle verification runs with runner node
+  Then the typecheck script passes
 ```
 
 ## Behavior Surface Checklist

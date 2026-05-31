@@ -40,7 +40,7 @@ spec: task
 name: "Add Refund API"
 inherits: project
 tags: [payment, refund]
-runner: cargo
+runner: cargo # or node, maven, gradle, android, ios
 runner_config: {}
 ---
 ```
@@ -133,6 +133,42 @@ Scenario: Android instrumented flow
   When lifecycle verification runs
   Then the instrumented test command is selected
 ```
+
+Use `runner: node` for TypeScript and JavaScript package-script projects. TanStack Start, Vite, Vitest, Jest, Playwright, and Bun projects all use the generic Node runner rather than framework-specific runner ids.
+
+```spec
+---
+spec: task
+name: "TypeScript package-script checks"
+inherits: project
+runner: node
+runner_config: { package_manager: "pnpm", unit_filter_style: "vitest" }
+---
+
+## Intent
+
+Verify the TypeScript project through its package scripts.
+
+## Completion Criteria
+
+Scenario: Unit test passes
+  Test:
+    Filter: renders settings page
+    Level: unit
+  Given the project has a package.json test script
+  When lifecycle verification runs
+  Then the selected package manager runs the unit test script
+
+Scenario: Typecheck passes
+  Test:
+    Filter: -
+    Level: typecheck
+  Given the project has a package.json typecheck script
+  When lifecycle verification runs
+  Then the selected package manager runs the typecheck script
+```
+
+Node v1 does not support `Package` selectors or `runner_config.workspace_filter`; use separate specs or script-level filtering for monorepos.
 
 ## Step Tables
 
