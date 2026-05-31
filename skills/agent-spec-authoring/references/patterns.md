@@ -35,7 +35,6 @@ Put architecture into Decisions, Boundaries, or a separate design artifact.
 ## Frontmatter
 
 ```spec
----
 spec: task
 name: "Add Refund API"
 inherits: project
@@ -48,7 +47,6 @@ runner_config: {}
 ## Complete Example
 
 ```spec
----
 spec: task
 name: "User Registration API"
 inherits: project
@@ -137,7 +135,6 @@ Scenario: Android instrumented flow
 Use `runner: node` for TypeScript and JavaScript package-script projects. TanStack Start, Vite, Vitest, Jest, Playwright, and Bun projects all use the generic Node runner rather than framework-specific runner ids.
 
 ```spec
----
 spec: task
 name: "TypeScript package-script checks"
 inherits: project

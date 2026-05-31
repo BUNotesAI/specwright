@@ -203,7 +203,6 @@ Rules:
 Use `runner` when the task contract must bind scenarios to a non-Cargo execution environment or when auto-detection would be ambiguous.
 
 ```spec
----
 spec: task
 name: "iOS XCTest mini fixture"
 runner: ios
@@ -214,7 +213,6 @@ runner_config: { scheme: "IosMini", destination: "platform=iOS Simulator,name=iP
 For TypeScript or JavaScript projects, use the generic Node runner. Do not create framework-specific runner ids for TanStack Start, Vite, Vitest, Jest, Playwright, or Bun projects.
 
 ```spec
----
 spec: task
 name: "TypeScript package-script checks"
 runner: node
