@@ -4,8 +4,8 @@ use std::path::Path;
 use crate::spec_core::{SpecError, SpecResult, TestSelector};
 
 use super::{
-    NodePackageManager, NodeProjectMetadata, PreflightOutcome, RunnerWorkspace, TestCommand,
-    TestRunner, WorkspaceMarkers,
+    NodeProjectMetadata, PreflightOutcome, RunnerWorkspace, TestCommand, TestRunner,
+    WorkspaceMarkers,
 };
 
 /// Generic Node and TypeScript package-script runner.
@@ -40,7 +40,7 @@ impl TestRunner for NodeRunner {
         })?;
         let script = script_for_selector(workspace, metadata, selector)?;
         let package_manager = metadata.package_manager.manager;
-        let mut args = package_manager_run_prefix(package_manager, workspace, selector)?;
+        let mut args = package_manager_run_prefix(workspace, selector)?;
         args.push(script.to_string());
         args.extend(filter_args(workspace, selector)?);
 
@@ -142,39 +142,26 @@ fn script_for_selector<'a>(
 }
 
 fn package_manager_run_prefix(
-    manager: NodePackageManager,
     workspace: &RunnerWorkspace,
     selector: &TestSelector,
 ) -> SpecResult<Vec<String>> {
     let package = selector.package.as_deref();
     let configured_filter = workspace.config.get("workspace_filter").map(String::as_str);
-    if let (Some(package), Some(configured)) = (package, configured_filter)
-        && package != configured
-    {
+    if package.is_some() || configured_filter.is_some() {
+        let mut details = Vec::new();
+        if let Some(package) = package {
+            details.push(format!("Package `{package}`"));
+        }
+        if let Some(configured) = configured_filter {
+            details.push(format!("runner_config.workspace_filter `{configured}`"));
+        }
         return Err(SpecError::Verification(format!(
-            "node runner received conflicting workspace filters: Package `{package}` and runner_config.workspace_filter `{configured}`"
+            "node runner v1 does not support workspace filters ({}); remove Package and runner_config.workspace_filter",
+            details.join(", ")
         )));
     }
-    let workspace_filter = package.or(configured_filter);
 
-    let mut args = Vec::new();
-    match manager {
-        NodePackageManager::Npm | NodePackageManager::Yarn | NodePackageManager::Bun => {
-            args.push("run".to_string());
-            if let Some(filter) = workspace_filter {
-                args.push("--workspace".to_string());
-                args.push(filter.to_string());
-            }
-        }
-        NodePackageManager::Pnpm => {
-            if let Some(filter) = workspace_filter {
-                args.push("--filter".to_string());
-                args.push(filter.to_string());
-            }
-            args.push("run".to_string());
-        }
-    }
-    Ok(args)
+    Ok(vec!["run".to_string()])
 }
 
 fn filter_args(workspace: &RunnerWorkspace, selector: &TestSelector) -> SpecResult<Vec<String>> {
@@ -404,6 +391,31 @@ mod tests {
             .to_string();
         assert!(err.contains("unit_filter_style"));
         assert!(err.contains("Filter: -"));
+    }
+
+    #[test]
+    fn test_node_workspace_filters_are_out_of_scope_for_v1() {
+        let base_workspace = workspace(NodePackageManager::Npm, BTreeMap::new(), ["test"]);
+        let err = NodeRunner
+            .build_test_command(&base_workspace, &package_selector("web"))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("workspace filters"));
+        assert!(err.contains("Package `web`"));
+
+        let configured_workspace = workspace(
+            NodePackageManager::Npm,
+            BTreeMap::from([("workspace_filter".to_string(), "web".to_string())]),
+            ["test"],
+        );
+        let err = NodeRunner
+            .build_test_command(&configured_workspace, &unit_selector("-"))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("workspace filters"));
+        assert!(err.contains("runner_config.workspace_filter `web`"));
     }
 
     #[test]
@@ -650,6 +662,16 @@ const helper = true
             package: None,
             filter: filter.to_string(),
             level: Some(level.to_string()),
+            test_double: None,
+            targets: None,
+        }
+    }
+
+    fn package_selector(package: &str) -> TestSelector {
+        TestSelector {
+            package: Some(package.to_string()),
+            filter: "-".to_string(),
+            level: Some("unit".to_string()),
             test_double: None,
             targets: None,
         }
