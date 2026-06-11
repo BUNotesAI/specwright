@@ -51,14 +51,19 @@ fn fenced_blocks(text: &str) -> Vec<String> {
 }
 
 fn opens_front_matter(line: &str) -> bool {
-    line.starts_with("spec: project") || line.starts_with("spec: task") || line.starts_with("spec: org")
+    line.starts_with("spec: project")
+        || line.starts_with("spec: task")
+        || line.starts_with("spec: org")
 }
 
 /// The exact recurring bug: a `---` line directly above the `spec:` key.
 #[test]
 fn skill_docs_have_no_leading_dash_frontmatter() {
     let files = skill_markdown_files();
-    assert!(!files.is_empty(), "no skill markdown files found under skills/");
+    assert!(
+        !files.is_empty(),
+        "no skill markdown files found under skills/"
+    );
 
     let mut violations = Vec::new();
     for file in &files {

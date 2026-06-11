@@ -202,10 +202,24 @@ fn collect_rust_files(dir: &Path, files: &mut Vec<(String, String)>) {
 
     for entry in entries.flatten() {
         let path = entry.path();
+        // Never follow symlinks: a linked dir (e.g. a vault symlink) can
+        // point outside the workspace or into huge trees.
+        if path
+            .symlink_metadata()
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            continue;
+        }
         if path.is_dir() {
-            // Skip target and hidden dirs
+            // Skip dependency/build/hidden dirs: walking node_modules-scale
+            // trees is the documented lifecycle-hang root cause.
             if let Some(name) = path.file_name().and_then(|n| n.to_str())
-                && (name.starts_with('.') || name == "target")
+                && (name.starts_with('.')
+                    || matches!(
+                        name,
+                        "target" | "node_modules" | "vendor" | "dist" | "build"
+                    ))
             {
                 continue;
             }
@@ -252,5 +266,41 @@ mod tests {
         assert!(!is_structural_must_not(
             "不要让普通磁盘用例手工传入 `search_dirs`"
         ));
+    }
+}
+
+#[cfg(test)]
+mod walk_tests {
+    use super::collect_rust_files;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn structural_walk_skips_dependency_dirs_and_symlinks() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("agent-spec-walk-{nanos}"));
+        let external = std::env::temp_dir().join(format!("agent-spec-walk-ext-{nanos}"));
+        fs::create_dir_all(root.join("node_modules/dep")).unwrap();
+        fs::create_dir_all(root.join("vendor")).unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(&external).unwrap();
+        fs::write(root.join("node_modules/dep/a.ts"), "let a = 1;").unwrap();
+        fs::write(root.join("vendor/b.rs"), "fn b() {}").unwrap();
+        fs::write(root.join("src/d.rs"), "fn d() {}").unwrap();
+        fs::write(external.join("c.rs"), "fn c() {}").unwrap();
+        std::os::unix::fs::symlink(&external, root.join("linked")).unwrap();
+
+        let mut files = Vec::new();
+        collect_rust_files(&root, &mut files);
+        let names: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+
+        assert_eq!(files.len(), 1, "only src/d.rs collected, got {names:?}");
+        assert!(names[0].ends_with("src/d.rs"));
+
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&external);
     }
 }

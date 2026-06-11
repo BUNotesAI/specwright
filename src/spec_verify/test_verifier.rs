@@ -76,7 +76,11 @@ impl Verifier for TestVerifier {
                 format!("{stdout}\n{stderr}")
             };
 
-            let verdict = if output.status.success() {
+            let zero_match =
+                output.status.success() && cargo_zero_match_applies(ctx.runner.id(), &combined);
+            let verdict = if zero_match {
+                Verdict::Fail
+            } else if output.status.success() {
                 if scenario.review == ReviewMode::Human {
                     Verdict::PendingReview
                 } else {
@@ -86,7 +90,11 @@ impl Verifier for TestVerifier {
                 Verdict::Fail
             };
             let selector_label = binding.selector.label();
-            let reason = if output.status.success() {
+            let reason = if zero_match {
+                format!(
+                    "test selector `{selector_label}` matched zero tests; a filter that resolves to nothing is not coverage"
+                )
+            } else if output.status.success() {
                 match binding.source {
                     BindingSource::ExplicitScenarioSelector => {
                         format!("covered by explicit test `{selector_label}`")
@@ -457,5 +465,68 @@ fn helper() {}
                 "test_parse_structured_test_selector_block".to_string(),
             ]
         );
+    }
+}
+
+/// True when a successful cargo run's summed test-summary lines total zero.
+///
+/// Conservative by design: only the cargo runner is parsed, and output
+/// without any `running N tests` summary line yields no zero-match claim.
+fn cargo_zero_match_applies(runner_id: &str, combined: &str) -> bool {
+    runner_id == "cargo" && cargo_zero_match(combined) == Some(true)
+}
+
+/// Sum every `running N tests` / `running 1 test` summary line.
+/// Returns `None` when no summary line is present (unparseable output).
+fn cargo_zero_match(combined: &str) -> Option<bool> {
+    let mut found = false;
+    let mut total: u64 = 0;
+    for line in combined.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("running ")
+            && let Some(count) = rest
+                .strip_suffix(" tests")
+                .or_else(|| rest.strip_suffix(" test"))
+            && let Ok(value) = count.trim().parse::<u64>()
+        {
+            found = true;
+            total += value;
+        }
+    }
+    found.then_some(total == 0)
+}
+
+#[cfg(test)]
+mod zero_match_tests {
+    use super::{cargo_zero_match, cargo_zero_match_applies};
+
+    #[test]
+    fn cargo_zero_match_summary_parsing() {
+        let zero =
+            "   Compiling x\n     Running tests/a.rs\nrunning 0 tests\n\ntest result: ok. 0 passed";
+        assert_eq!(cargo_zero_match(zero), Some(true));
+
+        let multi =
+            "running 0 tests\ntest result: ok.\nrunning 2 tests\ntest a ... ok\ntest b ... ok";
+        assert_eq!(cargo_zero_match(multi), Some(false));
+
+        let singular = "running 1 test\ntest a ... ok";
+        assert_eq!(cargo_zero_match(singular), Some(false));
+
+        let unparseable = "error: could not compile";
+        assert_eq!(cargo_zero_match(unparseable), None);
+    }
+
+    #[test]
+    fn zero_match_selector_fails_verdict() {
+        // Cargo + summed-zero output is the only combination that flips the
+        // verdict; unparseable output and non-cargo runners stay unchanged.
+        assert!(cargo_zero_match_applies("cargo", "running 0 tests\n"));
+        assert!(!cargo_zero_match_applies("cargo", "no summary lines here"));
+        assert!(!cargo_zero_match_applies("node", "running 0 tests\n"));
+        assert!(!cargo_zero_match_applies(
+            "cargo",
+            "running 0 tests\nrunning 3 tests\n"
+        ));
     }
 }
