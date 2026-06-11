@@ -270,6 +270,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod walk_tests {
     use super::collect_rust_files;
     use std::fs;

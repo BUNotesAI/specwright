@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Regression guard for the recurring agent-spec front-matter format bug.
 //!
 //! agent-spec front-matter has NO opening `---`: it starts on the first line of
