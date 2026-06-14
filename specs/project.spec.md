@@ -3,7 +3,7 @@ name: "agent-spec 项目规则"
 tags: [bootstrap, project]
 ---
 
-> Historical archive: this is agent-spec's early Chinese-language roadmap project spec, kept for history. The active project contract for harness tasks is `vault/docs/project.spec.md` (English). New specs default to English prose and English DSL tokens; any Chinese DSL below is retained only as legacy parser-compatibility coverage (content under test), not as a recommended authoring style.
+> Historical archive: this is agent-spec's early Chinese-language roadmap project spec, kept for history. The active project contract for harness tasks is `vault/docs/project.spec.md` (English). New specs default to English prose and English DSL tokens. Structural keywords here are English-only (the parser hard-rejects Chinese keyword aliases); any Chinese below is description free text, not DSL keywords.
 
 ## Intent
 
@@ -17,7 +17,7 @@ tags: [bootstrap, project]
 - 公开 CLI 与 gateway 行为必须有回归测试
 - DSL 语法变更必须同时更新 AST、解析输出和回归测试
 - 验证结果必须区分 `pass`、`fail`、`skip`、`uncertain`
-- 任务级完成条件中的每个场景应显式声明 `Test:` selector(英文为默认;中文 `测试:` 仅作 legacy 兼容)
+- 任务级完成条件中的每个场景应显式声明 `Test:` selector(结构关键词英文-only;中文仅用于描述自由文本)
 - 任务级边界应支持对显式 change set 的机械验证
 - 测试选择器应支持结构化字段，而不仅是裸字符串过滤器
 - guard 应支持可选择的 git change scope，而不局限于 staged index
@@ -74,10 +74,10 @@ Scenario: Guard 自动推导 staged 变更集
 
 Scenario: 解析结构化测试选择器
   Test: test_parse_structured_test_selector_block
-  Given 某个场景使用 `测试:` 块声明 `包` 和 `过滤`(legacy alias,content under test)
+  Given 某个场景使用 `Test:` 块声明 `Package` 和 `Filter`
   When parser 生成 AST 和 JSON
   Then 结构化测试选择器字段会被保留
-  And 旧的单行 `测试:` 写法继续兼容
+  And 旧的单行 `Test:` 写法继续兼容
 
 Scenario: Guard 支持 worktree 级变更集
   Test: test_resolve_guard_change_paths_reads_worktree_git_changes
@@ -130,7 +130,7 @@ Scenario: 继承链保留项目级约束与已定决策
 
 Scenario: contract 输出保留结构化验收信息
   Test: test_contract_output_preserves_step_tables_and_test_selectors
-  Given 某个场景带有 step table 与结构化 `测试:` selector
+  Given 某个场景带有 step table 与结构化 `Test:` selector
   When CLI 渲染 `agent-spec contract`
   Then 默认输出保留这些结构化信息
   And Agent 主路径不会丢失关键验收上下文

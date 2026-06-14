@@ -67,20 +67,7 @@ Scenario: Successful registration
   And response body should contain "user_id"
 ```
 
-English is the default. Chinese DSL aliases stay parser-compatible for legacy specs — use them only on explicit request or when Chinese is the content under test, not as the default authoring style:
-
-```spec
-## 意图
-## 已定决策
-## 边界
-## 完成条件
-
-场景: 全额退款保持现有返回结构
-  测试: test_refund_service_keeps_existing_success_payload
-  假设 存在一笔金额为 "100.00" 元的已完成交易 "TXN-001"
-  当 用户对 "TXN-001" 发起全额退款
-  那么 响应状态码为 202
-```
+Structural keywords (section headers, `Scenario:`, `Test:`, `Given`/`When`/`Then`/`And`, selector labels) are English-only. Chinese keyword aliases are not supported: the parser hard-rejects them with a clear English error that names the offending token and its English replacement. Description free text — scenario names, step prose, and quoted parameters — may still be Chinese.
 
 ## Workflow
 
@@ -258,14 +245,7 @@ Scenario: Duplicate email is rejected
     Filter: test_register_api_rejects_duplicate_email
 ```
 
-The same selector with legacy Chinese aliases is parser-compatible (not the default):
-
-```spec
-场景: 超限退款返回稳定错误码
-  测试:
-    包: refund-service
-    过滤: test_refund_service_rejects_refund_exceeding_original_amount
-```
+Writing the selector with Chinese keyword aliases (`场景:` / `测试:` / `包:` / `过滤:`) no longer parses; the parser rejects it with `keywords must be English; '...' is not recognized — use '...'`.
 
 This is the default quality rule for self-hosting and new task specs. The older `// @spec:` source annotation is still accepted as a compatibility fallback, but it should not be the primary authoring path.
 

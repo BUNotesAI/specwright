@@ -64,7 +64,7 @@ They need explicit contract support.
 A contract can say:
 
 ```spec
-测试: update_rejects_non_2xx_registry_response
+Test: update_rejects_non_2xx_registry_response
 ```
 
 and still be backed by a weak test that never touches the real production path.
@@ -155,11 +155,11 @@ Today, `测试:` binds a name. That is useful, but underspecified.
 Add optional scenario annotations such as:
 
 ```spec
-场景: update 拒绝 HTTP 4xx/5xx 响应
-  测试: update_rejects_non_2xx_registry_response
-  层级: integration
-  替身: local_http_stub
-  命中: commands/update
+Scenario: update 拒绝 HTTP 4xx/5xx 响应
+  Test: update_rejects_non_2xx_registry_response
+  Level: integration
+  Test Double: local_http_stub
+  Targets: commands/update
 ```
 
 Possible fields:

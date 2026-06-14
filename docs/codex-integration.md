@@ -175,13 +175,7 @@ Test:
   Filter: test_specific_name
 ```
 
-Chinese equivalents:
-```spec
-测试: test_name
-
-测试:
-  过滤: test_specific_name
-```
+Chinese keyword aliases (`测试:` / `过滤:`) are not supported: the parser hard-rejects them with a clear English error. Use the English keywords above; only description free text may be Chinese.
 
 ### Key Authoring Rules
 
