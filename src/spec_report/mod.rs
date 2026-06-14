@@ -816,7 +816,7 @@ mod tests {
                     stdout: String::new(),
                     passed: true,
                     command_program: None,
-                    package: Some("agent-spec".into()),
+                    package: Some("specwright".into()),
                     level: Some("integration".into()),
                     test_double: Some("local_http_stub".into()),
                     targets: Some("commands/update".into()),
@@ -834,7 +834,7 @@ mod tests {
         };
 
         let text = format_verification(&report, &OutputFormat::Text);
-        assert!(text.contains("package=agent-spec"));
+        assert!(text.contains("package=specwright"));
         assert!(text.contains("level=integration"));
         assert!(text.contains("test_double=local_http_stub"));
         assert!(text.contains("targets=commands/update"));
@@ -863,7 +863,7 @@ mod tests {
                     stdout: String::new(),
                     passed: true,
                     command_program: None,
-                    package: Some("agent-spec".into()),
+                    package: Some("specwright".into()),
                     level: Some("integration".into()),
                     test_double: Some("fixture_fs".into()),
                     targets: Some("spec_gateway/brief".into()),

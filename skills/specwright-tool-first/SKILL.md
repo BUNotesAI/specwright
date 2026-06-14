@@ -1,19 +1,19 @@
 ---
-name: agent-spec-tool-first
+name: specwright-tool-first
 description: |
-  CRITICAL: Use for agent-spec CLI tool workflow. Triggers on:
-  agent-spec, contract, lifecycle, guard, verify, explain, stamp, checkpoint, plan,
+  CRITICAL: Use for specwright CLI tool workflow. Triggers on:
+  specwright, contract, lifecycle, guard, verify, explain, stamp, checkpoint, plan,
   spec verification, task contract, spec quality, lint spec, run log,
-  "how to verify", "how to use agent-spec", "spec failed", "guard failed",
+  "how to verify", "how to use specwright", "spec failed", "guard failed",
   contract review, contract acceptance, PR review, code review workflow,
   plan context, codebase scan, task sketch, implementation plan
 ---
 
-# Agent Spec Tool-First Workflow
+# Specwright Tool-First Workflow
 
 > **Version:** 3.4.0 | **Last Updated:** 2026-05-31
 
-You are an expert at using `agent-spec` as a CLI tool for contract-driven AI coding. Help users by:
+You are an expert at using `specwright` as a CLI tool for contract-driven AI coding. Help users by:
 - **Planning**: Render task contracts with `contract`, generate plan context with `plan`
 - **Implementing**: Follow contract Intent, Decisions, Boundaries
 - **Verifying**: Run `lifecycle` / `guard` to check code against specs
@@ -23,14 +23,14 @@ You are an expert at using `agent-spec` as a CLI tool for contract-driven AI cod
 
 ## IMPORTANT: CLI Prerequisite Check
 
-**Before running any `agent-spec` command, Claude MUST check:**
+**Before running any `specwright` command, Claude MUST check:**
 
 ```bash
-command -v agent-spec || cargo install agent-spec
+command -v specwright || cargo install specwright
 ```
 
-If `agent-spec` is not installed, inform the user:
-> `agent-spec` CLI not found. Install with: `cargo install agent-spec`
+If `specwright` is not installed, inform the user:
+> `specwright` CLI not found. Install with: `cargo install specwright`
 
 ## Core Mental Model
 
@@ -38,34 +38,34 @@ If `agent-spec` is not installed, inform the user:
 
 ```
 Traditional:  Write Issue (10%) → Agent codes (0%) → Read diff (80%) → Approve (10%)
-agent-spec:   Write Contract (60%) → Agent codes (0%) → Read explain (30%) → Approve (10%)
+specwright:   Write Contract (60%) → Agent codes (0%) → Read explain (30%) → Approve (10%)
 ```
 
 Humans define "what is correct" (Contract). Machines verify "is the code correct" (lifecycle). Humans do final "Contract Acceptance" — not Code Review.
 
 ## Language Boundary
 
-Skill files and skill references are reusable assets and must be English-only. Use English examples in this skill. When this skill is used inside the harness workflow, agent-spec task `spec.md` defaults to English (visible prose and DSL tokens); Chinese only on explicit request or as content under test. Code, comments, tests, CLI strings, skills, templates, and git commit messages remain English-only.
+Skill files and skill references are reusable assets and must be English-only. Use English examples in this skill. When this skill is used inside the harness workflow, specwright task `spec.md` defaults to English (visible prose and DSL tokens); Chinese only on explicit request or as content under test. Code, comments, tests, CLI strings, skills, templates, and git commit messages remain English-only.
 
 ## Quick Reference
 
 | Command | Purpose | When to Use |
 |---------|---------|-------------|
-| `agent-spec init` | Scaffold new spec | Starting a new task |
-| `agent-spec contract <spec>` | Render Task Contract | Before coding - read the execution plan |
-| `agent-spec plan <spec> --code .` | Generate plan context | Before coding - codebase scan + task sketch |
-| `agent-spec lint <files>` | Spec quality check | After writing spec, before giving to Agent |
-| `agent-spec lifecycle <spec> --code .` | Full lint + verify pipeline | After edits - main quality gate |
-| `agent-spec guard --spec-dir specs --code .` | Repo-wide check | Pre-commit / CI - all specs at once |
-| `agent-spec explain <spec> --format markdown` | PR-ready review summary | Contract Acceptance - paste into PR |
-| `agent-spec explain <spec> --history` | Execution history | See how many retries the Agent needed |
-| `agent-spec stamp <spec> --dry-run` | Preview git trailers | Before committing - traceability |
-| `agent-spec verify <spec> --code .` | Raw verification only | When you want verify without lint gate |
-| `agent-spec checkpoint status` | VCS-aware status | Check uncommitted state |
+| `specwright init` | Scaffold new spec | Starting a new task |
+| `specwright contract <spec>` | Render Task Contract | Before coding - read the execution plan |
+| `specwright plan <spec> --code .` | Generate plan context | Before coding - codebase scan + task sketch |
+| `specwright lint <files>` | Spec quality check | After writing spec, before giving to Agent |
+| `specwright lifecycle <spec> --code .` | Full lint + verify pipeline | After edits - main quality gate |
+| `specwright guard --spec-dir specs --code .` | Repo-wide check | Pre-commit / CI - all specs at once |
+| `specwright explain <spec> --format markdown` | PR-ready review summary | Contract Acceptance - paste into PR |
+| `specwright explain <spec> --history` | Execution history | See how many retries the Agent needed |
+| `specwright stamp <spec> --dry-run` | Preview git trailers | Before committing - traceability |
+| `specwright verify <spec> --code .` | Raw verification only | When you want verify without lint gate |
+| `specwright checkpoint status` | VCS-aware status | Check uncommitted state |
 
 ## Runner-Aware Verification
 
-`agent-spec` can execute task scenarios through built-in language runners. Prefer spec frontmatter when the contract owns the runner choice, and use CLI overrides only for local diagnosis or one-off verification.
+`specwright` can execute task scenarios through built-in language runners. Prefer spec frontmatter when the contract owns the runner choice, and use CLI overrides only for local diagnosis or one-off verification.
 
 ```spec
 spec: task
@@ -135,14 +135,14 @@ Refer to the local files for detailed command patterns:
 Not a vague Issue — a structured Contract with Intent, Decisions, Boundaries, Completion Criteria.
 
 ```bash
-agent-spec init --level task --lang en --name "User Registration API"
+specwright init --level task --lang en --name "User Registration API"
 # Then fill in the four elements in the generated .spec.md file
 ```
 
 For rewrite, migration, or parity tasks, prefer the parity-aware scaffold:
 
 ```bash
-agent-spec init --level task --template rewrite-parity --lang en --name "CLI Parity Contract"
+specwright init --level task --template rewrite-parity --lang en --name "CLI Parity Contract"
 ```
 
 **Key principle**: Exception scenarios >= happy path scenarios. 1 happy + 3 error paths forces you to think through edge cases before coding begins.
@@ -152,14 +152,14 @@ agent-spec init --level task --template rewrite-parity --lang en --name "CLI Par
 Check Contract quality before handing to Agent. Like "code review" but for the Contract itself.
 
 ```bash
-agent-spec parse specs/user-registration.spec
-agent-spec lint specs/user-registration.spec --min-score 0.7
+specwright parse specs/user-registration.spec
+specwright lint specs/user-registration.spec --min-score 0.7
 ```
 
 Catches: malformed structure, zero-scenario acceptance sections, vague verbs, unquantified constraints, non-deterministic wording, missing test selectors, sycophancy bias, uncovered constraints, uncovered decisions (decision-coverage), unbound observable behavior decisions (observable-decision-coverage), uncovered output modes (output-mode-coverage), unverified precedence/fallback chains (precedence-fallback-coverage), weak mock-only I/O error scenarios (external-io-error-strength), missing verification-strength metadata on I/O scenarios (verification-metadata-suggestion), missing error paths (error-path), universal claims with insufficient scenarios (universal-claim), boundary entry points without matching scenarios (boundary-entry-point), untested flag combinations (flag-combination-coverage), untagged platform-specific decisions (platform-decision-tag).
 
 **Required self-checks before coding:**
-- `agent-spec parse` must show the expected section count and a non-zero scenario count for task specs.
+- `specwright parse` must show the expected section count and a non-zero scenario count for task specs.
 - If `Acceptance Criteria: 0 scenarios` appears, stop and rewrite the spec before running `contract` or `lifecycle`.
 - The parser accepts Markdown-heading forms like `### Scenario:` and `### Test:` for compatibility, but authoring should still emit bare `Scenario:` and `Test:` lines by default. Do not invent extra top-level sections like `## Milestones`.
 
@@ -181,10 +181,10 @@ Agent consumes the structured contract and generates plan context:
 
 ```bash
 # Read the contract
-agent-spec contract specs/user-registration.spec
+specwright contract specs/user-registration.spec
 
 # Generate plan context with codebase scan
-agent-spec plan specs/user-registration.spec --code . --format prompt
+specwright plan specs/user-registration.spec --code . --format prompt
 ```
 
 The `plan` command outputs three blocks:
@@ -202,8 +202,8 @@ Agent is triple-constrained:
 ### Step 4: Agent self-checks with lifecycle (automatic retry loop)
 
 ```bash
-agent-spec lifecycle specs/user-registration.spec \
-  --code . --change-scope worktree --format json --run-log-dir .agent-spec/runs
+specwright lifecycle specs/user-registration.spec \
+  --code . --change-scope worktree --format json --run-log-dir .specwright/runs
 ```
 
 Four verification layers run in sequence:
@@ -231,7 +231,7 @@ If lifecycle hasn't run in this session, you cannot claim completion. If lifecyc
 
 When lifecycle fails, follow this exact sequence:
 
-1. Run: `agent-spec lifecycle <spec> --code . --format json`
+1. Run: `specwright lifecycle <spec> --code . --format json`
 2. Parse JSON output, find each scenario's `verdict` and `evidence`
 3. For `fail`: the bound test ran and failed — read evidence to understand why, fix code
 4. For `skip`: the bound test was not found — check `Test:` selector matches a real test name
@@ -258,10 +258,10 @@ When lifecycle fails, follow this exact sequence:
 
 ```bash
 # Pre-commit hook
-agent-spec guard --spec-dir specs --code . --change-scope staged
+specwright guard --spec-dir specs --code . --change-scope staged
 
 # CI (GitHub Actions)
-agent-spec guard --spec-dir specs --code . --change-scope worktree
+specwright guard --spec-dir specs --code . --change-scope worktree
 ```
 
 Runs lint + verify on ALL specs against current changes. Blocks commit/PR if any spec fails.
@@ -271,10 +271,10 @@ Runs lint + verify on ALL specs against current changes. Blocks commit/PR if any
 Human reviews a Contract-level summary, not a code diff:
 
 ```bash
-agent-spec explain specs/user-registration.spec --code . --format markdown
+specwright explain specs/user-registration.spec --code . --format markdown
 ```
 
-**Evidence gate**: Before presenting results to the reviewer, run `agent-spec explain <spec> --format markdown` fresh. Read the output. Confirm all verdicts are `pass`. Do NOT report results from memory — run the command and read the output in this session.
+**Evidence gate**: Before presenting results to the reviewer, run `specwright explain <spec> --format markdown` fresh. Read the output. Confirm all verdicts are `pass`. Do NOT report results from memory — run the command and read the output in this session.
 
 Reviewer judges two questions:
 1. **Is the Contract definition correct?** (Intent, Decisions, Boundaries make sense?)
@@ -285,22 +285,22 @@ If both "yes" → approve. This is 10x faster than reading code diffs.
 Check retry history if needed:
 
 ```bash
-agent-spec explain specs/user-registration.spec --code . --history
+specwright explain specs/user-registration.spec --code . --history
 ```
 
 #### Assisting Contract Acceptance
 
 When helping a human review a completed task:
 
-1. Run `agent-spec explain <spec> --code . --format markdown` and present the output
+1. Run `specwright explain <spec> --code . --format markdown` and present the output
 2. If human asks about retry history: run with `--history` flag
-3. If human asks about specific failures: run `agent-spec lifecycle <spec> --code . --format json` and extract the relevant scenario results
-4. If human approves: run `agent-spec stamp <spec> --code . --dry-run` and present the trailers
+3. If human asks about specific failures: run `specwright lifecycle <spec> --code . --format json` and extract the relevant scenario results
+4. If human approves: run `specwright stamp <spec> --code . --dry-run` and present the trailers
 
 ### Step 7: Stamp and archive
 
 ```bash
-agent-spec stamp specs/user-registration.spec --dry-run
+specwright stamp specs/user-registration.spec --dry-run
 # Output: Spec-Name: User Registration API
 #         Spec-Passing: true
 #         Spec-Summary: 4/4 passed, 0 failed, 0 skipped, 0 uncertain
@@ -321,7 +321,7 @@ Establishes Contract → Commit traceability chain.
 
 ## VCS Awareness
 
-agent-spec auto-detects the VCS from the project root. Behavior differs between git and jj:
+specwright auto-detects the VCS from the project root. Behavior differs between git and jj:
 
 | Condition | Behavior |
 |-----------|----------|
@@ -348,23 +348,23 @@ agent-spec auto-detects the VCS from the project root. Behavior differs between 
 
 ```bash
 # Run only specific layers
-agent-spec lifecycle specs/task.spec --code . --layers lint,boundary,test
+specwright lifecycle specs/task.spec --code . --layers lint,boundary,test
 # Available: lint, boundary, test, ai
 ```
 
 ### Run Logging
 
 ```bash
-agent-spec lifecycle specs/task.spec --code . --run-log-dir .agent-spec/runs
-agent-spec explain specs/task.spec --history
+specwright lifecycle specs/task.spec --code . --run-log-dir .specwright/runs
+specwright explain specs/task.spec --history
 ```
 
 ### AI Mode
 
 ```bash
-agent-spec verify specs/task.spec --code . --ai-mode off      # default - no AI
-agent-spec verify specs/task.spec --code . --ai-mode stub      # testing only
-agent-spec lifecycle specs/task.spec --code . --ai-mode caller # agent-as-verifier
+specwright verify specs/task.spec --code . --ai-mode off      # default - no AI
+specwright verify specs/task.spec --code . --ai-mode stub      # testing only
+specwright lifecycle specs/task.spec --code . --ai-mode caller # agent-as-verifier
 ```
 
 ### AI Verification: Caller Mode
@@ -374,12 +374,12 @@ When `--ai-mode caller` is used, the calling Agent acts as the AI verifier. This
 **Step 1: Emit AI requests**
 
 ```bash
-agent-spec lifecycle specs/task.spec --code . --ai-mode caller --format json
+specwright lifecycle specs/task.spec --code . --ai-mode caller --format json
 ```
 
 If any scenarios are skipped (no mechanical verifier covered them), the output JSON includes:
 - `"ai_pending": true`
-- `"ai_requests_file": ".agent-spec/pending-ai-requests.json"`
+- `"ai_requests_file": ".specwright/pending-ai-requests.json"`
 
 The pending requests file contains `AiRequest` objects with scenario context, code paths, contract intent, and constraints.
 
@@ -402,7 +402,7 @@ The Agent reads the pending requests, analyzes each scenario, then writes decisi
 Then merges them back:
 
 ```bash
-agent-spec resolve-ai specs/task.spec --code . --decisions decisions.json
+specwright resolve-ai specs/task.spec --code . --decisions decisions.json
 ```
 
 This produces a final merged report where Skip verdicts are replaced with the Agent's AI decisions.
@@ -414,7 +414,7 @@ This produces a final merged report where Skip verdicts are replaced with the Ag
 
 ## When to Use / When NOT to Use
 
-| Scenario | Use agent-spec? | Why |
+| Scenario | Use specwright? | Why |
 |----------|----------------|-----|
 | Clear feature with defined inputs/outputs | Yes | Contract can express deterministic acceptance criteria |
 | Bug fix with reproducible steps | Yes | Great for "given bug X, when fixed, then Y" |
@@ -460,11 +460,11 @@ During implementation, if you discover:
 - A Boundary that's too restrictive (need to modify more files than allowed)
 - A Decision that needs to change (technology choice was wrong)
 
-Switch to `agent-spec-authoring` skill, update the Contract FIRST, re-run `agent-spec lint` to validate the change, then resume implementation. Do NOT silently work outside the Contract's boundaries.
+Switch to `specwright-authoring` skill, update the Contract FIRST, re-run `specwright lint` to validate the change, then resume implementation. Do NOT silently work outside the Contract's boundaries.
 
 ## Escalation
 
 Switch to library integration only when:
-- Embedding `agent-spec` into another Rust agent runtime
+- Embedding `specwright` into another Rust agent runtime
 - Testing `spec-gateway` internals
 - Injecting a host `AiBackend` via `verify_with_backend(Arc<dyn AiBackend>)`

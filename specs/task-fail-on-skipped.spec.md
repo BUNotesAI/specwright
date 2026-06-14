@@ -6,7 +6,7 @@ tags: [bootstrap, verify, lifecycle]
 
 ## Intent
 
-把 `agent-spec` 的最终判定从“零失败即可通过”改成“关键场景被正向验证后才通过”，
+把 `specwright` 的最终判定从“零失败即可通过”改成“关键场景被正向验证后才通过”，
 避免把 `skip` 误报成绿色结果。
 
 ## Decisions

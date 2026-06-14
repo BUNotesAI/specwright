@@ -6,14 +6,14 @@ tags: [bootstrap, contract, gateway, cli]
 
 ## Intent
 
-把 `TaskContract` 变成 `agent-spec` 的默认执行入口，
+把 `TaskContract` 变成 `specwright` 的默认执行入口，
 让 agent 在计划阶段默认消费 Contract，而不是历史遗留的简化 brief。
 
 ## Decisions
 
 - `SpecGateway::plan()` 返回默认执行用的 `TaskContract`
 - `SpecGateway::brief()` 继续保留，但仅作为兼容层
-- `agent-spec brief` 继续可用，但作为 `agent-spec contract` 的兼容别名
+- `specwright brief` 继续可用，但作为 `specwright contract` 的兼容别名
 
 ## Boundaries
 

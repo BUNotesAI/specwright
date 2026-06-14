@@ -1,9 +1,9 @@
 ## Roadmap Specs
 
-`specs/roadmap/` contains staged self-hosting task specs for future `agent-spec` work.
+`specs/roadmap/` contains staged self-hosting task specs for future `specwright` work.
 
 These files are real task contracts, but they are not part of the default top-level
-`agent-spec guard --spec-dir specs --code .` run until they are promoted into
+`specwright guard --spec-dir specs --code .` run until they are promoted into
 the top-level `specs/` directory.
 
 Promotion rule:
@@ -16,7 +16,7 @@ Nested roadmap specs still inherit the top-level [`project.spec`](../project.spe
 Use:
 
 ```bash
-agent-spec contract specs/roadmap/task-phase0-contract-fidelity.spec
+specwright contract specs/roadmap/task-phase0-contract-fidelity.spec
 ```
 
 when you want to inspect or refine a future-phase roadmap contract before promotion.

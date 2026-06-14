@@ -39,7 +39,7 @@ lifecycle 按拓扑序执行场景，前置失败时自动跳过依赖场景。
 
 Scenario: 前置失败时依赖场景被跳过
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_dependency_skip_on_prerequisite_fail
   Given 场景 B 声明 `前置: 场景 A`，场景 A verdict 为 `fail`
   When lifecycle 执行
@@ -48,7 +48,7 @@ Scenario: 前置失败时依赖场景被跳过
 
 Scenario: 循环依赖被 lint 检测
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_lint_detects_circular_dependency
   Given 场景 A 依赖场景 B，场景 B 依赖场景 A
   When lint 检查该 spec
@@ -56,7 +56,7 @@ Scenario: 循环依赖被 lint 检测
 
 Scenario: 拓扑排序保证执行顺序
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_topological_sort_execution_order
   Given 场景 C 依赖场景 B，场景 B 依赖场景 A
   When lifecycle 执行
@@ -64,7 +64,7 @@ Scenario: 拓扑排序保证执行顺序
 
 Scenario: parser 正确解析前置字段
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_parse_depends_field_in_scenario
   Given 某个场景声明 `前置: 用户注册`
   When parser 解析该场景
@@ -72,7 +72,7 @@ Scenario: parser 正确解析前置字段
 
 Scenario: 无依赖声明时执行顺序不变
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_no_dependency_preserves_original_order
   Given 某个 spec 的所有场景均无 `前置:` 声明
   When lifecycle 执行

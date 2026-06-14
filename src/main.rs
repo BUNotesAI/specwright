@@ -26,7 +26,7 @@ fn is_spec_file(p: &Path) -> bool {
 
 #[derive(Parser)]
 #[command(
-    name = "agent-spec",
+    name = "specwright",
     version,
     about = "AI-Native BDD/Spec verification tool"
 )]
@@ -646,7 +646,7 @@ fn cmd_lifecycle(
                         })
                 })
                 .collect();
-            let requests_path = code.join(".agent-spec/pending-ai-requests.json");
+            let requests_path = code.join(".specwright/pending-ai-requests.json");
             std::fs::create_dir_all(requests_path.parent().unwrap_or(Path::new(".")))?;
             std::fs::write(&requests_path, serde_json::to_string_pretty(&requests)?)?;
             true
@@ -668,7 +668,7 @@ fn cmd_lifecycle(
         if ai_pending {
             json_out["ai_pending"] = serde_json::json!(true);
             json_out["ai_requests_file"] =
-                serde_json::json!(".agent-spec/pending-ai-requests.json");
+                serde_json::json!(".specwright/pending-ai-requests.json");
         }
         if let Some(ref lr) = lint_report {
             json_out["quality_score"] = serde_json::json!(lr.quality_score.overall);
@@ -916,7 +916,7 @@ fn topological_sort_scenarios(scenarios: &[crate::spec_core::Scenario]) -> Vec<u
 
 fn cmd_brief(spec: &Path, format: &str) -> Result<(), Box<dyn std::error::Error>> {
     let gw = crate::spec_gateway::SpecGateway::load(spec)?;
-    eprintln!("warning: `agent-spec brief` is a compatibility alias; prefer `agent-spec contract`");
+    eprintln!("warning: `specwright brief` is a compatibility alias; prefer `specwright contract`");
     print!("{}", render_brief_output(&gw, format)?);
 
     Ok(())
@@ -960,7 +960,7 @@ fn cmd_guard(
     let effective_changes = resolve_guard_change_paths(spec_dir, code, change, change_scope)?;
     if change.is_empty() && !effective_changes.is_empty() {
         eprintln!(
-            "agent-spec guard: detected {} {} change(s) from git",
+            "specwright guard: detected {} {} change(s) from git",
             effective_changes.len(),
             change_scope.label()
         );
@@ -1000,10 +1000,10 @@ fn cmd_guard(
     }
 
     if errors.is_empty() {
-        eprintln!("agent-spec guard: {} spec(s) passed", spec_files.len());
+        eprintln!("specwright guard: {} spec(s) passed", spec_files.len());
         Ok(())
     } else {
-        eprintln!("agent-spec guard: FAILED");
+        eprintln!("specwright guard: FAILED");
         for err in &errors {
             eprintln!("  - {err}");
         }
@@ -1447,7 +1447,7 @@ struct RunLogEntry {
 }
 
 fn write_run_log(base_dir: &Path, entry: &RunLogEntry) -> Result<(), Box<dyn std::error::Error>> {
-    let runs_dir = base_dir.join(".agent-spec/runs");
+    let runs_dir = base_dir.join(".specwright/runs");
     std::fs::create_dir_all(&runs_dir)?;
 
     let filename = format!(
@@ -1483,7 +1483,7 @@ enum ResumeMode {
 }
 
 fn checkpoint_path(base_dir: &Path) -> PathBuf {
-    base_dir.join(".agent-spec/checkpoint.json")
+    base_dir.join(".specwright/checkpoint.json")
 }
 
 fn load_checkpoint(
@@ -1591,7 +1591,7 @@ fn merge_checkpoint_results(
 }
 
 fn read_run_log_history(base_dir: &Path, spec_name: &str) -> String {
-    let runs_dir = base_dir.join(".agent-spec/runs");
+    let runs_dir = base_dir.join(".specwright/runs");
     let Ok(entries) = std::fs::read_dir(&runs_dir) else {
         return String::new();
     };
@@ -1670,14 +1670,14 @@ fn cmd_install_hooks() -> Result<(), Box<dyn std::error::Error>> {
 
     let pre_commit = hooks_dir.join("pre-commit");
     let hook_content = r#"#!/bin/sh
-# agent-spec pre-commit guard
-# Auto-installed by: agent-spec install-hooks
+# specwright pre-commit guard
+# Auto-installed by: specwright install-hooks
 
-if command -v agent-spec >/dev/null 2>&1; then
-    agent-spec guard --spec-dir specs --code src --min-score 0.6
+if command -v specwright >/dev/null 2>&1; then
+    specwright guard --spec-dir specs --code src --min-score 0.6
     exit $?
 else
-    echo "warning: agent-spec not found, skipping spec guard"
+    echo "warning: specwright not found, skipping spec guard"
     exit 0
 fi
 "#;
@@ -1685,16 +1685,16 @@ fi
     // Check if hook already exists
     if pre_commit.exists() {
         let existing = std::fs::read_to_string(&pre_commit)?;
-        if existing.contains("agent-spec") {
-            eprintln!("pre-commit hook already contains agent-spec guard");
+        if existing.contains("specwright") {
+            eprintln!("pre-commit hook already contains specwright guard");
             return Ok(());
         }
         // Append to existing hook
         let mut content = existing;
-        content.push_str("\n# agent-spec guard (appended)\n");
-        content.push_str("if command -v agent-spec >/dev/null 2>&1; then\n");
+        content.push_str("\n# specwright guard (appended)\n");
+        content.push_str("if command -v specwright >/dev/null 2>&1; then\n");
         content.push_str(
-            "    agent-spec guard --spec-dir specs --code src --min-score 0.6 || exit $?\n",
+            "    specwright guard --spec-dir specs --code src --min-score 0.6 || exit $?\n",
         );
         content.push_str("fi\n");
         std::fs::write(&pre_commit, content)?;
@@ -2373,7 +2373,7 @@ fn cmd_resolve_ai(
     }
 
     // Clean up pending requests file if it exists
-    let requests_path = code.join(".agent-spec/pending-ai-requests.json");
+    let requests_path = code.join(".specwright/pending-ai-requests.json");
     if requests_path.exists() {
         let _ = std::fs::remove_file(&requests_path);
     }
@@ -2790,8 +2790,8 @@ Scenario: Contract alias
         .unwrap();
 
         run_git(&repo, &["init"]);
-        run_git(&repo, &["config", "user.email", "agent-spec@example.com"]);
-        run_git(&repo, &["config", "user.name", "agent-spec"]);
+        run_git(&repo, &["config", "user.email", "specwright@example.com"]);
+        run_git(&repo, &["config", "user.name", "specwright"]);
         run_git(&repo, &["add", "src/staged.rs", "src/unstaged.rs"]);
         run_git(&repo, &["commit", "-m", "init"]);
 
@@ -2832,8 +2832,8 @@ Scenario: Contract alias
         .unwrap();
 
         run_git(&repo, &["init"]);
-        run_git(&repo, &["config", "user.email", "agent-spec@example.com"]);
-        run_git(&repo, &["config", "user.name", "agent-spec"]);
+        run_git(&repo, &["config", "user.email", "specwright@example.com"]);
+        run_git(&repo, &["config", "user.name", "specwright"]);
         run_git(&repo, &["add", "src/staged.rs", "src/unstaged.rs"]);
         run_git(&repo, &["commit", "-m", "init"]);
 
@@ -2918,8 +2918,8 @@ Scenario: Contract alias
         .unwrap();
 
         run_git(&repo, &["init"]);
-        run_git(&repo, &["config", "user.email", "agent-spec@example.com"]);
-        run_git(&repo, &["config", "user.name", "agent-spec"]);
+        run_git(&repo, &["config", "user.email", "specwright@example.com"]);
+        run_git(&repo, &["config", "user.name", "specwright"]);
         run_git(&repo, &["add", "src/staged.rs", "src/unstaged.rs"]);
         run_git(&repo, &["commit", "-m", "init"]);
 
@@ -2955,12 +2955,12 @@ Scenario: Contract alias
     #[test]
     fn test_claude_code_tool_first_skill_exists_and_mentions_contract_lifecycle_guard() {
         let skill =
-            fs::read_to_string(repo_root().join("skills/agent-spec-tool-first/SKILL.md")).unwrap();
+            fs::read_to_string(repo_root().join("skills/specwright-tool-first/SKILL.md")).unwrap();
 
-        assert!(skill.contains("agent-spec parse"));
-        assert!(skill.contains("agent-spec contract"));
-        assert!(skill.contains("agent-spec lifecycle"));
-        assert!(skill.contains("agent-spec guard"));
+        assert!(skill.contains("specwright parse"));
+        assert!(skill.contains("specwright contract"));
+        assert!(skill.contains("specwright lifecycle"));
+        assert!(skill.contains("specwright guard"));
         assert!(skill.contains("Tool-First Workflow"));
     }
 
@@ -2970,9 +2970,9 @@ Scenario: Contract alias
         // spec.md default and must not tell agents that vault specs may use
         // Chinese visible prose by default.
         let authoring =
-            fs::read_to_string(repo_root().join("skills/agent-spec-authoring/SKILL.md")).unwrap();
+            fs::read_to_string(repo_root().join("skills/specwright-authoring/SKILL.md")).unwrap();
         let tool_first =
-            fs::read_to_string(repo_root().join("skills/agent-spec-tool-first/SKILL.md")).unwrap();
+            fs::read_to_string(repo_root().join("skills/specwright-tool-first/SKILL.md")).unwrap();
         assert!(!authoring.contains("Chinese visible prose"));
         assert!(!tool_first.contains("Chinese visible prose"));
         assert!(authoring.contains("default to English visible prose"));
@@ -2982,21 +2982,21 @@ Scenario: Contract alias
     #[test]
     fn test_claude_code_authoring_skill_exists_and_mentions_task_contract_sections() {
         let skill =
-            fs::read_to_string(repo_root().join("skills/agent-spec-authoring/SKILL.md")).unwrap();
+            fs::read_to_string(repo_root().join("skills/specwright-authoring/SKILL.md")).unwrap();
 
         assert!(skill.contains("Intent"));
         assert!(skill.contains("Decisions"));
         assert!(skill.contains("Boundaries"));
         assert!(skill.contains("Completion Criteria"));
         assert!(skill.contains("Test:` selector"));
-        assert!(skill.contains("agent-spec parse"));
+        assert!(skill.contains("specwright parse"));
         assert!(skill.contains("Hard Syntax Rules"));
     }
 
     #[test]
     fn test_authoring_skill_includes_behavior_surface_checklist() {
         let skill =
-            fs::read_to_string(repo_root().join("skills/agent-spec-authoring/SKILL.md")).unwrap();
+            fs::read_to_string(repo_root().join("skills/specwright-authoring/SKILL.md")).unwrap();
 
         assert!(skill.contains("Behavior Surface Checklist"));
         assert!(skill.contains("stdout vs stderr"));
@@ -3008,7 +3008,7 @@ Scenario: Contract alias
     #[test]
     fn test_tool_first_skill_mentions_unbound_observable_behavior_review_step() {
         let skill =
-            fs::read_to_string(repo_root().join("skills/agent-spec-tool-first/SKILL.md")).unwrap();
+            fs::read_to_string(repo_root().join("skills/specwright-tool-first/SKILL.md")).unwrap();
 
         assert!(skill.contains("Unbound Observable Behavior review"));
         assert!(skill.contains("command x output mode"));
@@ -3019,11 +3019,11 @@ Scenario: Contract alias
     #[test]
     fn test_agent_spec_skills_document_node_typescript_runner() {
         let authoring =
-            fs::read_to_string(repo_root().join("skills/agent-spec-authoring/SKILL.md")).unwrap();
+            fs::read_to_string(repo_root().join("skills/specwright-authoring/SKILL.md")).unwrap();
         let tool_first =
-            fs::read_to_string(repo_root().join("skills/agent-spec-tool-first/SKILL.md")).unwrap();
+            fs::read_to_string(repo_root().join("skills/specwright-tool-first/SKILL.md")).unwrap();
         let commands = fs::read_to_string(
-            repo_root().join("skills/agent-spec-tool-first/references/commands.md"),
+            repo_root().join("skills/specwright-tool-first/references/commands.md"),
         )
         .unwrap();
 
@@ -3130,7 +3130,7 @@ Scenario: Contract alias
         )));
 
         let cli = super::Cli::parse_from([
-            "agent-spec",
+            "specwright",
             "init",
             "--level",
             "task",
@@ -3167,7 +3167,7 @@ Scenario: Contract alias
         assert!(readme.contains("Claude Code"));
         assert!(readme.contains(".claude/skills"));
         assert!(readme.contains("tool-first"));
-        assert!(readme.contains("agent-spec-tool-first"));
+        assert!(readme.contains("specwright-tool-first"));
     }
 
     #[test]
@@ -3196,7 +3196,7 @@ Preserve structured completion criteria in the default contract output.
 
 Scenario: Registration request stays structured
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_contract_output_preserves_step_tables_and_test_selectors
     Level: integration
     Test Double: fixture_fs
@@ -3215,7 +3215,7 @@ Scenario: Registration request stays structured
 
         assert!(output.contains("Scenario: Registration request stays structured"));
         assert!(output.contains("  Test:"));
-        assert!(output.contains("    Package: agent-spec"));
+        assert!(output.contains("    Package: specwright"));
         assert!(
             output.contains(
                 "    Filter: test_contract_output_preserves_step_tables_and_test_selectors"
@@ -3239,7 +3239,7 @@ name: "Verification Metadata"
 
 Scenario: verification metadata stays visible
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_contract_and_json_output_preserve_verification_metadata
     Level: integration
     Test Double: fixture_fs
@@ -3277,7 +3277,7 @@ Scenario: verification metadata stays visible
         assert!(phase0.contains("Must`、`Must Not`、`Decisions"));
         assert!(phase0.contains("step table"));
 
-        assert!(phase1.contains("agent-spec explain"));
+        assert!(phase1.contains("specwright explain"));
         assert!(phase1.contains("--format markdown"));
         assert!(phase1.contains("stamp"));
         assert!(phase1.contains("不要先做 destructive `stamp`"));
@@ -3468,7 +3468,7 @@ Scenario: verification metadata stays visible
         };
         super::write_run_log(&dir, &entry).unwrap();
 
-        let runs_dir = dir.join(".agent-spec/runs");
+        let runs_dir = dir.join(".specwright/runs");
         assert!(runs_dir.exists(), "runs directory should be created");
 
         let files: Vec<_> = fs::read_dir(&runs_dir)
@@ -3498,7 +3498,7 @@ Scenario: verification metadata stays visible
     #[test]
     fn test_explain_history_reads_run_log_summary() {
         let dir = make_temp_dir("agent-spec-explain-history");
-        let runs_dir = dir.join(".agent-spec/runs");
+        let runs_dir = dir.join(".specwright/runs");
         fs::create_dir_all(&runs_dir).unwrap();
 
         // Write multiple run log entries
@@ -3582,7 +3582,7 @@ Scenario: verification metadata stays visible
         // Parse the Lifecycle command without --adversarial flag
         use clap::Parser;
         let cli = super::Cli::parse_from([
-            "agent-spec",
+            "specwright",
             "lifecycle",
             "specs/project.spec",
             "--code",
@@ -3597,7 +3597,7 @@ Scenario: verification metadata stays visible
 
         // With --adversarial explicitly
         let cli2 = super::Cli::parse_from([
-            "agent-spec",
+            "specwright",
             "lifecycle",
             "specs/project.spec",
             "--code",
@@ -3621,30 +3621,30 @@ Scenario: verification metadata stays visible
         // Codex integration
         let agents_md = fs::read_to_string(root.join("docs/codex-integration.md")).unwrap();
         assert!(
-            agents_md.contains("agent-spec contract"),
+            agents_md.contains("specwright contract"),
             "docs/codex-integration.md should reference contract command"
         );
         assert!(
-            agents_md.contains("agent-spec lifecycle"),
+            agents_md.contains("specwright lifecycle"),
             "docs/codex-integration.md should reference lifecycle command"
         );
         assert!(
-            agents_md.contains("agent-spec guard"),
+            agents_md.contains("specwright guard"),
             "docs/codex-integration.md should reference guard command"
         );
 
         // Cursor integration
         let cursorrules = fs::read_to_string(root.join(".cursorrules")).unwrap();
         assert!(
-            cursorrules.contains("agent-spec contract"),
+            cursorrules.contains("specwright contract"),
             ".cursorrules should reference contract command"
         );
 
         // Aider integration
         let aider = fs::read_to_string(root.join(".aider.conf.yml")).unwrap();
         assert!(
-            aider.contains("agent-spec"),
-            ".aider.conf.yml should reference agent-spec"
+            aider.contains("specwright"),
+            ".aider.conf.yml should reference specwright"
         );
     }
 
@@ -3652,7 +3652,7 @@ Scenario: verification metadata stays visible
     fn test_checkpoint_commands_are_optional_and_vcs_aware() {
         // Verify the checkpoint command parses correctly
         use clap::Parser;
-        let cli = super::Cli::parse_from(["agent-spec", "checkpoint", "status"]);
+        let cli = super::Cli::parse_from(["specwright", "checkpoint", "status"]);
         match cli.command {
             super::Commands::Checkpoint { action } => {
                 assert_eq!(action, "status");
@@ -3661,7 +3661,7 @@ Scenario: verification metadata stays visible
         }
 
         // Default action is "status"
-        let cli2 = super::Cli::parse_from(["agent-spec", "checkpoint"]);
+        let cli2 = super::Cli::parse_from(["specwright", "checkpoint"]);
         match cli2.command {
             super::Commands::Checkpoint { action } => {
                 assert_eq!(action, "status");
@@ -3671,7 +3671,7 @@ Scenario: verification metadata stays visible
 
         // Checkpoint is NOT injected into default lifecycle
         let cli3 = super::Cli::parse_from([
-            "agent-spec",
+            "specwright",
             "lifecycle",
             "specs/project.spec",
             "--code",
@@ -3689,7 +3689,7 @@ Scenario: verification metadata stays visible
 
         // Without --layers: all layers run
         let cli = super::Cli::parse_from([
-            "agent-spec",
+            "specwright",
             "lifecycle",
             "specs/project.spec",
             "--code",
@@ -3707,7 +3707,7 @@ Scenario: verification metadata stays visible
 
         // With --layers: only specified layers
         let cli2 = super::Cli::parse_from([
-            "agent-spec",
+            "specwright",
             "lifecycle",
             "specs/project.spec",
             "--code",
@@ -3811,7 +3811,7 @@ Scenario: verification metadata stays visible
         use clap::Parser;
 
         let parsed = super::Cli::try_parse_from([
-            "agent-spec",
+            "specwright",
             "lifecycle",
             "specs/project.spec.md",
             "--code",
@@ -3822,7 +3822,7 @@ Scenario: verification metadata stays visible
 
         assert!(
             parsed.is_ok(),
-            "`agent-spec lifecycle --runner cargo` should be accepted"
+            "`specwright lifecycle --runner cargo` should be accepted"
         );
 
         let mut json = base_lifecycle_json_for_runner_tests();
@@ -3845,7 +3845,7 @@ Scenario: verification metadata stays visible
         use clap::Parser;
 
         let parsed = super::Cli::try_parse_from([
-            "agent-spec",
+            "specwright",
             "verify",
             "specs/project.spec.md",
             "--code",
@@ -3856,7 +3856,7 @@ Scenario: verification metadata stays visible
 
         assert!(
             parsed.is_ok(),
-            "`agent-spec verify --runner pytest` should be accepted before conflict tracing"
+            "`specwright verify --runner pytest` should be accepted before conflict tracing"
         );
 
         let mut json = base_lifecycle_json_for_runner_tests();
@@ -3899,7 +3899,7 @@ Scenario: verification metadata stays visible
 
         // The command exists and parses
         let cli =
-            super::Cli::parse_from(["agent-spec", "measure-determinism", "specs/project.spec"]);
+            super::Cli::parse_from(["specwright", "measure-determinism", "specs/project.spec"]);
         match cli.command {
             super::Commands::MeasureDeterminism { spec, runs, .. } => {
                 assert!(spec.to_string_lossy().contains("project.spec"));
@@ -4033,7 +4033,7 @@ Scenario: verification metadata stays visible
     #[test]
     fn test_explain_history_shows_jj_diff_between_runs() {
         let dir = make_temp_dir("agent-spec-jj-diff-history");
-        let runs_dir = dir.join(".agent-spec/runs");
+        let runs_dir = dir.join(".specwright/runs");
         fs::create_dir_all(&runs_dir).unwrap();
 
         // Write two run log entries with jj operation IDs
@@ -4087,7 +4087,7 @@ Scenario: verification metadata stays visible
     #[test]
     fn test_explain_history_degrades_without_jj() {
         let dir = make_temp_dir("agent-spec-no-jj-history");
-        let runs_dir = dir.join(".agent-spec/runs");
+        let runs_dir = dir.join(".specwright/runs");
         fs::create_dir_all(&runs_dir).unwrap();
 
         // Two entries with jj VCS but no actual jj available
@@ -4150,7 +4150,7 @@ Scenario: verification metadata stays visible
     fn test_resolve_ai_command_parses_correctly() {
         use clap::Parser;
         let cli = super::Cli::parse_from([
-            "agent-spec",
+            "specwright",
             "resolve-ai",
             "specs/task.spec",
             "--code",
@@ -4258,7 +4258,7 @@ Scenario: verification metadata stays visible
     #[test]
     fn test_init_default_lang_is_english() {
         // With no --lang, the parsed default must be English, not Chinese.
-        let cli = super::Cli::parse_from(["agent-spec", "init"]);
+        let cli = super::Cli::parse_from(["specwright", "init"]);
         let super::Commands::Init { lang, .. } = cli.command else {
             panic!("expected Init command");
         };
@@ -4476,7 +4476,7 @@ Scenario: pass
     #[test]
     fn test_resume_without_run_log_dir_errors() {
         let cli = super::Cli::try_parse_from([
-            "agent-spec",
+            "specwright",
             "lifecycle",
             "dummy.spec",
             "--code",

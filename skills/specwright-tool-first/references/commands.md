@@ -1,9 +1,9 @@
-# agent-spec CLI Command Reference
+# specwright CLI Command Reference
 
 ## All Commands
 
 ```
-agent-spec <COMMAND>
+specwright <COMMAND>
 
 Commands:
   parse               Parse .spec/.spec.md files and show AST
@@ -27,24 +27,24 @@ Commands:
 
 ```bash
 # 1. Read the contract
-agent-spec contract specs/task.spec
+specwright contract specs/task.spec
 
 # 2. Generate plan context for AI
-agent-spec plan specs/task.spec --code . --format prompt
+specwright plan specs/task.spec --code . --format prompt
 
 # 3. Implement code...
 
 # 4. Verify
-agent-spec lifecycle specs/task.spec --code . --format json
+specwright lifecycle specs/task.spec --code . --format json
 
 # 5. Repo-wide guard
-agent-spec guard --spec-dir specs --code .
+specwright guard --spec-dir specs --code .
 ```
 
 ## plan
 
 ```bash
-agent-spec plan <spec> [--code .] [--format text|json|prompt] [--depth shallow|full]
+specwright plan <spec> [--code .] [--format text|json|prompt] [--depth shallow|full]
 ```
 
 Generates structured plan context by combining three blocks:
@@ -64,7 +64,7 @@ Respects `.gitignore`. Warns (does not error) on missing Allowed Changes paths.
 ## contract
 
 ```bash
-agent-spec contract <spec> [--format text|json]
+specwright contract <spec> [--format text|json]
 ```
 
 Renders the Task Contract with: Intent, Must/Must NOT, Decisions, Boundaries, Completion Criteria.
@@ -72,7 +72,7 @@ Renders the Task Contract with: Intent, Must/Must NOT, Decisions, Boundaries, Co
 ## lifecycle
 
 ```bash
-agent-spec lifecycle <spec> --code <dir> \
+specwright lifecycle <spec> --code <dir> \
   [--change <path>]... \
   [--change-scope none|staged|worktree|jj] \
   [--ai-mode off|stub] \
@@ -119,7 +119,7 @@ When a required external tool or device is unavailable, runner preflight reports
 ## guard
 
 ```bash
-agent-spec guard \
+specwright guard \
   [--spec-dir specs] \
   [--code .] \
   [--change <path>]... \
@@ -132,7 +132,7 @@ Scans all `*.spec` and `*.spec.md` files in `--spec-dir`, runs lint + verify on 
 ## verify
 
 ```bash
-agent-spec verify <spec> --code <dir> \
+specwright verify <spec> --code <dir> \
   [--change <path>]... \
   [--change-scope none|staged|worktree] \
   [--ai-mode off|stub] \
@@ -144,7 +144,7 @@ Raw verification without lint quality gate. Default change scope is `none`.
 ## explain
 
 ```bash
-agent-spec explain <spec> \
+specwright explain <spec> \
   [--code .] \
   [--format text|markdown] \
   [--history]
@@ -155,7 +155,7 @@ Human-readable contract review summary. Use `--format markdown` for PR descripti
 ## stamp
 
 ```bash
-agent-spec stamp <spec> [--code .] [--dry-run]
+specwright stamp <spec> [--code .] [--dry-run]
 ```
 
 Preview git trailers (`Spec-Name`, `Spec-Passing`, `Spec-Summary`). Currently only `--dry-run` is supported.
@@ -165,7 +165,7 @@ In jj repositories, also outputs `Spec-Change:` trailer with the current jj chan
 ## lint
 
 ```bash
-agent-spec lint <files>... [--format text|json|md] [--min-score 0.0]
+specwright lint <files>... [--format text|json|md] [--min-score 0.0]
 ```
 
 Built-in linters: VagueVerb, Unquantified, Testability, Coverage, Determinism, ImplicitDep, ExplicitTestBinding, Sycophancy.
@@ -173,7 +173,7 @@ Built-in linters: VagueVerb, Unquantified, Testability, Coverage, Determinism, I
 ## init
 
 ```bash
-agent-spec init [--level org|project|task] [--name <name>] [--lang zh|en|both]
+specwright init [--level org|project|task] [--name <name>] [--lang zh|en|both]
 ```
 
 ## Change Set Defaults
@@ -187,14 +187,14 @@ agent-spec init [--level org|project|task] [--name <name>] [--lang zh|en|both]
 ## resolve-ai
 
 ```bash
-agent-spec resolve-ai <spec> \
+specwright resolve-ai <spec> \
   [--code .] \
   --decisions <decisions.json> \
   [--format text|json]
 ```
 
 Merges external AI decisions into a verification report. Used as step 2 of the caller mode protocol:
-1. `lifecycle --ai-mode caller` emits pending requests to `.agent-spec/pending-ai-requests.json`
+1. `lifecycle --ai-mode caller` emits pending requests to `.specwright/pending-ai-requests.json`
 2. Agent analyzes scenarios and writes `ScenarioAiDecision` JSON
 3. `resolve-ai` merges decisions, replacing Skip verdicts with AI verdicts
 
@@ -226,10 +226,10 @@ Use `--layers` to select which verification layers to run:
 
 ```bash
 # Only lint and boundary checking
-agent-spec lifecycle specs/task.spec --code . --layers lint,boundary
+specwright lifecycle specs/task.spec --code . --layers lint,boundary
 
 # Skip lint, run structural + boundary + test
-agent-spec lifecycle specs/task.spec --code . --layers boundary,test
+specwright lifecycle specs/task.spec --code . --layers boundary,test
 ```
 
 Available layers: `lint`, `boundary`, `test`, `ai`

@@ -1,18 +1,18 @@
-# agent-spec Integration for Aider
+# specwright Integration for Aider
 #
 # Workflow:
-#   1. Read the contract: agent-spec contract specs/<task>.spec
+#   1. Read the contract: specwright contract specs/<task>.spec
 #   2. Implement against the contract
-#   3. Verify: agent-spec lifecycle specs/<task>.spec --code . --format json
-#   4. Guard: agent-spec guard --spec-dir specs --code .
-#   5. Review: agent-spec explain specs/<task>.spec --format markdown
+#   3. Verify: specwright lifecycle specs/<task>.spec --code . --format json
+#   4. Guard: specwright guard --spec-dir specs --code .
+#   5. Review: specwright explain specs/<task>.spec --format markdown
 #
 # Key Commands:
-#   agent-spec contract <spec>   - render Task Contract for planning
-#   agent-spec lifecycle <spec>  - full lint + verify pipeline
-#   agent-spec guard             - repo-wide pre-commit check
-#   agent-spec explain <spec>    - human-readable review summary
-#   agent-spec stamp <spec>      - preview git trailers (--dry-run)
+#   specwright contract <spec>   - render Task Contract for planning
+#   specwright lifecycle <spec>  - full lint + verify pipeline
+#   specwright guard             - repo-wide pre-commit check
+#   specwright explain <spec>    - human-readable review summary
+#   specwright stamp <spec>      - preview git trailers (--dry-run)
 #
 # Retry Protocol:
 #   When lifecycle fails, parse JSON output and fix code based on evidence.

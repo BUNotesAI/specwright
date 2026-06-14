@@ -1,11 +1,15 @@
 [package]
-name = "agent-spec"
+name = "specwright"
 description = "AI-native BDD/Spec verification tool for contract-driven agent coding"
 edition = "2024"
 version = "2.0.0"
 license = "MIT"
 repository = "https://github.com/ZhangHanDong/agent-spec"
 homepage = "https://github.com/ZhangHanDong/agent-spec"
+
+[[bin]]
+name = "specwright"
+path = "src/main.rs"
 
 [dependencies]
 thiserror = "2"

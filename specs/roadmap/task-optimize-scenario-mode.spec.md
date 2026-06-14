@@ -37,7 +37,7 @@ estimate: 0.5d
 
 Scenario: optimize 场景 pass 后出现在 optimization_candidates
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_optimize_scenario_pass_listed_as_candidate
   Given 某个场景声明 `模式: optimize` 且 verdict 为 `pass`
   When lifecycle 输出 JSON
@@ -46,7 +46,7 @@ Scenario: optimize 场景 pass 后出现在 optimization_candidates
 
 Scenario: optimize 场景 fail 不影响 passed 判定
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_optimize_scenario_fail_blocks_pass
   Given 某个场景声明 `模式: optimize` 且 verdict 为 `fail`
   When lifecycle 输出 JSON
@@ -54,7 +54,7 @@ Scenario: optimize 场景 fail 不影响 passed 判定
 
 Scenario: parser 正确解析模式字段
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_parse_mode_field_in_scenario
   Given 某个场景声明 `模式: optimize`
   When parser 解析该场景

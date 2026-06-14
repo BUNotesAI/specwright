@@ -34,7 +34,7 @@ tags: [roadmap, planned, phase6, verification]
 
 Scenario: lifecycle 支持显式验证层选择
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_lifecycle_layers_flag_selects_verification_stack
   Given 用户只想运行部分验证层
   When lifecycle 接收 `--layers lint,boundary,test`
@@ -51,7 +51,7 @@ Scenario: 成本报告按层输出
 
 Scenario: 确定性度量保持实验功能
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_measure_determinism_is_explicitly_experimental
   Given 用户希望评估 Contract 方差
   When 用户查看 `measure-determinism`

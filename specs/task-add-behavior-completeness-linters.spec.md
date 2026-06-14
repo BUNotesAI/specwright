@@ -6,7 +6,7 @@ tags: [contract-quality, lint, behavior, phase-next]
 
 ## Intent
 
-让 `agent-spec` 不只检查规格是否“写得像合同”，
+让 `specwright` 不只检查规格是否“写得像合同”，
 还要能发现“合同结构完整但关键可观察行为没被绑定”的问题。
 本任务聚焦在新增一组 warning-first 的 lint，直接针对这类遗漏给出反馈。
 
@@ -38,7 +38,7 @@ Scenario: 可观察行为决策缺少场景时给出提示
   Test:
     Filter: test_observable_decision_coverage_warns_when_behavioral_decisions_lack_scenarios
   Given 某个 task spec 的 Decisions 提到 `--json`、stdout 和 fallback 顺序
-  When 运行 `agent-spec lint`
+  When 运行 `specwright lint`
   Then lint 输出包含 `observable-decision-coverage` warning
   And warning 指出缺少对应场景覆盖这些可观察行为
 
@@ -54,7 +54,7 @@ Scenario: 优先级和回退顺序未验证时给出提示
   Test:
     Filter: test_precedence_fallback_coverage_warns_when_ordered_behavior_has_no_scenario
   Given 某个 task spec 的 Decisions 包含 `local -> cache -> remote` 的读取顺序
-  When 运行 `agent-spec lint`
+  When 运行 `specwright lint`
   Then lint 输出包含 `precedence-fallback-coverage` warning
   And warning 指出该顺序尚未被场景验证
 
@@ -62,7 +62,7 @@ Scenario: 外部 I/O 错误场景的测试强度过弱时给出提示
   Test:
     Filter: test_external_io_error_strength_warns_on_weak_mock_only_http_scenarios
   Given 某个场景描述 HTTP 4xx/5xx 处理，但测试选择器和步骤只体现纯注入 mock
-  When 运行 `agent-spec lint`
+  When 运行 `specwright lint`
   Then lint 输出包含 `external-io-error-strength` warning
   And warning 提示该场景没有表达真实 I/O 边界覆盖
 
@@ -70,7 +70,7 @@ Scenario: 非行为性普通决策不会被新规则大量误报
   Test:
     Filter: test_behavior_completeness_linters_do_not_flag_plain_implementation_choices
   Given 某个 task spec 的 Decisions 只声明库选择和目录结构
-  When 运行 `agent-spec lint`
+  When 运行 `specwright lint`
   Then 上述新 lint 不会仅因这些普通实现决策而触发 warning
 
 ## Out of Scope

@@ -6,22 +6,22 @@ tags: [contract-quality, skills, templates, parity, phase-next]
 
 ## Intent
 
-让 `agent-spec` 在 rewrite/parity 类任务上更容易写出真正绑定外部行为的合同。
+让 `specwright` 在 rewrite/parity 类任务上更容易写出真正绑定外部行为的合同。
 本任务聚焦于 skill、模板和参考示例，把“未绑定的可观察行为”检查内建进 authoring 工作流。
 
 ## Decisions
 
 - 本轮不新增 DSL 语法，只通过 skills、模板和参考 spec 提升写作质量
-- `agent-spec-authoring` 必须新增 `Behavior Surface Checklist`
-- `agent-spec-tool-first` 必须新增 `Unbound Observable Behavior` 审查步骤
+- `specwright-authoring` 必须新增 `Behavior Surface Checklist`
+- `specwright-tool-first` 必须新增 `Unbound Observable Behavior` 审查步骤
 - 仓库应新增一份 rewrite/parity 示例 task spec，演示行为矩阵写法
 - checklist 默认覆盖 stdout/stderr、`--json`、`-o/--output`、cold start、cache miss、fallback、local/remote、partial failure
 
 ## Boundaries
 
 ### Allowed Changes
-- skills/agent-spec-authoring/**
-- skills/agent-spec-tool-first/**
+- skills/specwright-authoring/**
+- skills/specwright-tool-first/**
 - .claude/skills/**
 - README.md
 - docs/**
@@ -38,15 +38,15 @@ Scenario: authoring skill 包含行为面检查清单
   Test:
     Filter: test_authoring_skill_includes_behavior_surface_checklist
   Given 用户正在为 CLI 或 MCP 工具编写 task spec
-  When 查看 `agent-spec-authoring` skill
+  When 查看 `specwright-authoring` skill
   Then skill 明确要求检查 stdout/stderr、`--json`、`-o/--output`、fallback、cold start 和文件副作用
   And 把这些行为作为合同写作前的必查项
 
 Scenario: tool-first skill 包含未绑定可观察行为审查步骤
   Test:
     Filter: test_tool_first_skill_mentions_unbound_observable_behavior_review_step
-  Given 用户已经完成 `agent-spec parse` 和 `agent-spec lint`
-  When 查看 `agent-spec-tool-first` skill
+  Given 用户已经完成 `specwright parse` 和 `specwright lint`
+  When 查看 `specwright-tool-first` skill
   Then skill 额外要求审查还有哪些 stdout、stderr、文件、网络和持久化行为未被场景绑定
   And 说明这一步特别适用于 rewrite/parity 任务
 

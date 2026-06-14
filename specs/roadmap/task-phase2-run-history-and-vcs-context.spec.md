@@ -11,7 +11,7 @@ tags: [roadmap, planned, phase2, traceability]
 
 ## Decisions
 
-- run log 先采用本地 sidecar 目录 `.agent-spec/runs/`
+- run log 先采用本地 sidecar 目录 `.specwright/runs/`
 - explain 通过 `--history` 消费 run log，而不是复制 lifecycle 逻辑
 - VCS 上下文自动检测 Git / jj / none
 - `--change-scope jj` 作为 VCS-aware 扩展，但不改变 Git 的默认路径
@@ -29,31 +29,31 @@ tags: [roadmap, planned, phase2, traceability]
 ### Forbidden
 - 不要一上来把完整 Agent 对话写入 run log
 - 不要让 jj 支持破坏现有 Git 默认行为
-- 不要要求用户必须提交 `.agent-spec/runs/`
+- 不要要求用户必须提交 `.specwright/runs/`
 
 ## Completion Criteria
 
 Scenario: lifecycle 可记录结构化 run log
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_lifecycle_writes_structured_run_log_summary
   Given 用户显式启用 run log 记录
   When lifecycle 执行结束
-  Then `.agent-spec/runs/` 下生成结构化运行记录
+  Then `.specwright/runs/` 下生成结构化运行记录
   And 记录包含 verdict、criteria summary 与 VCS 信息
 
 Scenario: explain 展示执行历史
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_explain_history_reads_run_log_summary
   Given 某个 Contract 已经积累多次运行记录
-  When 用户运行 `agent-spec explain --history`
+  When 用户运行 `specwright explain --history`
   Then 输出包含 runs、first pass 与失败轨迹摘要
   And reviewer 能看出是否经历了多轮重试
 
 Scenario: 命令行支持 jj change scope
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_resolve_command_change_paths_reads_jj_changes
   Given 当前工作区是 jj 仓库
   When 用户使用 `--change-scope jj`

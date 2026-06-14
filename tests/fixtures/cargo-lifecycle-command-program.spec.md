@@ -11,7 +11,7 @@ Verify that default Cargo runner lifecycle JSON preserves the historical
 
 Scenario: Default Cargo lifecycle omits command_program
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_cargo_command_program_evidence_is_omitted_for_json_compatibility
   Given a task spec with a bound Cargo unit test
   When lifecycle verification runs with the default Cargo runner

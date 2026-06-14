@@ -39,7 +39,7 @@ estimate: 1d
 
 Scenario: 行数比超标时 fail
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_complexity_verifier_fails_on_line_ratio_exceeded
   Given 某个 spec 声明"新增行数不超过删除行数的 3 倍"
   When 变更集净增 100 行、删除 10 行
@@ -48,7 +48,7 @@ Scenario: 行数比超标时 fail
 
 Scenario: 无质量约束时无 verdict
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_complexity_verifier_silent_without_constraints
   Given 某个 spec 的 Constraints 中没有质量相关关键词
   When lifecycle 执行 complexity 层
@@ -56,7 +56,7 @@ Scenario: 无质量约束时无 verdict
 
 Scenario: 行数比达标时 pass
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_complexity_verifier_passes_on_acceptable_ratio
   Given 某个 spec 声明"新增行数不超过删除行数的 3 倍"
   When 变更集净增 20 行、删除 10 行
@@ -64,7 +64,7 @@ Scenario: 行数比达标时 pass
 
 Scenario: 使用 git diff 统计行数变化
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_complexity_verifier_uses_git_diff_stats
   Given 某个 spec 声明行数比约束
   When ComplexityVerifier 计算变更统计

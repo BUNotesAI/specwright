@@ -6,7 +6,7 @@ tags: [bootstrap, cli, git, boundaries, guard, phase4]
 
 ## Intent
 
-让 `agent-spec guard` 在需要更强边界校验时，
+让 `specwright guard` 在需要更强边界校验时，
 可以从整个 git worktree 推导 change set，而不只局限于 staged index。
 
 ## Decisions
@@ -31,7 +31,7 @@ tags: [bootstrap, cli, git, boundaries, guard, phase4]
 
 Scenario: worktree scope 包含 staged、未暂存和未跟踪文件
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_resolve_guard_change_paths_reads_worktree_git_changes
   Given 某个临时 git 仓库同时存在 staged、未暂存和未跟踪变更
   When `guard` 使用 `worktree` change scope 解析 change set
@@ -39,7 +39,7 @@ Scenario: worktree scope 包含 staged、未暂存和未跟踪文件
 
 Scenario: 默认 staged scope 不包含未暂存改动
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_resolve_guard_change_paths_ignores_unstaged_changes_in_default_staged_scope
   Given 某个临时 git 仓库存在 staged 和未暂存改动
   When `guard` 使用默认 `staged` scope 解析 change set
@@ -48,7 +48,7 @@ Scenario: 默认 staged scope 不包含未暂存改动
 
 Scenario: 显式 change 参数优先于 scope 自动发现
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_resolve_guard_change_paths_prefers_explicit_changes
   Given 用户显式传入 `custom/file.rs`
   When `guard` 同时配置 `worktree` scope

@@ -6,7 +6,7 @@ tags: [bootstrap, verify, ai, gateway, report, phase4]
 
 ## Intent
 
-为 `agent-spec` 建立一个可追踪的 `AiVerifier` 最小骨架，
+为 `specwright` 建立一个可追踪的 `AiVerifier` 最小骨架，
 先把 AI 证据模型、CLI/gateway 开关和 `uncertain` 语义定清楚，
 而不是直接引入真实模型调用。
 

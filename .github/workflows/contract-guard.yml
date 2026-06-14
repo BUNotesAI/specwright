@@ -1,11 +1,11 @@
-# agent-spec Contract Guard — GitHub Actions Workflow
+# specwright Contract Guard — GitHub Actions Workflow
 #
-# This workflow runs agent-spec's contract verification on every pull request.
+# This workflow runs specwright's contract verification on every pull request.
 # It checks that all .spec/.spec.md files in specs/ pass lint and verification against
 # the PR's changed files, then posts a Contract review summary to the PR.
 #
 # Prerequisites:
-#   - agent-spec is installable via `cargo install` or available as a binary
+#   - specwright is installable via `cargo install` or available as a binary
 #   - Task specs live in specs/ (configurable below)
 #   - The project has Cargo.toml at the root (for test execution)
 #
@@ -70,19 +70,19 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      # Cache the compiled agent-spec binary to avoid rebuilding every run.
-      # The cache key includes the agent-spec version from Cargo.toml so
+      # Cache the compiled specwright binary to avoid rebuilding every run.
+      # The cache key includes the specwright version from Cargo.toml so
       # it invalidates when the tool is upgraded.
-      - name: Cache agent-spec binary
-        id: cache-agent-spec
+      - name: Cache specwright binary
+        id: cache-specwright
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/agent-spec
-          key: agent-spec-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          path: ~/.cargo/bin/specwright
+          key: specwright-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install agent-spec
-        if: steps.cache-agent-spec.outputs.cache-hit != 'true'
-        run: cargo install --path . --bin agent-spec
+      - name: Install specwright
+        if: steps.cache-specwright.outputs.cache-hit != 'true'
+        run: cargo install --path . --bin specwright
 
       # ── Guard: lint + verify all specs ───────────────────
       - name: Run Contract Guard
@@ -90,7 +90,7 @@ jobs:
         # Use worktree scope on PRs to catch all changes, not just staged
         run: |
           echo "::group::Contract Guard Output"
-          agent-spec guard \
+          specwright guard \
             --spec-dir "$SPEC_DIR" \
             --code "$CODE_DIR" \
             --change-scope worktree \
@@ -120,12 +120,12 @@ jobs:
             SPEC_NAME=$(basename "$SPEC_NAME" .spec)
 
             # Run explain and capture output
-            EXPLAIN_OUTPUT=$(agent-spec explain "$spec" \
+            EXPLAIN_OUTPUT=$(specwright explain "$spec" \
               --code "$CODE_DIR" \
               --format markdown 2>/dev/null || echo "⚠️ explain failed for $spec")
 
             # Check if this spec passes
-            if agent-spec lifecycle "$spec" \
+            if specwright lifecycle "$spec" \
               --code "$CODE_DIR" \
               --change-scope worktree \
               --format json 2>/dev/null | grep -q '"passed": true'; then
@@ -178,14 +178,14 @@ jobs:
             const fs = require('fs');
             const summary = fs.readFileSync('/tmp/contract-summary.md', 'utf8');
 
-            // Find existing agent-spec comment to update (avoid duplicates)
+            // Find existing specwright comment to update (avoid duplicates)
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
 
-            const marker = '<!-- agent-spec-contract-guard -->';
+            const marker = '<!-- specwright-contract-guard -->';
             const body = `${marker}\n${summary}`;
             const existing = comments.find(c => c.body.includes(marker));
 

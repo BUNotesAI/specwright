@@ -335,7 +335,7 @@ risk:                        low
   - all new code paths degrade to None/silent fallback
   - existing tests unaffected (new VCS field is optional/serde-default)
 
-estimated effort:            6-8 agent rounds if using agent-spec contract-driven flow
+estimated effort:            6-8 agent rounds if using specwright contract-driven flow
 ```
 
 ---
@@ -345,7 +345,7 @@ estimated effort:            6-8 agent rounds if using agent-spec contract-drive
 After implementation, the full contract can be verified with:
 
 ```bash
-agent-spec lifecycle specs/task-jj-vcs-integration.spec \
+specwright lifecycle specs/task-jj-vcs-integration.spec \
   --code . \
   --change-scope jj \
   --format json

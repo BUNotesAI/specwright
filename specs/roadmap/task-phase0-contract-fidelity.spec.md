@@ -7,7 +7,7 @@ tags: [roadmap, planned, phase0, contract]
 ## Intent
 
 在继续扩展 review 流程、run log 或 AI 能力之前，
-先把 `agent-spec` 的合同面修到足够保真，避免后续功能建立在失真的 Task Contract 上。
+先把 `specwright` 的合同面修到足够保真，避免后续功能建立在失真的 Task Contract 上。
 
 ## Decisions
 
@@ -50,15 +50,15 @@ Scenario: Task Contract 区分 Must 与 Decisions
 
 Scenario: contract 输出保留结构化验收信息
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_contract_output_preserves_step_tables_and_test_selectors
   Given 某个 Completion Criteria 场景带有 step table 与结构化 `测试:` selector
-  When CLI 渲染 `agent-spec contract`
+  When CLI 渲染 `specwright contract`
   Then 默认输出保留这些结构化信息
   And Claude Code 的 tool-first 路径不再丢失关键验收上下文
 
 ## Out of Scope
 
-- `agent-spec explain`
+- `specwright explain`
 - run log 与执行历史
 - 真实 AI backend

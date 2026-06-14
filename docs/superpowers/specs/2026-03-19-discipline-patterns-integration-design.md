@@ -2,15 +2,15 @@
 
 ## Goal
 
-Internalize behavioral discipline patterns (from superpowers skill system) into agent-spec's 3 existing skills and plan prompt output, so that agent-spec users get built-in guidance for avoiding common verification shortcuts — without requiring superpowers installation.
+Internalize behavioral discipline patterns (from superpowers skill system) into specwright's 3 existing skills and plan prompt output, so that specwright users get built-in guidance for avoiding common verification shortcuts — without requiring superpowers installation.
 
 ## Audience
 
-agent-spec users (not superpowers users). The patterns must be self-contained within agent-spec.
+specwright users (not superpowers users). The patterns must be self-contained within specwright.
 
 ## Success Criteria
 
-1. **Checklist coverage (C)**: Every pattern P1-P7 has a corresponding location in agent-spec skills or plan prompt.
+1. **Checklist coverage (C)**: Every pattern P1-P7 has a corresponding location in specwright skills or plan prompt.
 2. **Scenario testing (B)**: An AI agent consuming the updated skill, when faced with a failing lifecycle, follows the Iron Law rather than skipping verification.
 
 ## Source Patterns (from superpowers)
@@ -77,7 +77,7 @@ Insert after the `#### Retry Protocol` section content, before `### Step 5: Guar
 Insert before "Reviewer judges two questions":
 
 ```markdown
-**Evidence gate**: Before presenting results to the reviewer, run `agent-spec explain <spec> --format markdown` fresh. Read the output. Confirm all verdicts are `pass`. Do NOT report results from memory — run the command and read the output in this session.
+**Evidence gate**: Before presenting results to the reviewer, run `specwright explain <spec> --format markdown` fresh. Read the output. Confirm all verdicts are `pass`. Do NOT report results from memory — run the command and read the output in this session.
 ```
 
 ### B. authoring SKILL.md
@@ -116,7 +116,7 @@ Add:
 
 **Location:** In `format_plan_prompt()`, append after the existing `## Verification (MANDATORY)` block's final `push_str` call (the `"Do NOT claim completion..."` line, currently at ~line 801), before `out` is returned.
 
-**Important:** The text must avoid the substring `"run agent-spec"` because existing test `test_plan_prompt_format_is_self_contained` asserts `!prompt.contains("run agent-spec")`. Use "Execute" instead of "Run".
+**Important:** The text must avoid the substring `"run specwright"` because existing test `test_plan_prompt_format_is_self_contained` asserts `!prompt.contains("run specwright")`. Use "Execute" instead of "Run".
 
 Append:
 
@@ -125,7 +125,7 @@ Append:
 
 ### Two-Stage Review
 After implementing each scenario group:
-1. **Spec compliance**: Execute `agent-spec lifecycle` with that group's test selectors. All must show `pass`.
+1. **Spec compliance**: Execute `specwright lifecycle` with that group's test selectors. All must show `pass`.
 2. **Code quality**: Review for dead code, `.unwrap()` in production paths, boundary violations, unnecessary complexity.
 
 Do NOT proceed to the next group until both stages pass for the current group.
@@ -167,7 +167,7 @@ Test with a subagent using this concrete setup:
 3. Tell it: "Verify this spec passes lifecycle"
 
 **Expected observable behavior:**
-- Agent runs `agent-spec lifecycle specs/roadmap/task-plan-command.spec.md --code . --format json`
+- Agent runs `specwright lifecycle specs/roadmap/task-plan-command.spec.md --code . --format json`
 - Agent output includes the failing scenario name and evidence (not "should pass" or "looks good")
 - Agent attempts to fix code (not modify the spec file)
 - Agent re-runs lifecycle after fix
@@ -179,24 +179,24 @@ Test with a subagent using this concrete setup:
 
 | File | Type | Size of Change |
 |------|------|---------------|
-| `skills/agent-spec-tool-first/SKILL.md` | Skill text | +40 lines (Iron Law, Red Flags, Evidence Gate) |
-| `skills/agent-spec-authoring/SKILL.md` | Skill text | +15 lines (Rationalization Table) |
-| `skills/agent-spec-estimate/SKILL.md` | Skill text | +3 lines (Evidence Rule) |
+| `skills/specwright-tool-first/SKILL.md` | Skill text | +40 lines (Iron Law, Red Flags, Evidence Gate) |
+| `skills/specwright-authoring/SKILL.md` | Skill text | +15 lines (Rationalization Table) |
+| `skills/specwright-estimate/SKILL.md` | Skill text | +3 lines (Evidence Rule) |
 | `src/spec_gateway/plan.rs` | Rust code | +25 lines in `format_plan_prompt()` + update `test_plan_prompt_format_is_self_contained` assertions |
-| `.claude/skills/agent-spec-tool-first/SKILL.md` | Skill copy | Must be updated manually (not symlinked) |
-| `.claude/skills/agent-spec-authoring/SKILL.md` | Skill copy | Must be updated manually (not symlinked) |
-| `.claude/skills/agent-spec-estimate/SKILL.md` | Skill copy | Must be updated manually (not symlinked) |
+| `.claude/skills/specwright-tool-first/SKILL.md` | Skill copy | Must be updated manually (not symlinked) |
+| `.claude/skills/specwright-authoring/SKILL.md` | Skill copy | Must be updated manually (not symlinked) |
+| `.claude/skills/specwright-estimate/SKILL.md` | Skill copy | Must be updated manually (not symlinked) |
 
 ## Version Bumping
 
 Bump the `Version` field in each modified SKILL.md:
-- `agent-spec-tool-first`: 3.1.0 → 3.2.0
-- `agent-spec-authoring`: 3.1.0 → 3.2.0
-- `agent-spec-estimate`: 1.0.0 → 1.1.0
+- `specwright-tool-first`: 3.1.0 → 3.2.0
+- `specwright-authoring`: 3.1.0 → 3.2.0
+- `specwright-estimate`: 1.0.0 → 1.1.0
 
 ## Out of Scope
 
-- New CLI commands (no `agent-spec review`)
+- New CLI commands (no `specwright review`)
 - Changes to verification logic in Rust
 - Superpowers as a dependency
 - Changes to spec parser or linter

@@ -6,13 +6,13 @@ use std::process::Command;
 
 #[test]
 fn agent_spec_version_reports_bumped_version() {
-    let output = Command::new(env!("CARGO_BIN_EXE_agent-spec"))
+    let output = Command::new(env!("CARGO_BIN_EXE_specwright"))
         .arg("--version")
         .output()
-        .expect("failed to run agent-spec --version");
+        .expect("failed to run specwright --version");
     assert!(
         output.status.success(),
-        "agent-spec --version should exit 0"
+        "specwright --version should exit 0"
     );
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(

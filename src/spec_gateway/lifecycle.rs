@@ -14,7 +14,7 @@ use crate::spec_verify::{
 
 use super::TaskContract;
 
-/// The main entry point for agent-spec lifecycle integration.
+/// The main entry point for specwright lifecycle integration.
 pub struct SpecGateway {
     doc: crate::spec_core::SpecDocument,
     resolved: crate::spec_core::ResolvedSpec,

@@ -6,7 +6,7 @@ tags: [dsl, parser, lint, verification, phase-next]
 
 ## Intent
 
-为 `agent-spec` 增加表达测试强度所需的可选场景元数据。
+为 `specwright` 增加表达测试强度所需的可选场景元数据。
 当前 `测试:` 只能绑定名称，无法区分 unit、integration、CLI、e2e，也无法表达场景是否依赖 local stub、fixture filesystem 或真实协议边界。
 本任务为高风险 I/O 场景引入可选的验证元数据。
 
@@ -57,7 +57,7 @@ Scenario: JSON 输出与 contract 渲染保留元数据
   Test:
     Filter: test_contract_and_json_output_preserve_verification_metadata
   Given 某个场景包含验证元数据
-  When 运行 `agent-spec parse --json` 和 `agent-spec contract`
+  When 运行 `specwright parse --json` 和 `specwright contract`
   Then JSON 输出与文本 contract 都保留这些字段
   And 不会丢失原有测试选择器内容
 

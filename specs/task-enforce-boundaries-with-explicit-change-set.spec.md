@@ -6,7 +6,7 @@ tags: [bootstrap, verify, boundaries, contract]
 
 ## Intent
 
-让 `agent-spec` 能对显式提供的变更文件集合执行边界校验，
+让 `specwright` 能对显式提供的变更文件集合执行边界校验，
 把 Task Contract 中的 `允许修改` / `禁止做` 路径规则变成真正的机械护栏。
 
 ## Decisions

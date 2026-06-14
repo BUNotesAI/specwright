@@ -43,7 +43,7 @@ estimate: 0.5d
 
 Scenario: human 审核场景测试通过后为 pending_review
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_human_review_scenario_produces_pending_review
   Given 某个场景声明 `审核: human` 且测试通过
   When lifecycle 执行该场景
@@ -51,7 +51,7 @@ Scenario: human 审核场景测试通过后为 pending_review
 
 Scenario: auto 模式下 pending_review 视为通过
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_auto_review_mode_treats_pending_as_pass
   Given 某个场景 verdict 为 `pending_review`
   When lifecycle 使用默认 `--review-mode auto`
@@ -59,7 +59,7 @@ Scenario: auto 模式下 pending_review 视为通过
 
 Scenario: strict 模式下 pending_review 为非通过
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_strict_review_mode_treats_pending_as_not_pass
   Given 某个场景 verdict 为 `pending_review`
   When lifecycle 使用 `--review-mode strict`
@@ -67,7 +67,7 @@ Scenario: strict 模式下 pending_review 为非通过
 
 Scenario: parser 正确解析审核字段
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_parse_review_field_in_scenario
   Given 某个场景声明 `审核: human`
   When parser 解析该场景

@@ -1,29 +1,29 @@
 ---
-name: agent-spec-authoring
+name: specwright-authoring
 description: |
-  CRITICAL: Use for writing and editing agent-spec .spec/.spec.md files. Triggers on:
+  CRITICAL: Use for writing and editing specwright .spec/.spec.md files. Triggers on:
   write spec, create spec, edit spec, new spec, spec authoring, task contract,
   .spec file, .spec.md file, BDD scenario, acceptance criteria, completion criteria,
   test selector, boundary, constraint, intent, decision, out of scope,
   "how to write a spec", "spec format", "spec syntax", "contract quality"
 ---
 
-# Agent Spec Authoring
+# Specwright Authoring
 
 > **Version:** 3.5.0 | **Last Updated:** 2026-05-31
 
-You are an expert at writing agent-spec Task Contracts. Help users by:
+You are an expert at writing specwright Task Contracts. Help users by:
 
 - **Creating specs**: scaffold new `.spec.md` files with correct structure (`.spec` is also supported).
 - **Editing specs**: improve intent, constraints, boundaries, decisions, and scenarios.
 - **Writing scenarios**: BDD-style scenarios with explicit test selectors and deterministic steps.
 - **Debugging specs**: fix parse errors, lint warnings, and weak quality scores.
-- **Self-hosting**: maintain specs for the agent-spec project itself.
+- **Self-hosting**: maintain specs for the specwright project itself.
 - **Runner-aware contracts**: choose Cargo, Maven, Gradle, Android, iOS, or Node/TypeScript execution semantics in frontmatter.
 
 ## Language Boundary
 
-Skill files are reusable assets and must be English-only. Do not include non-English examples in this skill file or its references. The `agent-spec` parser may support non-English aliases, but this skill should describe that support in English and emit English examples unless a vault task explicitly requires Chinese output.
+Skill files are reusable assets and must be English-only. Do not include non-English examples in this skill file or its references. The `specwright` parser may support non-English aliases, but this skill should describe that support in English and emit English examples unless a vault task explicitly requires Chinese output.
 
 When this skill is used inside the harness workflow:
 
@@ -33,16 +33,16 @@ When this skill is used inside the harness workflow:
 
 ## CLI Prerequisite Check
 
-Before running any `agent-spec` command, check:
+Before running any `specwright` command, check:
 
 ```bash
-command -v agent-spec || cargo install agent-spec
+command -v specwright || cargo install specwright
 ```
 
-If `agent-spec` is not installed, tell the user:
+If `specwright` is not installed, tell the user:
 
 ```text
-agent-spec CLI not found. Install with: cargo install agent-spec
+specwright CLI not found. Install with: cargo install specwright
 ```
 
 ## Core Philosophy
@@ -51,7 +51,7 @@ A Contract is not a vague issue. It is a precise specification that moves review
 
 ```text
 Traditional:  Human reviews 500 lines of code diff.
-agent-spec:   Human writes 50-80 lines of Contract.
+specwright:   Human writes 50-80 lines of Contract.
               Machine verifies code against Contract.
 ```
 
@@ -62,8 +62,8 @@ The contract defines what is correct. The lifecycle gate checks whether the code
 After writing or editing a spec:
 
 ```bash
-agent-spec parse specs/task.spec.md
-agent-spec lint specs/task.spec.md --min-score 0.7
+specwright parse specs/task.spec.md
+specwright lint specs/task.spec.md --min-score 0.7
 ```
 
 Do not hand a spec to an implementation agent if:
@@ -366,12 +366,12 @@ Before handing a Contract to an implementation agent, verify:
 | 4 | Exception scenarios cover error paths | Forces edge-case thinking upfront. |
 | 5 | Every scenario has a `Test:` selector | Required for mechanical verification. |
 | 6 | Steps use deterministic wording | Avoids ambiguous verification. |
-| 7 | `agent-spec lint` score is at least 0.7 | Quality gate before execution. |
+| 7 | `specwright lint` score is at least 0.7 | Quality gate before execution. |
 
 ## Escalation
 
-- **Authoring to planning**: after lint passes, run `agent-spec plan <spec> --code . --format prompt`.
-- **Authoring to implementation**: switch to `agent-spec-tool-first` after the contract passes lint.
+- **Authoring to planning**: after lint passes, run `specwright plan <spec> --code . --format prompt`.
+- **Authoring to implementation**: switch to `specwright-tool-first` after the contract passes lint.
 - **Implementation to authoring**: return here if a scenario, boundary, or decision must change.
 
 Update the Contract first, re-lint, then resume implementation. The Contract is a living document until the task is stamped.

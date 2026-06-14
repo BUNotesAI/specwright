@@ -1,4 +1,4 @@
-# Agent Spec Authoring Patterns
+# Specwright Authoring Patterns
 
 This reference is English-only because skill references are reusable assets.
 

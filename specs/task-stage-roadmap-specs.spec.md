@@ -7,7 +7,7 @@ tags: [bootstrap, roadmap, planning]
 ## Intent
 
 把新的改进计划重写成一组可自举的 task specs，
-让后续阶段不再只存在于长文计划里，而是作为仓库内可被 `agent-spec contract` 消费的路线图合同存在。
+让后续阶段不再只存在于长文计划里，而是作为仓库内可被 `specwright contract` 消费的路线图合同存在。
 
 ## Decisions
 
@@ -40,7 +40,7 @@ Scenario: 嵌套 roadmap spec 继续继承顶层 project 规则
 
 Scenario: Phase 0 与 Phase 1 roadmap spec 已拆分并表达正确优先级
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_roadmap_phase_zero_and_one_specs_exist_and_capture_priorities
   Given 仓库内存在 roadmap task specs
   When 用户查看前两个 phase spec
@@ -49,7 +49,7 @@ Scenario: Phase 0 与 Phase 1 roadmap spec 已拆分并表达正确优先级
 
 Scenario: 后续 roadmap spec 按 concern 分层
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_roadmap_later_phase_specs_exist_and_are_split_by_concern
   Given 用户继续查看后续 phase spec
   When 用户对比 Phase 2 到 Phase 6
@@ -58,7 +58,7 @@ Scenario: 后续 roadmap spec 按 concern 分层
 
 Scenario: roadmap README 说明 staging 与 promotion 规则
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_roadmap_readme_documents_promotion_rule
   Given 用户查看 `specs/roadmap/README.md`
   When 用户阅读 roadmap 目录说明

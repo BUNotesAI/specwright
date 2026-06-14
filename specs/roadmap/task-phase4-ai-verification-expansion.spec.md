@@ -52,7 +52,7 @@ Scenario: lint 检测 sycophancy 风险
 
 Scenario: adversarial 验证保持显式 opt-in
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_adversarial_verification_is_disabled_by_default
   Given 用户仅启用普通 AI 验证
   When lifecycle 或 verify 执行

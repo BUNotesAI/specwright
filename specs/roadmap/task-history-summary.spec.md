@@ -15,7 +15,7 @@ estimate: 0.5d
 
 ## Decisions
 
-- 通过 `agent-spec lifecycle --run-log-dir <dir> --history` 触发
+- 通过 `specwright lifecycle --run-log-dir <dir> --history` 触发
 - 输出表格包含：运行序号、时间戳、pass/fail/skip/uncertain 计数、delta
 - delta 列显示与上次运行的差异（如 `+2P -1F`）
 - 支持 `--format json` 输出结构化历史数据
@@ -34,7 +34,7 @@ estimate: 0.5d
 
 Scenario: history 输出表格化汇总
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_history_outputs_tabular_summary
   Given `--run-log-dir` 中有 3 次运行记录
   When lifecycle 使用 `--history` 参数
@@ -43,7 +43,7 @@ Scenario: history 输出表格化汇总
 
 Scenario: delta 列显示与前次差异
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_history_delta_shows_diff_from_previous
   Given 第一次运行 2 pass 3 fail，第二次运行 4 pass 1 fail
   When lifecycle 输出 history
@@ -51,7 +51,7 @@ Scenario: delta 列显示与前次差异
 
 Scenario: 单次运行时 delta 为空
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_history_single_run_no_delta
   Given `--run-log-dir` 中只有 1 次运行记录
   When lifecycle 输出 history
@@ -59,7 +59,7 @@ Scenario: 单次运行时 delta 为空
 
 Scenario: history 支持 JSON 格式输出
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_history_json_format_output
   Given `--run-log-dir` 中有多次运行记录
   When lifecycle 使用 `--history --format json` 参数

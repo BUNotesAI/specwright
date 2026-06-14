@@ -14,7 +14,7 @@ estimate: 1d
 
 ## Decisions
 
-- 新增 `agent-spec graph` 命令，扫描 spec 目录生成 DOT 输出
+- 新增 `specwright graph` 命令，扫描 spec 目录生成 DOT 输出
 - Spec 间依赖通过 frontmatter 新增 `depends` 字段声明
 - DOT 节点用 shape 区分 spec 状态：box（待实施）、doubleoctagon（已完成）
 - DOT 节点用 label 显示 spec 名称 + 预估工作量（如果有）
@@ -39,16 +39,16 @@ estimate: 1d
 
 Scenario: 生成 DOT 依赖图
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_graph_generates_dot_output
   Given specs 目录包含 3 个 spec，其中 B depends A，C depends A 和 B
-  When 执行 `agent-spec graph --spec-dir specs`
+  When 执行 `specwright graph --spec-dir specs`
   Then 输出合法的 DOT 有向图
   And 包含 A → B 和 A → C 和 B → C 三条边
 
 Scenario: DOT 节点包含工作量估算
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_graph_nodes_include_estimate
   Given 某个 spec 的 frontmatter 包含 `estimate: 2d`
   When 生成 DOT 图
@@ -56,7 +56,7 @@ Scenario: DOT 节点包含工作量估算
 
 Scenario: 无依赖的 spec 作为独立节点
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_graph_independent_specs_are_isolated_nodes
   Given specs 目录有一个无 depends 的 spec
   When 生成 DOT 图
@@ -65,7 +65,7 @@ Scenario: 无依赖的 spec 作为独立节点
 
 Scenario: 关键路径标记
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_graph_critical_path_highlighted
   Given specs 目录包含线性依赖链 A → B → C，各自 estimate 为 1d、2d、1d
   When 生成 DOT 图
@@ -73,7 +73,7 @@ Scenario: 关键路径标记
 
 Scenario: frontmatter 解析 depends 和 estimate
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_parse_spec_depends_and_estimate_fields
   Given 某个 spec 的 frontmatter 包含 `depends: [task-goal-gate]` 和 `estimate: 3d`
   When parser 解析该 spec

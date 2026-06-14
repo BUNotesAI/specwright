@@ -28,8 +28,8 @@ Thumbs.db
 .env
 .env.*
 
-# agent-spec run logs
-.agent-spec/
+# specwright run logs
+.specwright/
 
 # harness local config (public repo: keep out of upstream)
 /vault

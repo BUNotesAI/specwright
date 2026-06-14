@@ -44,11 +44,11 @@ fn test_repo_specs_parse_under_english_keywords() {
     for spec in &specs {
         let rel = spec.strip_prefix(&repo).unwrap_or(spec);
         let rel_str = rel.to_str().unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_agent-spec"))
+        let output = Command::new(env!("CARGO_BIN_EXE_specwright"))
             .args(["contract", rel_str, "--format", "json"])
             .current_dir(&repo)
             .output()
-            .expect("failed to run agent-spec contract");
+            .expect("failed to run specwright contract");
         if !output.status.success() {
             failures.push(format!(
                 "{}: {}",

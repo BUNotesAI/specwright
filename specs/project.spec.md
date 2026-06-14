@@ -1,13 +1,13 @@
 spec: project
-name: "agent-spec 项目规则"
+name: "specwright 项目规则"
 tags: [bootstrap, project]
 ---
 
-> Historical archive: this is agent-spec's early Chinese-language roadmap project spec, kept for history. The active project contract for harness tasks is `vault/docs/project.spec.md` (English). New specs default to English prose and English DSL tokens. Structural keywords here are English-only (the parser hard-rejects Chinese keyword aliases); any Chinese below is description free text, not DSL keywords.
+> Historical archive: this is specwright's early Chinese-language roadmap project spec, kept for history. The active project contract for harness tasks is `vault/docs/project.spec.md` (English). New specs default to English prose and English DSL tokens. Structural keywords here are English-only (the parser hard-rejects Chinese keyword aliases); any Chinese below is description free text, not DSL keywords.
 
 ## Intent
 
-把 `agent-spec` 做成一个面向新时代 code review 的控制面工具：
+把 `specwright` 做成一个面向新时代 code review 的控制面工具：
 人用自然语言写 BDD/Spec，agent 依据 Spec 实现代码，机器依据 Spec 给出可追踪的验证结果。
 
 ## Constraints
@@ -24,7 +24,7 @@ tags: [bootstrap, project]
 - verify 与 lifecycle 应支持可选的 git change scope，同时保持默认行为稳定
 - AI verifier 的 `uncertain` 结果应附带结构化 `AiAnalysis` 证据
 - AI verifier 应通过可插拔 backend 接口产生结构化分析结果
-- agent-spec 应保持 provider-agnostic，由宿主 agent 注入 AI backend
+- specwright 应保持 provider-agnostic，由宿主 agent 注入 AI backend
 - 项目应提供 Claude Code 的 project-local skills，且主路径是 tool-first
 - 长期路线图 task spec 应暂存于 `specs/roadmap/`，只有提升到顶层 `specs/` 后才进入默认 guard
 - Task Contract 应区分 `Must`、`Must Not` 与 `Decisions`
@@ -131,7 +131,7 @@ Scenario: 继承链保留项目级约束与已定决策
 Scenario: contract 输出保留结构化验收信息
   Test: test_contract_output_preserves_step_tables_and_test_selectors
   Given 某个场景带有 step table 与结构化 `Test:` selector
-  When CLI 渲染 `agent-spec contract`
+  When CLI 渲染 `specwright contract`
   Then 默认输出保留这些结构化信息
   And Agent 主路径不会丢失关键验收上下文
 

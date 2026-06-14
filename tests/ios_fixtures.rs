@@ -80,7 +80,7 @@ mod macos {
         code_path: &str,
     ) -> Result<(bool, serde_json::Value), Box<dyn std::error::Error>> {
         let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let output = Command::new(env!("CARGO_BIN_EXE_agent-spec"))
+        let output = Command::new(env!("CARGO_BIN_EXE_specwright"))
             .args([
                 "lifecycle",
                 spec_path,

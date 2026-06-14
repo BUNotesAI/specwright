@@ -2,10 +2,10 @@
 
 ## Summary
 
-The recent `chub-rs` rewrite surfaced a recurring failure mode in `agent-spec` practice:
+The recent `chub-rs` rewrite surfaced a recurring failure mode in `specwright` practice:
 contracts can be syntactically valid, lint-clean, and still miss critical user-visible behavior.
 
-`agent-spec` has already become much better at preventing malformed specs and structurally weak contracts.
+`specwright` has already become much better at preventing malformed specs and structurally weak contracts.
 The next step is to improve its ability to detect when a contract looks complete but still leaves important observable behavior unbound.
 
 This proposal focuses on that next step.
@@ -24,7 +24,7 @@ Examples: remote read fallback order, cache/bundle/HTTP precedence, startup boot
 Examples: HTTP non-2xx handling was expressed in the contract, but the test only validated an injected error path rather than the real `reqwest` response path.
 
 These failures share one root cause:
-`agent-spec` currently does a better job checking contract structure than checking behavioral completeness and verification strength.
+`specwright` currently does a better job checking contract structure than checking behavioral completeness and verification strength.
 
 ## What This Suggests About Agent-Spec
 
@@ -41,7 +41,7 @@ This is especially true for decisions about:
 - timeout policy
 - failure handling at external I/O boundaries
 
-`agent-spec` should treat these as high-risk observable decisions, not ordinary implementation details.
+`specwright` should treat these as high-risk observable decisions, not ordinary implementation details.
 
 ### 2. Thin edge behavior is easy to miss
 
@@ -77,7 +77,7 @@ A greenfield feature contract asks: "what should exist?"
 A parity migration contract asks: "what observable behavior must not drift?"
 
 These are different authoring problems.
-`agent-spec` should reflect that difference in its templates, lint rules, and skill guidance.
+`specwright` should reflect that difference in its templates, lint rules, and skill guidance.
 
 ## Proposal
 
@@ -187,7 +187,7 @@ This will help contract authors avoid thinking only in terms of modules and func
 
 ## D. Improve Skill Guidance
 
-### 1. `agent-spec-authoring`
+### 1. `specwright-authoring`
 
 Add a section called `Behavior Surface Checklist` for CLI/tools/protocol software.
 
@@ -202,7 +202,7 @@ Checklist items should include:
 - Are local and remote paths both covered?
 - Are side effects on disk specified?
 
-### 2. `agent-spec-tool-first`
+### 2. `specwright-tool-first`
 
 Add a review step after `parse + lint`:
 
@@ -214,7 +214,7 @@ This should become part of the standard contract review workflow, especially for
 
 ## E. Add a Formal Review Heuristic: Unbound Observable Behavior
 
-Add a small review framework to agent-spec docs and skills:
+Add a small review framework to specwright docs and skills:
 
 Before approving a contract, reviewers must ask:
 
@@ -231,8 +231,8 @@ This heuristic is simple, but it directly targets the class of misses seen in `c
 
 Low risk, fast feedback.
 
-- Update `agent-spec-authoring` with the behavior-surface checklist
-- Update `agent-spec-tool-first` with the unbound-observable-behavior review step
+- Update `specwright-authoring` with the behavior-surface checklist
+- Update `specwright-tool-first` with the unbound-observable-behavior review step
 - Add a rewrite/parity example contract to references
 
 ### Phase 2: New Warning-Level Linters
@@ -262,7 +262,7 @@ If adopted, these changes should reduce a specific class of failures:
 - parity migrations that miss thin but important user-visible behavior
 - tests that technically satisfy a selector but fail to prove the intended guarantee
 
-In short, this moves `agent-spec` forward from:
+In short, this moves `specwright` forward from:
 
 - "Is this spec parseable and reasonably complete?"
 
@@ -304,7 +304,7 @@ naive Rust port might process-and-output per-item. This architectural difference
 is invisible to single-item tests but breaks on combinations.
 
 This is not yet implemented as a linter (hard to detect mechanically), but is
-documented in the behavior surface checklist in `agent-spec-authoring`.
+documented in the behavior surface checklist in `specwright-authoring`.
 
 ## Implementation Status
 

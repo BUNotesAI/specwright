@@ -37,7 +37,7 @@ Scenario: When 步骤携带请求表格
 
 Scenario: JSON 输出保留表格
   Test: test_parse_step_table_and_preserve_json_output
-  Given 上述场景被 `agent-spec parse --format json` 解析
+  Given 上述场景被 `specwright parse --format json` 解析
   When 用户查看 JSON 输出
   Then JSON 中包含表格单元格
   And 表格行不会以独立步骤出现

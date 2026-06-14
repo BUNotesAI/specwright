@@ -7,7 +7,7 @@ tags: [bootstrap, parser, gateway, cli]
 ## Intent
 
 让磁盘上的任务级 `.spec` 能直接继承同目录的 `project.spec`，
-使 `agent-spec` 可以先用自己的项目规则约束自己，再执行具体任务。
+使 `specwright` 可以先用自己的项目规则约束自己，再执行具体任务。
 
 ## Decisions
 
@@ -39,7 +39,7 @@ Scenario: 同目录继承 project 规格
 
 Scenario: 磁盘入口不需要手工搜索路径
   Test: resolves_parent_from_source_directory_when_no_search_dirs_are_provided
-  Given 用户直接运行 `agent-spec contract task.spec`
+  Given 用户直接运行 `specwright contract task.spec`
   When 该 `task.spec` 与 `project.spec` 位于同一目录
   Then CLI 可以完成继承解析
   And 用户不需要再手工提供 `search_dirs`

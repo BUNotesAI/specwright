@@ -76,7 +76,7 @@ fn run_node_lifecycle_fixture() -> Result<Option<serde_json::Value>, Box<dyn std
 
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let fixture = copy_fixture_to_temp(&repo.join("tests/fixtures/node-npm-mini"))?;
-    let output = Command::new(env!("CARGO_BIN_EXE_agent-spec"))
+    let output = Command::new(env!("CARGO_BIN_EXE_specwright"))
         .args([
             "lifecycle",
             fixture

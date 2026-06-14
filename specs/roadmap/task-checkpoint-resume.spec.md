@@ -16,7 +16,7 @@ estimate: 1d
 
 ## Decisions
 
-- checkpoint 保存到 `--run-log-dir` 指定目录下的 `.agent-spec/checkpoint.json`
+- checkpoint 保存到 `--run-log-dir` 指定目录下的 `.specwright/checkpoint.json`
 - `--resume` 默认为增量模式：跳过上次 pass 的场景
 - `--resume=conservative` 为保守模式：全部重跑，但对上次 pass 现在 fail 的标记回归
 - checkpoint 记录每个场景的 verdict 和对应的 VCS ref
@@ -39,7 +39,7 @@ estimate: 1d
 
 Scenario: 增量模式跳过已通过场景
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_resume_incremental_skips_passed_scenarios
   Given 某个 checkpoint 记录场景 A 为 `pass`、场景 B 为 `fail`
   When lifecycle 使用 `--resume` 执行
@@ -49,7 +49,7 @@ Scenario: 增量模式跳过已通过场景
 
 Scenario: 保守模式检测回归
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_resume_conservative_detects_regression
   Given 某个 checkpoint 记录场景 A 为 `pass`
   When 场景 A 本次重跑 verdict 为 `fail`
@@ -57,7 +57,7 @@ Scenario: 保守模式检测回归
 
 Scenario: 无 run-log-dir 时 resume 报错
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_resume_without_run_log_dir_errors
   Given lifecycle 未传入 `--run-log-dir`
   When 使用 `--resume` 参数
@@ -66,7 +66,7 @@ Scenario: 无 run-log-dir 时 resume 报错
 
 Scenario: checkpoint 文件可序列化和反序列化
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_checkpoint_roundtrip_serialization
   Given 某次 lifecycle 产生了 checkpoint
   When 读取并反序列化该 checkpoint

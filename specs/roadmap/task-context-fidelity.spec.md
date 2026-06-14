@@ -36,7 +36,7 @@ estimate: 0.5d
 
 Scenario: compact 格式输出单行摘要
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_compact_format_outputs_single_line_summary
   Given 某个任务级 spec 有 3 个场景，verdict 分别为 pass、fail、skip
   When lifecycle 使用 `--format compact` 输出
@@ -46,7 +46,7 @@ Scenario: compact 格式输出单行摘要
 
 Scenario: diagnostic 格式包含测试原始输出
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_diagnostic_format_includes_raw_test_output
   Given 某个场景绑定了真实测试且测试 fail
   When lifecycle 使用 `--format diagnostic` 输出
@@ -55,7 +55,7 @@ Scenario: diagnostic 格式包含测试原始输出
 
 Scenario: 现有 json 格式不受影响
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_existing_json_format_unchanged
   Given 某个任务级 spec 的 lifecycle 已有测试通过
   When lifecycle 使用 `--format json` 输出

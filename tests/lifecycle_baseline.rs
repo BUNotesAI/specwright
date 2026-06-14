@@ -5,7 +5,7 @@ use std::process::Command;
 fn cargo_lifecycle_default_matches_pre_refactor_baseline() -> Result<(), Box<dyn std::error::Error>>
 {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let output = Command::new(env!("CARGO_BIN_EXE_agent-spec"))
+    let output = Command::new(env!("CARGO_BIN_EXE_specwright"))
         .args([
             "lifecycle",
             "tests/fixtures/cargo-lifecycle-baseline.spec.md",
@@ -48,7 +48,7 @@ fn cargo_lifecycle_default_matches_pre_refactor_baseline() -> Result<(), Box<dyn
 #[test]
 fn bound_cargo_lifecycle_omits_command_program() -> Result<(), Box<dyn std::error::Error>> {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let output = Command::new(env!("CARGO_BIN_EXE_agent-spec"))
+    let output = Command::new(env!("CARGO_BIN_EXE_specwright"))
         .args([
             "lifecycle",
             "tests/fixtures/cargo-lifecycle-command-program.spec.md",
@@ -93,7 +93,7 @@ fn bound_cargo_lifecycle_omits_command_program() -> Result<(), Box<dyn std::erro
     assert_eq!(evidence[0]["passed"], true);
     assert_eq!(
         evidence[0]["test_name"],
-        "agent-spec::test_cargo_command_program_evidence_is_omitted_for_json_compatibility"
+        "specwright::test_cargo_command_program_evidence_is_omitted_for_json_compatibility"
     );
     assert!(
         evidence[0].get("command_program").is_none(),

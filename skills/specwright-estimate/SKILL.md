@@ -1,13 +1,13 @@
 ---
-name: agent-spec-estimate
+name: specwright-estimate
 description: |
-  CRITICAL: Use for estimating work effort from agent-spec Task Contracts. Triggers on:
+  CRITICAL: Use for estimating work effort from specwright Task Contracts. Triggers on:
   estimate, estimation, how long, work effort, round count, time estimate,
   scope, sizing, cost, budget, planning, sprint, capacity,
   "how many rounds", "how long will this take", "estimate this spec"
 ---
 
-# Agent Spec Estimate
+# Specwright Estimate
 
 > **Version:** 1.2.0 | **Last Updated:** 2026-05-27
 
@@ -19,23 +19,23 @@ You are an expert at estimating AI agent work effort from structured Task Contra
 
 ## IMPORTANT: CLI Prerequisite Check
 
-**Before running any `agent-spec` command, Claude MUST check:**
+**Before running any `specwright` command, Claude MUST check:**
 
 ```bash
-command -v agent-spec || cargo install agent-spec
+command -v specwright || cargo install specwright
 ```
 
-If `agent-spec` is not installed, inform the user:
-> `agent-spec` CLI not found. Install with: `cargo install agent-spec`
+If `specwright` is not installed, inform the user:
+> `specwright` CLI not found. Install with: `cargo install specwright`
 
 ## Quick Reference
 
 | Action | Command | Output |
 |--------|---------|--------|
-| Estimate a spec | `agent-spec plan <spec> --code . --format json` then apply estimation | Round-based breakdown table |
-| Estimate (contract only) | `agent-spec contract <spec>` then apply estimation | Round-based breakdown (no codebase context) |
+| Estimate a spec | `specwright plan <spec> --code . --format json` then apply estimation | Round-based breakdown table |
+| Estimate (contract only) | `specwright contract <spec>` then apply estimation | Round-based breakdown (no codebase context) |
 | Batch estimate | Run on all specs in `specs/` | Sorted effort ranking |
-| Calibrate from history | `agent-spec explain <spec> --history` | Compare predicted vs actual rounds |
+| Calibrate from history | `specwright explain <spec> --history` | Compare predicted vs actual rounds |
 
 ## Core Method
 
@@ -98,10 +98,10 @@ If the spec requires real mobile toolchains in close gates, use 5 min/round for 
 
 ```bash
 # Preferred: plan gives contract + codebase context + task sketch
-agent-spec plan specs/task.spec.md --code . --format json
+specwright plan specs/task.spec.md --code . --format json
 
 # Alternative: contract only (no codebase awareness)
-agent-spec contract specs/task.spec.md
+specwright contract specs/task.spec.md
 ```
 
 Extract: scenario count, decision count, boundary path count, constraint count.
@@ -195,7 +195,7 @@ Always produce this exact structure:
 After a task is complete, compare prediction to reality:
 
 ```bash
-agent-spec explain specs/task.spec.md --history
+specwright explain specs/task.spec.md --history
 ```
 
 The retry count from run logs tells you the actual verification rounds. Compare:
@@ -213,7 +213,7 @@ To estimate all active specs:
 ```bash
 for spec in specs/task-*.spec.md; do
   echo "=== $(basename $spec) ==="
-  agent-spec contract "$spec" 2>/dev/null | head -20
+  specwright contract "$spec" 2>/dev/null | head -20
   echo
 done
 ```

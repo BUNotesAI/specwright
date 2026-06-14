@@ -1,4 +1,4 @@
-# agent-spec Integration for Codex / OpenAI Agents
+# specwright Integration for Codex / OpenAI Agents
 
 > This file provides Codex with the same guidance that Claude Code gets via `.claude/skills/`.
 > Two workflows: **Tool-First** (using the CLI) and **Authoring** (writing .spec/.spec.md files).
@@ -13,39 +13,39 @@
 
 ```
 Traditional:  Write Issue (10%) → Agent codes (0%) → Read diff (80%) → Approve (10%)
-agent-spec:   Write Contract (60%) → Agent codes (0%) → Read explain (30%) → Approve (10%)
+specwright:   Write Contract (60%) → Agent codes (0%) → Read explain (30%) → Approve (10%)
 ```
 
 ### Quick Reference
 
 | Command | Purpose | When to Use |
 |---------|---------|-------------|
-| `agent-spec init` | Scaffold new spec | Starting a new task |
-| `agent-spec contract <spec>` | Render Task Contract | Before coding - read the execution plan |
-| `agent-spec lint <files>` | Spec quality check | After writing spec |
-| `agent-spec lifecycle <spec> --code .` | Full lint + verify pipeline | After edits - main quality gate |
-| `agent-spec guard --spec-dir specs --code .` | Repo-wide check | Pre-commit / CI - all specs at once |
-| `agent-spec explain <spec> --format markdown` | PR-ready review summary | Contract Acceptance |
-| `agent-spec explain <spec> --history` | Execution history | See retry count |
-| `agent-spec stamp <spec> --dry-run` | Preview git trailers | Traceability |
-| `agent-spec verify <spec> --code .` | Raw verification only | Verify without lint gate |
-| `agent-spec resolve-ai <spec> --decisions <file>` | Merge AI decisions | Caller mode |
+| `specwright init` | Scaffold new spec | Starting a new task |
+| `specwright contract <spec>` | Render Task Contract | Before coding - read the execution plan |
+| `specwright lint <files>` | Spec quality check | After writing spec |
+| `specwright lifecycle <spec> --code .` | Full lint + verify pipeline | After edits - main quality gate |
+| `specwright guard --spec-dir specs --code .` | Repo-wide check | Pre-commit / CI - all specs at once |
+| `specwright explain <spec> --format markdown` | PR-ready review summary | Contract Acceptance |
+| `specwright explain <spec> --history` | Execution history | See retry count |
+| `specwright stamp <spec> --dry-run` | Preview git trailers | Traceability |
+| `specwright verify <spec> --code .` | Raw verification only | Verify without lint gate |
+| `specwright resolve-ai <spec> --decisions <file>` | Merge AI decisions | Caller mode |
 
 ### The Seven-Step Workflow
 
 1. **Human writes Task Contract** — structured spec with Intent, Decisions, Boundaries, Completion Criteria
-2. **Quality gate** — `agent-spec lint specs/task.spec --min-score 0.7`
-3. **Agent reads Contract** — `agent-spec contract specs/task.spec`
+2. **Quality gate** — `specwright lint specs/task.spec --min-score 0.7`
+3. **Agent reads Contract** — `specwright contract specs/task.spec`
 4. **Agent self-checks with lifecycle** — retry loop until all scenarios pass
-5. **Guard gate** — `agent-spec guard --spec-dir specs --code .` (pre-commit / CI)
-6. **Contract Acceptance** — `agent-spec explain specs/task.spec --format markdown` (human reviews)
-7. **Stamp and archive** — `agent-spec stamp specs/task.spec --dry-run`
+5. **Guard gate** — `specwright guard --spec-dir specs --code .` (pre-commit / CI)
+6. **Contract Acceptance** — `specwright explain specs/task.spec --format markdown` (human reviews)
+7. **Stamp and archive** — `specwright stamp specs/task.spec --dry-run`
 
 ### Retry Protocol
 
 When `lifecycle` fails:
 
-1. Run: `agent-spec lifecycle <spec> --code . --format json`
+1. Run: `specwright lifecycle <spec> --code . --format json`
 2. Parse JSON output, find each scenario's `verdict` and `evidence`
 3. For `fail`: the bound test ran and failed — read evidence, fix code
 4. For `skip`: test not found — check `Test:` selector matches a real test name
@@ -79,12 +79,12 @@ When `lifecycle` fails:
 
 When `--ai-mode caller` is used, the calling Agent acts as the AI verifier:
 
-**Step 1**: `agent-spec lifecycle specs/task.spec --code . --ai-mode caller --format json`
+**Step 1**: `specwright lifecycle specs/task.spec --code . --ai-mode caller --format json`
 - Output includes `"ai_pending": true` and `"ai_requests_file"` if scenarios need AI review
 
 **Step 2**: Read pending requests, analyze each scenario, write decisions JSON, then merge:
 ```bash
-agent-spec resolve-ai specs/task.spec --code . --decisions decisions.json
+specwright resolve-ai specs/task.spec --code . --decisions decisions.json
 ```
 
 ### Common Errors

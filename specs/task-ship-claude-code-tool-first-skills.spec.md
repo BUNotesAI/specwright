@@ -6,7 +6,7 @@ tags: [bootstrap, skills, claude-code, tool-first, phase5]
 
 ## Intent
 
-把 `agent-spec` 真正接到 Claude Code 的日常工作流里，
+把 `specwright` 真正接到 Claude Code 的日常工作流里，
 通过项目级 skills 让 Claude Code 默认走 tool-first 路径，而不是只停留在库接口或概念描述。
 
 ## Decisions
@@ -32,25 +32,25 @@ tags: [bootstrap, skills, claude-code, tool-first, phase5]
 
 Scenario: tool-first skill 指向核心 CLI 工作流
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_claude_code_tool_first_skill_exists_and_mentions_contract_lifecycle_guard
   Given 仓库内提供 Claude Code project-local skills
-  When 用户查看 `agent-spec-tool-first` skill
+  When 用户查看 `specwright-tool-first` skill
   Then skill 内容包含 `contract`、`lifecycle`、`guard`
   And 明确说明优先使用 CLI 工具路径
 
 Scenario: authoring skill 指向 Task Contract 写作
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_claude_code_authoring_skill_exists_and_mentions_task_contract_sections
-  Given 仓库内提供 `agent-spec-authoring` skill
+  Given 仓库内提供 `specwright-authoring` skill
   When 用户查看该 skill
   Then skill 内容包含 `Intent`、`Decisions`、`Boundaries`、`Completion Criteria`
   And 明确要求显式 `Test:` / `测试:` selector
 
 Scenario: README 说明 Claude Code skills 的使用方式
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_readme_documents_claude_code_tool_first_skills
   Given 仓库根目录提供使用文档
   When 用户阅读 README

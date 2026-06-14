@@ -524,7 +524,7 @@ impl SpecLinter for ScenarioPresenceLinter {
                     "task spec has an Acceptance Criteria section but no parseable scenarios".into(),
                 span: *acceptance_sections[0].1,
                 suggestion: Some(
-                    "write scenarios using bare `场景:` / `Scenario:` lines, or run `agent-spec parse` to inspect the AST".into(),
+                    "write scenarios using bare `场景:` / `Scenario:` lines, or run `specwright parse` to inspect the AST".into(),
                 ),
             }];
         }

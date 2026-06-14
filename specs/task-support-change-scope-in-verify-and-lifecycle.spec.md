@@ -31,7 +31,7 @@ tags: [bootstrap, cli, git, boundaries, lifecycle, verify, phase4]
 
 Scenario: lifecycle 在 worktree scope 下读取整棵工作区变更
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_resolve_command_change_paths_reads_worktree_git_changes
   Given 某个临时 git 仓库同时存在 staged、未暂存和未跟踪变更
   When `lifecycle` 使用 `worktree` change scope 解析 change set
@@ -39,7 +39,7 @@ Scenario: lifecycle 在 worktree scope 下读取整棵工作区变更
 
 Scenario: verify 默认 none scope 保持空 change set
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_resolve_command_change_paths_returns_empty_for_none_scope
   Given 某个临时 git 仓库存在 staged 变更
   When `verify` 使用默认 `none` scope 解析 change set
@@ -48,7 +48,7 @@ Scenario: verify 默认 none scope 保持空 change set
 
 Scenario: 显式 change 参数继续优先于自动 scope
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_resolve_command_change_paths_prefers_explicit_changes
   Given 用户显式传入 `custom/file.rs`
   When `verify` 同时配置 `worktree` scope

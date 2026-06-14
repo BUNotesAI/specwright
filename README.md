@@ -6,7 +6,7 @@
 > Upstream verifies agent-written code against a contract for **Cargo** projects with a **bilingual** DSL.
 > `specwright` turns it into a **polyglot, English-DSL, harness-integrated** verifier — see [What this fork adds](#what-this-fork-adds).
 
-`specwright` (*spec* + *-wright*, a "spec-crafter") is an AI-native BDD/spec verification tool: **humans review a contract, agents implement against it, and the machine verifies whether the code satisfies it.** It ships the `agent-spec` binary (the upstream CLI name, kept for lineage).
+`specwright` (*spec* + *-wright*, a "spec-crafter") is an AI-native BDD/spec verification tool: **humans review a contract, agents implement against it, and the machine verifies whether the code satisfies it.** It installs the `specwright` CLI (forked from upstream's `agent-spec` binary).
 
 ## What this fork adds
 
@@ -33,7 +33,7 @@ A **Task Contract** is a spec with four parts:
 
 ```bash
 cargo install --path .
-agent-spec --version   # 2.0.0
+specwright --version   # 2.0.0
 ```
 
 ## Example
@@ -74,17 +74,27 @@ Keywords are English-only; description text may be any language. For a non-Cargo
 
 ```bash
 # scaffold a task contract (add --template rewrite-parity for rewrite/parity tasks)
-agent-spec init --level task --name "User Registration API"
+specwright init --level task --name "User Registration API"
 
 # the main quality gate: lint + verify + report
-agent-spec lifecycle specs/your-task.spec.md --code . --format json
+specwright lifecycle specs/your-task.spec.md --code . --format json
 
 # lint all specs + verify against the current change set
-agent-spec guard
+specwright guard
 
 # human-readable contract review (Contract Acceptance — replaces code review)
-agent-spec explain specs/your-task.spec.md --code .
+specwright explain specs/your-task.spec.md --code .
 ```
+
+### Rewrite/parity contracts
+
+When you are reimplementing existing behavior (a rewrite or a cross-language port),
+scaffold with `--template rewrite-parity` and contract the **observable** behavior so
+regressions are caught before the code drifts. The worked example
+[`examples/rewrite-parity-contract.spec`](examples/rewrite-parity-contract.spec) pins
+the two parity axes that rewrites usually break: **command x output mode** (e.g. each
+command's human output vs `--json` payload) and **local x remote** (the documented
+source lookup order — local source -> cache -> bundled -> remote, including cold start).
 
 ## Commands
 
@@ -109,8 +119,8 @@ agent-spec explain specs/your-task.spec.md --code .
 ## Layout and contributing
 
 - Specs live in `specs/` (future-phase specs staged in `specs/roadmap/`); runnable examples in [`examples/`](examples).
-- Agent skills (Claude Code, tool-first) under [`skills/`](skills).
-- To contribute: write a task contract for your change, implement it, then run `agent-spec lifecycle` and `agent-spec guard` before committing. Project rules and the agent workflow live in `CLAUDE.md` / `AGENTS.md`.
+- Agent skills under [`skills/`](skills), including the **tool-first** workflow skill `specwright-tool-first`. For Claude Code, copy them into `.claude/skills/` (they are manual copies, not symlinked); other agents use their own skills directory (for example `~/.codex/skills/`).
+- To contribute: write a task contract for your change, implement it, then run `specwright lifecycle` and `specwright guard` before committing. Project rules and the agent workflow live in `CLAUDE.md` / `AGENTS.md`.
 
 ## License
 

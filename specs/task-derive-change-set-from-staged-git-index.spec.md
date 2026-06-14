@@ -6,7 +6,7 @@ tags: [bootstrap, cli, git, boundaries, guard]
 
 ## Intent
 
-让 `agent-spec guard` 在 git 仓库中无需手工传入 `--change`，
+让 `specwright guard` 在 git 仓库中无需手工传入 `--change`，
 也能从 staged index 自动推导变更文件集合，再交给边界校验使用。
 
 ## Decisions

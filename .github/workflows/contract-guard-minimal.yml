@@ -1,4 +1,4 @@
-# agent-spec Contract Guard — Minimal Version
+# specwright Contract Guard — Minimal Version
 #
 # A simpler workflow that just runs guard and posts the result.
 # Use this if you want the fastest possible setup.
@@ -32,18 +32,18 @@ jobs:
       - name: Test
         run: cargo test --quiet
 
-      - name: Cache agent-spec
+      - name: Cache specwright
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/agent-spec
-          key: agent-spec-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          path: ~/.cargo/bin/specwright
+          key: specwright-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install agent-spec
+      - name: Install specwright
         run: |
-          command -v agent-spec || cargo install --path . --bin agent-spec
+          command -v specwright || cargo install --path . --bin specwright
 
       - name: Contract Guard
-        run: agent-spec guard --spec-dir specs --code . --change-scope worktree
+        run: specwright guard --spec-dir specs --code . --change-scope worktree
 
       - name: Contract Summary
         if: always()
@@ -51,5 +51,5 @@ jobs:
           for spec in specs/*.spec specs/*.spec.md; do
             [ -f "$spec" ] || continue
             echo "---"
-            agent-spec explain "$spec" --code . --format markdown 2>/dev/null || true
+            specwright explain "$spec" --code . --format markdown 2>/dev/null || true
           done >> "$GITHUB_STEP_SUMMARY"

@@ -6,7 +6,7 @@ tags: [vcs, jj, integration]
 
 ## Intent
 
-Add optional jj version control awareness to agent-spec so that users who
+Add optional jj version control awareness to specwright so that users who
 colocate jj in their Git repos automatically get richer traceability—stable
 change IDs in stamp trailers, jj operation IDs in run logs, and cross-run
 file diffs in explain --history—without requiring jj as a dependency or
@@ -37,7 +37,7 @@ changing any default behaviour for pure-Git users.
 
 Scenario: VCS type auto-detection prefers jj in colocated repos
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_vcs_detect_prefers_jj_when_colocated
   Given a temporary directory initialised with both `git init` and `jj git init --colocate`
   When `detect_vcs_type` is called on that directory
@@ -45,7 +45,7 @@ Scenario: VCS type auto-detection prefers jj in colocated repos
 
 Scenario: VCS detection returns Git when only .git exists
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_vcs_detect_returns_git_when_only_git
   Given a temporary directory initialised with `git init` only
   When `detect_vcs_type` is called on that directory
@@ -53,7 +53,7 @@ Scenario: VCS detection returns Git when only .git exists
 
 Scenario: VCS detection returns None outside any repo
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_vcs_detect_returns_none_outside_repo
   Given an empty temporary directory with no .git or .jj
   When `detect_vcs_type` is called on that directory
@@ -61,7 +61,7 @@ Scenario: VCS detection returns None outside any repo
 
 Scenario: get_vcs_context returns change ID and operation ID in jj repo
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_vcs_context_returns_jj_ids
   Given a temporary jj repo with at least one committed file
   When `get_vcs_context` is called
@@ -71,7 +71,7 @@ Scenario: get_vcs_context returns change ID and operation ID in jj repo
 
 Scenario: get_vcs_context returns commit hash in pure Git repo
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_vcs_context_returns_git_hash
   Given a temporary Git repo with at least one commit
   When `get_vcs_context` is called
@@ -81,7 +81,7 @@ Scenario: get_vcs_context returns commit hash in pure Git repo
 
 Scenario: stamp dry-run includes Spec-Change trailer in jj repo
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_stamp_trailers_include_jj_change_id
   Given a jj repo is detected by `get_vcs_context`
   When `build_stamp_trailers` is called with VCS context
@@ -90,7 +90,7 @@ Scenario: stamp dry-run includes Spec-Change trailer in jj repo
 
 Scenario: stamp dry-run omits Spec-Change trailer in pure Git repo
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_stamp_trailers_omit_change_id_for_git
   Given a pure Git repo is detected by `get_vcs_context`
   When `build_stamp_trailers` is called with VCS context
@@ -98,7 +98,7 @@ Scenario: stamp dry-run omits Spec-Change trailer in pure Git repo
 
 Scenario: RunLogEntry serialises with optional VCS context
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_run_log_entry_serialises_vcs_context
   Given a RunLogEntry with a jj VcsContext attached
   When the entry is serialised to JSON and deserialised back
@@ -106,7 +106,7 @@ Scenario: RunLogEntry serialises with optional VCS context
 
 Scenario: RunLogEntry without VCS context stays backward-compatible
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_run_log_entry_without_vcs_is_backward_compatible
   Given a JSON string from an old RunLogEntry without the vcs field
   When the string is deserialised into RunLogEntry
@@ -115,7 +115,7 @@ Scenario: RunLogEntry without VCS context stays backward-compatible
 
 Scenario: explain --history shows jj change diff between runs
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_explain_history_shows_jj_diff_between_runs
   Given two RunLogEntry records with different jj operation IDs
   When `read_run_log_history` formats the history
@@ -125,7 +125,7 @@ Scenario: explain --history shows jj change diff between runs
 
 Scenario: explain --history degrades gracefully without jj
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_explain_history_degrades_without_jj
   Given two RunLogEntry records with jj VCS context
   When `read_run_log_history` runs in an environment where `jj` is not on PATH
@@ -135,10 +135,10 @@ Scenario: explain --history degrades gracefully without jj
 
 Scenario: existing change-scope jj still works end-to-end
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_resolve_command_change_paths_reads_jj_changes
   Given a jj repo with a modified file
-  When agent-spec resolves change paths with `--change-scope jj`
+  When specwright resolves change paths with `--change-scope jj`
   Then the modified file appears in the resolved list
 
 ## Out of Scope

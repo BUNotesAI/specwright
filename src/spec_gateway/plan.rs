@@ -781,13 +781,13 @@ pub fn format_plan_prompt(ctx: &PlanContext) -> String {
 
     out.push_str("## Verification (MANDATORY)\n\n");
     out.push_str("After implementation, you MUST run:\n");
-    out.push_str("```bash\nagent-spec lifecycle <spec> --code . --format json\n```\n");
+    out.push_str("```bash\nspecwright lifecycle <spec> --code . --format json\n```\n");
     out.push_str("Do NOT claim completion until all scenarios show \"pass\".\n\n");
 
     out.push_str("## Execution Protocol\n\n");
     out.push_str("### Two-Stage Review\n");
     out.push_str("After implementing each scenario group:\n");
-    out.push_str("1. **Spec compliance**: Execute `agent-spec lifecycle` with that group's test selectors. All must show `pass`.\n");
+    out.push_str("1. **Spec compliance**: Execute `specwright lifecycle` with that group's test selectors. All must show `pass`.\n");
     out.push_str("2. **Code quality**: Review for dead code, `.unwrap()` in production paths, boundary violations, unnecessary complexity.\n\n");
     out.push_str(
         "Do NOT proceed to the next group until both stages pass for the current group.\n\n",
@@ -844,7 +844,7 @@ mod tests {
                 }],
                 test_selector: Some(TestSelector {
                     filter: "test_a".into(),
-                    package: Some("agent-spec".into()),
+                    package: Some("specwright".into()),
                     level: None,
                     test_double: None,
                     targets: None,
@@ -870,7 +870,7 @@ mod tests {
                 steps: vec![],
                 test_selector: Some(TestSelector {
                     filter: "test_c".into(),
-                    package: Some("agent-spec".into()),
+                    package: Some("specwright".into()),
                     level: None,
                     test_double: None,
                     targets: None,
@@ -1098,15 +1098,15 @@ mod tests {
         assert!(prompt.contains("inherited constraint from project"));
 
         // Should NOT contain CLI dependency instructions
-        assert!(!prompt.contains("run agent-spec"));
-        assert!(!prompt.contains("agent-spec plan"));
+        assert!(!prompt.contains("run specwright"));
+        assert!(!prompt.contains("specwright plan"));
 
         // Should contain guiding instruction
         assert!(prompt.contains("implementation plan"));
 
         // Should contain verification guidance
         assert!(prompt.contains("Verification (MANDATORY)"));
-        assert!(prompt.contains("agent-spec lifecycle"));
+        assert!(prompt.contains("specwright lifecycle"));
 
         // Should contain execution protocol (P6 Two-Stage Review + P7 Status Protocol)
         assert!(prompt.contains("Two-Stage Review"));

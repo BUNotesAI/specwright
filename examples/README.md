@@ -1,6 +1,6 @@
 # Examples
 
-These files are authoring references for `agent-spec`.
+These files are authoring references for `specwright`.
 
 See [`../README.md`](../README.md) for the main workflow and CLI usage.
 

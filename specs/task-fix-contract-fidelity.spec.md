@@ -7,7 +7,7 @@ tags: [bootstrap, contract, phase0]
 ## Intent
 
 在继续扩展 review flow 之前，
-先修正 `agent-spec` 的合同面失真问题，让 Agent 读取到的 Task Contract 更接近真实规格。
+先修正 `specwright` 的合同面失真问题，让 Agent 读取到的 Task Contract 更接近真实规格。
 
 ## Decisions
 
@@ -49,15 +49,15 @@ Scenario: Task Contract 区分 Must 与 Decisions
 
 Scenario: contract 输出保留结构化验收信息
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_contract_output_preserves_step_tables_and_test_selectors
   Given 某个 Completion Criteria 场景带有 step table 与结构化 `测试:` selector
-  When CLI 渲染 `agent-spec contract`
+  When CLI 渲染 `specwright contract`
   Then 默认输出保留这些结构化信息
   And Claude Code 的 tool-first 路径不再丢失关键验收上下文
 
 ## Out of Scope
 
 - 完整 `Boundaries` 继承
-- `agent-spec explain`
+- `specwright explain`
 - run log 与真实 AI backend

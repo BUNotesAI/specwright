@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>agent-spec — Contract-Driven AI Coding</title>
+<title>specwright — Contract-Driven AI Coding</title>
 <meta name="description" content="An AI-native BDD/spec verification tool. Humans write contracts. Agents implement. Machines verify.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
@@ -568,7 +568,7 @@ footer a:hover { text-decoration: underline; }
 <!-- ═══════════════════════════════════════════════ -->
 <nav id="nav">
   <div class="inner">
-    <a href="#" class="logo">agent-spec<span> v0.2</span></a>
+    <a href="#" class="logo">specwright<span> v0.2</span></a>
     <div class="links">
       <a href="#shift">Why</a>
       <a href="#skills">Skills</a>
@@ -587,7 +587,7 @@ footer a:hover { text-decoration: underline; }
 <!-- ═══════════════════════════════════════════════ -->
 <section class="hero">
   <div class="container hero-content">
-    <h1>agent-spec<span class="cursor"></span></h1>
+    <h1>specwright<span class="cursor"></span></h1>
     <p class="tagline">
       Humans write the <em>contract</em>. Agents implement. Machines verify.<br>
       An AI-native BDD/spec tool that shifts code review from <em>reading diffs</em> to <em>defining intent</em>.
@@ -617,7 +617,7 @@ footer a:hover { text-decoration: underline; }
       <h2 class="section-title">Review Point Displacement</h2>
       <p class="section-desc">
         Traditional code review asks humans to judge <strong>500 lines of code diff</strong>.
-        agent-spec moves the review point: humans define <strong>50 lines of contract</strong>,
+        specwright moves the review point: humans define <strong>50 lines of contract</strong>,
         and machines verify the code against it.
       </p>
     </div>
@@ -637,7 +637,7 @@ footer a:hover { text-decoration: underline; }
       </div>
 
       <div class="shift-card new">
-        <h3>✓ agent-spec Flow</h3>
+        <h3>✓ specwright Flow</h3>
         <p style="font-size:14px; color:var(--text-dim); margin-bottom:18px;">
           <strong style="color:var(--accent)">Contract (60%)</strong> → Agent Codes → Explain → Approve
         </p>
@@ -666,7 +666,7 @@ footer a:hover { text-decoration: underline; }
       <div class="section-label">Agent Integration</div>
       <h2 class="section-title">Skills for Every AI Agent</h2>
       <p class="section-desc">
-        agent-spec ships project-local Skills that teach AI agents the contract-driven
+        specwright ships project-local Skills that teach AI agents the contract-driven
         workflow. One install command — works with Claude Code, Codex, Cursor, Aider, and any agent that reads workspace conventions.
       </p>
     </div>
@@ -677,12 +677,12 @@ footer a:hover { text-decoration: underline; }
         <span class="cmd-text">cargo install --path . --force</span>
         <span class="copy-hint">click to copy</span>
       </div>
-      <div class="skills-install-note">Installs the agent-spec CLI only; sync the 3 skills into your agent's skills directory manually</div>
+      <div class="skills-install-note">Installs the specwright CLI only; sync the 3 skills into your agent's skills directory manually</div>
     </div>
 
     <div class="skills-grid reveal">
       <div class="skill-card">
-        <h3>agent-spec-tool-first</h3>
+        <h3>specwright-tool-first</h3>
         <div class="skill-tag skill-tag-workflow">workflow</div>
         <p>
           The default integration path. Teaches the Agent the seven-step workflow:
@@ -691,7 +691,7 @@ footer a:hover { text-decoration: underline; }
         </p>
       </div>
       <div class="skill-card">
-        <h3>agent-spec-authoring</h3>
+        <h3>specwright-authoring</h3>
         <div class="skill-tag skill-tag-author">authoring</div>
         <p>
           The spec writing path. Teaches the Agent how to draft and revise Task Contracts
@@ -700,7 +700,7 @@ footer a:hover { text-decoration: underline; }
         </p>
       </div>
       <div class="skill-card">
-        <h3>agent-spec-estimate</h3>
+        <h3>specwright-estimate</h3>
         <div class="skill-tag skill-tag-estimate">estimation</div>
         <p>
           The estimation path. Maps Task Contract elements — scenarios, decisions,
@@ -902,7 +902,7 @@ footer a:hover { text-decoration: underline; }
       <h2 class="section-title">Seven Steps, Three Actors</h2>
       <p class="section-desc">
         Human writes intent. Agent implements code. Machine verifies correctness.
-        Each step has a clear owner and a specific agent-spec command.
+        Each step has a clear owner and a specific specwright command.
       </p>
     </div>
 
@@ -912,49 +912,49 @@ footer a:hover { text-decoration: underline; }
         <div class="pipe-num">STEP 01</div>
         <div class="pipe-title">Write Contract <span class="pipe-who who-human">HUMAN</span></div>
         <div class="pipe-desc">Define Intent, Decisions, Boundaries, and Completion Criteria. Exception scenarios ≥ happy path scenarios.</div>
-        <div class="pipe-cmd">agent-spec init --level task --name "User Registration"</div>
+        <div class="pipe-cmd">specwright init --level task --name "User Registration"</div>
       </div>
       <div class="pipe-step">
         <div class="pipe-dot"></div>
         <div class="pipe-num">STEP 02</div>
         <div class="pipe-title">Quality Gate <span class="pipe-who who-machine">MACHINE</span></div>
         <div class="pipe-desc">Check Contract quality before handing to Agent. Catches vague verbs, unquantified constraints, sycophancy bias.</div>
-        <div class="pipe-cmd">agent-spec lint specs/task.spec --min-score 0.7</div>
+        <div class="pipe-cmd">specwright lint specs/task.spec --min-score 0.7</div>
       </div>
       <div class="pipe-step">
         <div class="pipe-dot"></div>
         <div class="pipe-num">STEP 03</div>
         <div class="pipe-title">Agent Implements <span class="pipe-who who-agent">AGENT</span></div>
         <div class="pipe-desc">Agent reads the Contract and codes within its constraints. Decisions are fixed, boundaries are enforced, criteria are the stop condition.</div>
-        <div class="pipe-cmd">agent-spec contract specs/task.spec</div>
+        <div class="pipe-cmd">specwright contract specs/task.spec</div>
       </div>
       <div class="pipe-step">
         <div class="pipe-dot"></div>
         <div class="pipe-num">STEP 04</div>
         <div class="pipe-title">Lifecycle Verification <span class="pipe-who who-machine">MACHINE</span></div>
         <div class="pipe-desc">Four-layer verification pipeline: lint → structural → boundaries → tests. Agent retries on failure — no human needed.</div>
-        <div class="pipe-cmd">agent-spec lifecycle specs/task.spec --code . --format json</div>
+        <div class="pipe-cmd">specwright lifecycle specs/task.spec --code . --format json</div>
       </div>
       <div class="pipe-step">
         <div class="pipe-dot"></div>
         <div class="pipe-num">STEP 05</div>
         <div class="pipe-title">Guard Gate <span class="pipe-who who-machine">MACHINE</span></div>
         <div class="pipe-desc">Pre-commit or CI check. All specs in the repo are verified against the current change set.</div>
-        <div class="pipe-cmd">agent-spec guard --spec-dir specs --code .</div>
+        <div class="pipe-cmd">specwright guard --spec-dir specs --code .</div>
       </div>
       <div class="pipe-step">
         <div class="pipe-dot"></div>
         <div class="pipe-num">STEP 06</div>
         <div class="pipe-title">Contract Acceptance <span class="pipe-who who-human">HUMAN</span></div>
         <div class="pipe-desc">Reviewer reads a Contract-level summary — not a code diff. Two questions: Is the Contract correct? Did all verifications pass?</div>
-        <div class="pipe-cmd">agent-spec explain specs/task.spec --format markdown</div>
+        <div class="pipe-cmd">specwright explain specs/task.spec --format markdown</div>
       </div>
       <div class="pipe-step">
         <div class="pipe-dot"></div>
         <div class="pipe-num">STEP 07</div>
         <div class="pipe-title">Stamp & Archive <span class="pipe-who who-machine">MACHINE</span></div>
         <div class="pipe-desc">Record Contract-to-Commit traceability via Git trailers. Every commit traces back to intent.</div>
-        <div class="pipe-cmd">agent-spec stamp specs/task.spec --dry-run</div>
+        <div class="pipe-cmd">specwright stamp specs/task.spec --dry-run</div>
       </div>
     </div>
   </div>
@@ -1036,7 +1036,7 @@ footer a:hover { text-decoration: underline; }
       <div class="section-label">AI Verification</div>
       <h2 class="section-title">Two Modes of AI Verification</h2>
       <p class="section-desc">
-        Mechanical verifiers handle deterministic checks. For the rest, agent-spec
+        Mechanical verifiers handle deterministic checks. For the rest, specwright
         supports two modes: the calling Agent does the review, or an injected backend does it.
       </p>
     </div>
@@ -1045,13 +1045,13 @@ footer a:hover { text-decoration: underline; }
       <div class="ai-mode-card">
         <h3>Caller Mode</h3>
         <div class="mode-tag">--ai-mode caller</div>
-        <p>The calling Agent (Claude Code, Codex…) performs AI verification itself. agent-spec emits structured requests; the Agent returns structured decisions.</p>
+        <p>The calling Agent (Claude Code, Codex…) performs AI verification itself. specwright emits structured requests; the Agent returns structured decisions.</p>
         <div class="flow-diagram">
           <div class="flow-row"><span class="flow-node flow-agent">Agent</span> <span class="flow-arrow">→</span> <span class="flow-node flow-spec">lifecycle</span></div>
-          <div class="flow-row"><span class="flow-node flow-spec">agent-spec</span> <span class="flow-arrow">→</span> runs L1–L3 mechanical</div>
-          <div class="flow-row"><span class="flow-node flow-spec">agent-spec</span> <span class="flow-arrow">→</span> emits <code>AiRequest[]</code></div>
+          <div class="flow-row"><span class="flow-node flow-spec">specwright</span> <span class="flow-arrow">→</span> runs L1–L3 mechanical</div>
+          <div class="flow-row"><span class="flow-node flow-spec">specwright</span> <span class="flow-arrow">→</span> emits <code>AiRequest[]</code></div>
           <div class="flow-row"><span class="flow-node flow-agent">Agent</span> <span class="flow-arrow">→</span> analyzes code, returns <code>AiDecision[]</code></div>
-          <div class="flow-row"><span class="flow-node flow-spec">agent-spec</span> <span class="flow-arrow">→</span> merges into final report</div>
+          <div class="flow-row"><span class="flow-node flow-spec">specwright</span> <span class="flow-arrow">→</span> merges into final report</div>
           <div class="flow-row"><span class="flow-node flow-human">Human</span> <span class="flow-arrow">→</span> reviews <code>uncertain</code> findings</div>
         </div>
       </div>
@@ -1062,10 +1062,10 @@ footer a:hover { text-decoration: underline; }
         <p>An independent AI backend is injected via the Rust API. Ideal for orchestrator systems (Symphony-like) using a different model for verification.</p>
         <div class="flow-diagram">
           <div class="flow-row"><span class="flow-node flow-ext">Orchestrator</span> <span class="flow-arrow">→</span> injects <code>AiBackend</code></div>
-          <div class="flow-row"><span class="flow-node flow-spec">agent-spec</span> <span class="flow-arrow">→</span> runs L1–L3 mechanical</div>
-          <div class="flow-row"><span class="flow-node flow-spec">agent-spec</span> <span class="flow-arrow">→</span> calls <code>backend.analyze()</code></div>
+          <div class="flow-row"><span class="flow-node flow-spec">specwright</span> <span class="flow-arrow">→</span> runs L1–L3 mechanical</div>
+          <div class="flow-row"><span class="flow-node flow-spec">specwright</span> <span class="flow-arrow">→</span> calls <code>backend.analyze()</code></div>
           <div class="flow-row"><span class="flow-node flow-ext">AI Backend</span> <span class="flow-arrow">→</span> returns <code>AiDecision</code></div>
-          <div class="flow-row"><span class="flow-node flow-spec">agent-spec</span> <span class="flow-arrow">→</span> complete report, no human loop</div>
+          <div class="flow-row"><span class="flow-node flow-spec">specwright</span> <span class="flow-arrow">→</span> complete report, no human loop</div>
         </div>
       </div>
     </div>
@@ -1073,7 +1073,7 @@ footer a:hover { text-decoration: underline; }
     <p class="reveal" style="font-size:15px; color:var(--text-dim); text-align:center; max-width:600px; margin:0 auto;">
       Both modes share the same data structures: <code style="font-family:var(--font-mono); background:var(--bg-code); padding:2px 8px; border-radius:4px; color:var(--accent);">AiRequest</code> and
       <code style="font-family:var(--font-mono); background:var(--bg-code); padding:2px 8px; border-radius:4px; color:var(--accent);">AiDecision</code>.
-      agent-spec stays provider-agnostic.
+      specwright stays provider-agnostic.
     </p>
   </div>
 </section>
@@ -1123,17 +1123,17 @@ footer a:hover { text-decoration: underline; }
 
     <div class="install-block reveal">
       <span class="comment"># Install the CLI from source</span><br>
-      <span class="cmd">git clone https://github.com/ZhangHanDong/agent-spec && cd agent-spec && cargo install --path . --force</span><br><br>
+      <span class="cmd">git clone https://github.com/ZhangHanDong/agent-spec && cd specwright && cargo install --path . --force</span><br><br>
       <span class="comment"># Or install CLI only</span><br>
-      <span class="cmd">cargo install agent-spec</span><br><br>
+      <span class="cmd">cargo install specwright</span><br><br>
       <span class="comment"># Create a task contract</span><br>
-      <span class="cmd">agent-spec init --level task --name "User Registration"</span><br><br>
+      <span class="cmd">specwright init --level task --name "User Registration"</span><br><br>
       <span class="comment"># Check contract quality</span><br>
-      <span class="cmd">agent-spec lint specs/user-registration.spec --min-score 0.7</span><br><br>
+      <span class="cmd">specwright lint specs/user-registration.spec --min-score 0.7</span><br><br>
       <span class="comment"># Verify code against contract</span><br>
-      <span class="cmd">agent-spec lifecycle specs/user-registration.spec --code . --format json</span><br><br>
+      <span class="cmd">specwright lifecycle specs/user-registration.spec --code . --format json</span><br><br>
       <span class="comment"># Generate review summary for PR</span><br>
-      <span class="cmd">agent-spec explain specs/user-registration.spec --format markdown</span>
+      <span class="cmd">specwright explain specs/user-registration.spec --format markdown</span>
     </div>
 
     <div class="reveal" style="margin-top:48px; text-align:center;">
@@ -1148,7 +1148,7 @@ footer a:hover { text-decoration: underline; }
 <!-- ═══════════════════════════════════════════════ -->
 <footer>
   <div class="container">
-    <p>agent-spec — AI-native BDD/spec verification · MIT License</p>
+    <p>specwright — AI-native BDD/spec verification · MIT License</p>
     <p style="margin-top:8px;">
       <a href="https://github.com/ZhangHanDong/agent-spec">GitHub</a> ·
       <a href="https://github.com/ZhangHanDong/agent-spec/tree/main/examples">Examples</a> ·

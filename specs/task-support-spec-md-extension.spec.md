@@ -67,7 +67,7 @@ Scenario: resolver 回退到 .spec 继承文件
 
 Scenario: init 默认生成 .spec.md 文件
   Test: test_init_creates_spec_md_by_default
-  When 执行 `agent-spec init --level task --name test-task`
+  When 执行 `specwright init --level task --name test-task`
   Then 生成的文件名为 `test-task.spec.md`
 
 Scenario: boundary checker 识别 .spec.md 为 spec 路径

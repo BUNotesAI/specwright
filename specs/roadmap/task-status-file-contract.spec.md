@@ -37,7 +37,7 @@ estimate: 0.5d
 
 Scenario: 全部通过时写入 success 状态
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_status_file_writes_success_on_all_pass
   Given 某个任务级 spec 所有场景 verdict 为 `pass`
   When lifecycle 使用 `--status-file` 参数执行
@@ -46,7 +46,7 @@ Scenario: 全部通过时写入 success 状态
 
 Scenario: 部分失败时写入 partial_success 状态
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_status_file_writes_partial_success_on_mixed
   Given 某个任务级 spec 有 pass 和 fail 混合
   When lifecycle 使用 `--status-file` 参数执行
@@ -55,7 +55,7 @@ Scenario: 部分失败时写入 partial_success 状态
 
 Scenario: gate_blocked 时 outcome 反映门禁状态
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_status_file_outcome_reflects_gate_blocked
   Given 某个 critical 场景 fail
   When lifecycle 使用 `--status-file` 参数执行
@@ -64,7 +64,7 @@ Scenario: gate_blocked 时 outcome 反映门禁状态
 
 Scenario: 无 --status-file 时不产生文件
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_no_status_file_flag_produces_no_file
   Given lifecycle 未传入 `--status-file`
   When lifecycle 执行完毕

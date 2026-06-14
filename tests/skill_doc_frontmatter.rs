@@ -1,10 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! Regression guard for the recurring agent-spec front-matter format bug.
+//! Regression guard for the recurring specwright front-matter format bug.
 //!
-//! agent-spec front-matter has NO opening `---`: it starts on the first line of
+//! specwright front-matter has NO opening `---`: it starts on the first line of
 //! the block and ends at a single `---`. A `---` line immediately followed by
-//! `spec: project|task|org` makes `agent-spec parse` fail with
+//! `spec: project|task|org` makes `specwright parse` fail with
 //! `invalid front-matter: missing 'spec:' field`. Skill authors keep
 //! reintroducing it because the standard Markdown/YAML convention wraps
 //! front-matter in `---...---`. These tests scan the bundled skill docs so the
@@ -81,7 +81,7 @@ fn skill_docs_have_no_leading_dash_frontmatter() {
 
     assert!(
         violations.is_empty(),
-        "agent-spec front-matter must start on the first line with no opening '---'.\n\
+        "specwright front-matter must start on the first line with no opening '---'.\n\
          Delete the leading '---' (the line number below points at it):\n  {}",
         violations.join("\n  ")
     );
@@ -90,7 +90,7 @@ fn skill_docs_have_no_leading_dash_frontmatter() {
 /// Every front-matter-bearing spec example in the skill docs must actually parse.
 #[test]
 fn skill_doc_spec_examples_parse() {
-    let bin = env!("CARGO_BIN_EXE_agent-spec");
+    let bin = env!("CARGO_BIN_EXE_specwright");
     let dir = std::env::temp_dir();
     let mut failures = Vec::new();
     let mut checked = 0usize;
@@ -108,7 +108,7 @@ fn skill_doc_spec_examples_parse() {
             let parsed = Command::new(bin)
                 .args(["parse", path.to_str().unwrap()])
                 .output()
-                .expect("run agent-spec parse");
+                .expect("run specwright parse");
             if !parsed.status.success() {
                 failures.push(format!(
                     "{}: {}",

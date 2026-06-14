@@ -6,7 +6,7 @@ tags: [roadmap, planned, phase5, ecosystem]
 
 ## Intent
 
-让更多 Agent 工具和编排系统可以复用 `agent-spec`，
+让更多 Agent 工具和编排系统可以复用 `specwright`，
 同时保持核心定位不变：CLI-first、tool-first、agent-agnostic。
 
 ## Decisions
@@ -36,7 +36,7 @@ tags: [roadmap, planned, phase5, ecosystem]
 
 Scenario: 提供更多 Agent 工具的集成模板
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_additional_agent_integration_templates_exist
   Given 仓库需要支持多种 Agent 工具
   When 用户查看集成模板目录
@@ -53,7 +53,7 @@ Scenario: JSON 输出适合作为编排接口
 
 Scenario: checkpoint 能力保持可选
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_checkpoint_commands_are_optional_and_vcs_aware
   Given 当前仓库可能是 Git、jj 或无 VCS
   When 用户查看 checkpoint 能力

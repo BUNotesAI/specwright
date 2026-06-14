@@ -39,7 +39,7 @@ estimate: 0.5d
 
 Scenario: critical 场景失败时报告 gate_blocked
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_critical_scenario_fail_sets_gate_blocked
   Given 某个任务级 spec 有一个标记为 `critical` 的场景
   When 该场景 verdict 为 `fail`
@@ -48,7 +48,7 @@ Scenario: critical 场景失败时报告 gate_blocked
 
 Scenario: critical 场景通过时不触发门禁
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_critical_scenario_pass_no_gate_block
   Given 某个任务级 spec 有一个标记为 `critical` 的场景
   When 该场景 verdict 为 `pass`
@@ -57,7 +57,7 @@ Scenario: critical 场景通过时不触发门禁
 
 Scenario: 无 critical 标签时行为不变
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_no_critical_tag_preserves_existing_behavior
   Given 某个任务级 spec 没有任何 `critical` 标签
   When lifecycle 输出 JSON 结果
@@ -66,7 +66,7 @@ Scenario: 无 critical 标签时行为不变
 
 Scenario: 场景名称后缀作为 critical 简写
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_critical_suffix_in_scenario_name
   Given 某个场景名称为 "用户注册成功（critical）"
   When parser 解析该场景
@@ -75,7 +75,7 @@ Scenario: 场景名称后缀作为 critical 简写
 
 Scenario: critical 失败的退出码为 2
   Test:
-    Package: agent-spec
+    Package: specwright
     Filter: test_critical_fail_exit_code_is_2
   Given 某个任务级 spec 有 critical 场景且 verdict 为 `fail`
   When lifecycle 命令执行完毕

@@ -125,13 +125,13 @@ mod tests {
             ),
             (
                 TestSelector {
-                    package: Some("agent-spec".into()),
+                    package: Some("specwright".into()),
                     filter: "with_package".into(),
                     level: None,
                     test_double: None,
                     targets: None,
                 },
-                vec!["test", "-q", "-p", "agent-spec", "with_package"],
+                vec!["test", "-q", "-p", "specwright", "with_package"],
             ),
             (
                 TestSelector {
