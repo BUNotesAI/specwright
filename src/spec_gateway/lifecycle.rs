@@ -459,38 +459,38 @@ name: "测试任务"
 tags: [test]
 ---
 
-## 意图
+## Intent
 
 实现一个简单的功能。
 
-## 约束
+## Constraints
 
-### 禁止做
+### Must Not
 - 禁止使用 `.unwrap()`
 - 禁止使用 `panic!`
 
-### 必须做
+### Must
 - 所有错误必须返回 Result
 
-## 已定决策
+## Decisions
 
 - 使用 thiserror 处理错误类型
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 正常路径
-  测试: test_full_lifecycle
-  假设 输入有效
-  当 调用函数
-  那么 返回 Ok
+Scenario: 正常路径
+  Test: test_full_lifecycle
+  Given 输入有效
+  When 调用函数
+  Then 返回 Ok
 
-场景: 错误路径
-  测试: test_plan_returns_task_contract
-  假设 输入无效
-  当 调用函数
-  那么 返回 Err
+Scenario: 错误路径
+  Test: test_plan_returns_task_contract
+  Given 输入无效
+  When 调用函数
+  Then 返回 Err
 
-## 排除范围
+## Out of Scope
 
 - 日志系统
 "#;
@@ -557,12 +557,12 @@ tags: [test]
 name: "缺少测试绑定"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 缺少 selector
-  假设 存在一个任务规格
-  当 质量闸门检查该规格
-  那么 质量闸门应失败
+Scenario: 缺少 selector
+  Given 存在一个任务规格
+  When 质量闸门检查该规格
+  Then 质量闸门应失败
 "#,
         )
         .unwrap();
@@ -635,9 +635,9 @@ name: "缺少测试绑定"
 name: "项目规则"
 ---
 
-## 约束
+## Constraints
 
-### 禁止做
+### Must Not
 - 禁止使用 `panic!`
 "#,
         )
@@ -650,21 +650,21 @@ name: "任务"
 inherits: project
 ---
 
-## 意图
+## Intent
 
 实现功能。
 
-## 约束
+## Constraints
 
-### 必须做
+### Must
 - 返回 Result
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 正常路径
-  假设 输入有效
-  当 调用函数
-  那么 返回 Ok
+Scenario: 正常路径
+  Given 输入有效
+  When 调用函数
+  Then 返回 Ok
 "#,
         )
         .unwrap();
@@ -695,15 +695,15 @@ inherits: project
 name: "项目规则"
 ---
 
-## 约束
+## Constraints
 
-### 必须做
+### Must
 - 所有公共 API 返回结构化错误
 
-### 禁止做
+### Must Not
 - 禁止使用 `panic!`
 
-## 已定决策
+## Decisions
 
 - 使用 `thiserror` 统一错误类型
 "#,
@@ -717,20 +717,20 @@ name: "任务"
 inherits: project
 ---
 
-## 意图
+## Intent
 
 实现功能。
 
-## 已定决策
+## Decisions
 
 - 返回值保持现有 JSON 格式
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 正常路径
-  假设 输入有效
-  当 调用函数
-  那么 返回 Ok
+Scenario: 正常路径
+  Given 输入有效
+  When 调用函数
+  Then 返回 Ok
 "#,
         )
         .unwrap();
@@ -765,28 +765,28 @@ inherits: project
 name: "Contract fidelity"
 ---
 
-## 意图
+## Intent
 
 修正 Task Contract 语义。
 
-## 约束
+## Constraints
 
-### 必须做
+### Must
 - 所有公共函数返回 `Result`
 
-### 禁止做
+### Must Not
 - 禁止使用 `panic!`
 
-## 已定决策
+## Decisions
 
 - 使用 `thiserror` 统一错误类型
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 正常路径
-  假设 合同包含多类约束
-  当 gateway 构造 Task Contract
-  那么 不同约束保持独立
+Scenario: 正常路径
+  Given 合同包含多类约束
+  When gateway 构造 Task Contract
+  Then 不同约束保持独立
 "#,
         )
         .unwrap();
@@ -865,12 +865,12 @@ name: "Contract fidelity"
 name: "AI skeleton"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 需要 AI 判断
-  假设 存在一个未被机械 verifier 覆盖的场景
-  当 gateway 使用 stub 模式验证
-  那么 返回 uncertain
+Scenario: 需要 AI 判断
+  Given 存在一个未被机械 verifier 覆盖的场景
+  When gateway 使用 stub 模式验证
+  Then 返回 uncertain
 "#,
         )
         .unwrap();
@@ -888,12 +888,12 @@ name: "AI skeleton"
 name: "AI skeleton"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 需要 AI 判断
-  假设 存在一个未被机械 verifier 覆盖的场景
-  当 gateway 使用默认模式验证
-  那么 返回 skip
+Scenario: 需要 AI 判断
+  Given 存在一个未被机械 verifier 覆盖的场景
+  When gateway 使用默认模式验证
+  Then 返回 skip
 "#,
         )
         .unwrap();
@@ -979,12 +979,12 @@ name: "AI skeleton"
 name: "AI host backend"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 交给宿主 backend
-  假设 宿主 agent 提供了自定义 backend
-  当 gateway 执行验证
-  那么 返回 backend 的分析结果
+Scenario: 交给宿主 backend
+  Given 宿主 agent 提供了自定义 backend
+  When gateway 执行验证
+  Then 返回 backend 的分析结果
 "#,
         )
         .unwrap();
@@ -1018,24 +1018,24 @@ name: "门禁测试"
 tags: [test]
 ---
 
-## 意图
+## Intent
 
 测试门禁功能。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 普通场景
-  测试: test_critical_scenario_fail_sets_gate_blocked
-  假设 输入有效
-  当 调用函数
-  那么 返回 Ok
+Scenario: 普通场景
+  Test: test_critical_scenario_fail_sets_gate_blocked
+  Given 输入有效
+  When 调用函数
+  Then 返回 Ok
 
-场景: 关键场景
-  标签: [critical]
-  测试: test_critical_scenario_pass_no_gate_block
-  假设 输入有效
-  当 调用函数
-  那么 返回 Ok
+Scenario: 关键场景
+  Tags: [critical]
+  Test: test_critical_scenario_pass_no_gate_block
+  Given 输入有效
+  When 调用函数
+  Then 返回 Ok
 "#;
 
     #[test]
@@ -1087,17 +1087,17 @@ name: "后缀测试"
 tags: [test]
 ---
 
-## 意图
+## Intent
 
 测试名称后缀。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 用户注册成功（critical）
-  测试: test_critical_suffix_in_scenario_name
-  假设 输入有效
-  当 调用函数
-  那么 返回 Ok
+Scenario: 用户注册成功（critical）
+  Test: test_critical_suffix_in_scenario_name
+  Given 输入有效
+  When 调用函数
+  Then 返回 Ok
 "#;
         let gw = SpecGateway::from_input(spec_with_suffix).unwrap();
 
@@ -1140,14 +1140,14 @@ tags: [test]
 name: "人类审核"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 需要人类审核
-  审核: human
-  测试: test_human_review_scenario_produces_pending_review
-  假设 某个场景声明审核为 human 且测试通过
-  当 lifecycle 执行该场景
-  那么 verdict 为 pending_review
+Scenario: 需要人类审核
+  Review: human
+  Test: test_human_review_scenario_produces_pending_review
+  Given 某个场景声明审核为 human 且测试通过
+  When lifecycle 执行该场景
+  Then verdict 为 pending_review
 "#,
         )
         .unwrap();
@@ -1169,14 +1169,14 @@ name: "人类审核"
 name: "审核模式"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 审核场景
-  审核: human
-  测试: test_auto_review_mode_treats_pending_as_pass
-  假设 某个场景 verdict 为 pending_review
-  当 lifecycle 使用默认 review-mode auto
-  那么 最终 passed 为 true
+Scenario: 审核场景
+  Review: human
+  Test: test_auto_review_mode_treats_pending_as_pass
+  Given 某个场景 verdict 为 pending_review
+  When lifecycle 使用默认 review-mode auto
+  Then 最终 passed 为 true
 "#,
         )
         .unwrap();
@@ -1196,14 +1196,14 @@ name: "审核模式"
 name: "严格模式"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 严格审核
-  审核: human
-  测试: test_strict_review_mode_treats_pending_as_not_pass
-  假设 某个场景 verdict 为 pending_review
-  当 lifecycle 使用 review-mode strict
-  那么 最终 passed 为 false
+Scenario: 严格审核
+  Review: human
+  Test: test_strict_review_mode_treats_pending_as_not_pass
+  Given 某个场景 verdict 为 pending_review
+  When lifecycle 使用 review-mode strict
+  Then 最终 passed 为 false
 "#,
         )
         .unwrap();
@@ -1221,24 +1221,24 @@ name: "优化模式测试"
 tags: [test]
 ---
 
-## 意图
+## Intent
 
 测试优化场景模式。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 普通场景
-  测试: test_optimize_scenario_pass_listed_as_candidate
-  假设 输入有效
-  当 调用函数
-  那么 返回 Ok
+Scenario: 普通场景
+  Test: test_optimize_scenario_pass_listed_as_candidate
+  Given 输入有效
+  When 调用函数
+  Then 返回 Ok
 
-场景: 优化场景
-  模式: optimize
-  测试: test_optimize_scenario_fail_blocks_pass
-  假设 输入有效
-  当 调用函数
-  那么 性能达标
+Scenario: 优化场景
+  Mode: optimize
+  Test: test_optimize_scenario_fail_blocks_pass
+  Given 输入有效
+  When 调用函数
+  Then 性能达标
 "#;
 
     #[test]
@@ -1300,24 +1300,24 @@ name: "依赖测试"
 tags: [test]
 ---
 
-## 意图
+## Intent
 
 测试场景依赖。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 场景 A
-  测试: test_dependency_skip_on_prerequisite_fail
-  假设 前置条件 A
-  当 执行 A
-  那么 A 完成
+Scenario: 场景 A
+  Test: test_dependency_skip_on_prerequisite_fail
+  Given 前置条件 A
+  When 执行 A
+  Then A 完成
 
-场景: 场景 B
-  前置: 场景 A
-  测试: test_topological_sort_execution_order
-  假设 前置条件 B
-  当 执行 B
-  那么 B 完成
+Scenario: 场景 B
+  Depends: 场景 A
+  Test: test_topological_sort_execution_order
+  Given 前置条件 B
+  When 执行 B
+  Then B 完成
 "#;
 
     #[test]
@@ -1364,24 +1364,24 @@ tags: [test]
 name: "拓扑排序"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: C
-  前置: B
-  假设 C
-  当 C
-  那么 C
+Scenario: C
+  Depends: B
+  Given C
+  When C
+  Then C
 
-场景: B
-  前置: A
-  假设 B
-  当 B
-  那么 B
+Scenario: B
+  Depends: A
+  Given B
+  When B
+  Then B
 
-场景: A
-  假设 A
-  当 A
-  那么 A
+Scenario: A
+  Given A
+  When A
+  Then A
 "#;
         let gw = SpecGateway::from_input(input).unwrap();
         let order = crate::topological_sort_scenarios(&gw.resolved().all_scenarios);
@@ -1400,22 +1400,22 @@ name: "拓扑排序"
 name: "原始顺序"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 第一个
-  假设 A
-  当 A
-  那么 A
+Scenario: 第一个
+  Given A
+  When A
+  Then A
 
-场景: 第二个
-  假设 B
-  当 B
-  那么 B
+Scenario: 第二个
+  Given B
+  When B
+  Then B
 
-场景: 第三个
-  假设 C
-  当 C
-  那么 C
+Scenario: 第三个
+  Given C
+  When C
+  Then C
 "#;
         let gw = SpecGateway::from_input(input).unwrap();
         let order = crate::topological_sort_scenarios(&gw.resolved().all_scenarios);

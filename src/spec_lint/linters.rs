@@ -2166,7 +2166,7 @@ mod tests {
 name: "test"
 ---
 
-## 约束
+## Constraints
 
 - 系统应处理用户请求
 - 退款金额不得超过原始交易金额
@@ -2200,13 +2200,13 @@ name: "test"
 name: "test"
 ---
 
-## 验收标准
+## Acceptance Criteria
 
-场景: UI测试
-  假设 用户已登录
-  当 用户打开页面
-  那么 界面应该美观
-  并且 响应状态码为 200
+Scenario: UI测试
+  Given 用户已登录
+  When 用户打开页面
+  Then 界面应该美观
+  And 响应状态码为 200
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = TestabilityLinter.lint(&doc);
@@ -2239,22 +2239,22 @@ Scenario: test
 name: "退款功能"
 ---
 
-## 意图
+## Intent
 
 为支付网关添加退款功能。
 
-## 约束
+## Constraints
 
 - 退款金额不得超过原始交易金额
 - 退款操作需要管理员权限
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 全额退款
-  测试: test_full_refund
-  假设 存在一笔金额为 "100.00" 元的已完成交易 "TXN-001"
-  当 用户对 "TXN-001" 发起全额退款
-  那么 退款状态变为 "processing"
+Scenario: 全额退款
+  Test: test_full_refund
+  Given 存在一笔金额为 "100.00" 元的已完成交易 "TXN-001"
+  When 用户对 "TXN-001" 发起全额退款
+  Then 退款状态变为 "processing"
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let pipeline = crate::spec_lint::LintPipeline::with_defaults();
@@ -2270,12 +2270,12 @@ name: "退款功能"
 name: "test"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 缺失绑定
-  假设 存在某个任务
-  当 verifier 检查规格
-  那么 应报告缺少 selector
+Scenario: 缺失绑定
+  Given 存在某个任务
+  When verifier 检查规格
+  Then 应报告缺少 selector
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = ExplicitTestBindingLinter.lint(&doc);
@@ -2412,13 +2412,13 @@ name: "Spec B"
 name: "test"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 显式绑定
-  测试: test_explicit_test_binding_linter_accepts_explicit_selector
-  假设 存在某个任务
-  当 verifier 检查规格
-  那么 不应报告绑定错误
+Scenario: 显式绑定
+  Test: test_explicit_test_binding_linter_accepts_explicit_selector
+  Given 存在某个任务
+  When verifier 检查规格
+  Then 不应报告绑定错误
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = ExplicitTestBindingLinter.lint(&doc);
@@ -2450,18 +2450,18 @@ Describe the task.
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - 使用 `BTreeMap` 确保输出顺序确定性。
 - 本地源优先从 `source.path` 读取 registry。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 输出是确定性的
-  测试: output_is_deterministic
-  假设 已构建注册表
-  当 运行 build 命令
-  那么 输出使用 BTreeMap 排序
+Scenario: 输出是确定性的
+  Test: output_is_deterministic
+  Given 已构建注册表
+  When 运行 build 命令
+  Then 输出使用 BTreeMap 排序
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = DecisionCoverageLinter.lint(&doc);
@@ -2480,17 +2480,17 @@ name: "test"
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - 使用 `BTreeMap` 确保输出顺序确定性。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 输出是确定性的
-  测试: output_is_deterministic
-  假设 已构建注册表
-  当 运行 build 命令
-  那么 输出使用 BTreeMap 排序
+Scenario: 输出是确定性的
+  Test: output_is_deterministic
+  Given 已构建注册表
+  When 运行 build 命令
+  Then 输出使用 BTreeMap 排序
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = DecisionCoverageLinter.lint(&doc);
@@ -2503,17 +2503,17 @@ name: "test"
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - `--json` 模式下 stdout 只能输出 JSON，fallback 顺序必须保持稳定。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 默认输出可用
-  测试: human_output_works
-  假设 用户运行默认命令
-  当 输出结果
-  那么 人类模式返回文本
+Scenario: 默认输出可用
+  Test: human_output_works
+  Given 用户运行默认命令
+  When 输出结果
+  Then 人类模式返回文本
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = ObservableDecisionCoverageLinter.lint(&doc);
@@ -2527,17 +2527,17 @@ name: "test"
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - `get --json` 返回结构化输出，`-o/--output` 用于写文件。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 默认 human 输出可用
-  测试: human_output_works
-  假设 用户运行默认命令
-  当 输出结果
-  那么 返回默认 human 输出
+Scenario: 默认 human 输出可用
+  Test: human_output_works
+  Given 用户运行默认命令
+  When 输出结果
+  Then 返回默认 human 输出
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = OutputModeCoverageLinter.lint(&doc);
@@ -2553,17 +2553,17 @@ name: "test"
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - 读取顺序为 `local -> cache -> remote`。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 远端读取成功
-  测试: remote_read_success
-  假设 用户请求内容
-  当 运行读取命令
-  那么 返回文档内容
+Scenario: 远端读取成功
+  Test: remote_read_success
+  Given 用户请求内容
+  When 运行读取命令
+  Then 返回文档内容
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = PrecedenceFallbackCoverageLinter.lint(&doc);
@@ -2577,13 +2577,13 @@ name: "test"
 name: "test"
 ---
 
-## 验收标准
+## Acceptance Criteria
 
-场景: HTTP 4xx 返回错误
-  测试: mock_only_http_error
-  假设 通过注入 mock closure 模拟 404 HTTP 响应
-  当 运行 update
-  那么 返回 HTTP error
+Scenario: HTTP 4xx 返回错误
+  Test: mock_only_http_error
+  Given 通过注入 mock closure 模拟 404 HTTP 响应
+  When 运行 update
+  Then 返回 HTTP error
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = ExternalIoErrorStrengthLinter.lint(&doc);
@@ -2597,18 +2597,18 @@ name: "test"
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - 使用 `BTreeMap` 和 `serde_json`。
 - 目录结构维持 `src/**` 和 `specs/**`。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 输出是确定性的
-  测试: output_is_deterministic
-  假设 已构建注册表
-  当 运行 build 命令
-  那么 输出使用 BTreeMap 排序
+Scenario: 输出是确定性的
+  Test: output_is_deterministic
+  Given 已构建注册表
+  When 运行 build 命令
+  Then 输出使用 BTreeMap 排序
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         assert!(ObservableDecisionCoverageLinter.lint(&doc).is_empty());
@@ -2623,13 +2623,13 @@ name: "test"
 name: "test"
 ---
 
-## 验收标准
+## Acceptance Criteria
 
-场景: HTTP 4xx 返回错误
-  测试: update_http_error
-  假设 远端 HTTP 请求返回 404
-  当 运行 update
-  那么 返回 HTTP error
+Scenario: HTTP 4xx 返回错误
+  Test: update_http_error
+  Given 远端 HTTP 请求返回 404
+  When 运行 update
+  Then 返回 HTTP error
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = VerificationMetadataSuggestionLinter.lint(&doc);
@@ -2645,19 +2645,19 @@ name: "test"
 name: "test"
 ---
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 成功创建用户
-  测试: create_user_success
-  假设 数据库可用
-  当 提交有效用户数据
-  那么 用户被创建
+Scenario: 成功创建用户
+  Test: create_user_success
+  Given 数据库可用
+  When 提交有效用户数据
+  Then 用户被创建
 
-场景: 成功查询用户
-  测试: query_user_success
-  假设 用户已存在
-  当 查询用户列表
-  那么 返回用户数据
+Scenario: 成功查询用户
+  Test: query_user_success
+  Given 用户已存在
+  When 查询用户列表
+  Then 返回用户数据
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = ErrorPathLinter.lint(&doc);
@@ -2672,19 +2672,19 @@ name: "test"
 name: "test"
 ---
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 成功创建用户
-  测试: create_user_success
-  假设 数据库可用
-  当 提交有效用户数据
-  那么 用户被创建
+Scenario: 成功创建用户
+  Test: create_user_success
+  Given 数据库可用
+  When 提交有效用户数据
+  Then 用户被创建
 
-场景: 无效数据返回错误
-  测试: create_user_invalid_error
-  假设 数据库可用
-  当 提交无效用户数据
-  那么 返回错误消息
+Scenario: 无效数据返回错误
+  Test: create_user_invalid_error
+  Given 数据库可用
+  When 提交无效用户数据
+  Then 返回错误消息
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = ErrorPathLinter.lint(&doc);
@@ -2724,17 +2724,17 @@ Scenario: rejects invalid input
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - 所有入口点必须使用相同的合并逻辑
 
-## 验收标准
+## Acceptance Criteria
 
-场景: CLI 合并正确
-  测试: cli_merge
-  假设 有多个源
-  当 CLI 执行搜索
-  那么 返回合并结果
+Scenario: CLI 合并正确
+  Test: cli_merge
+  Given 有多个源
+  When CLI 执行搜索
+  Then 返回合并结果
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = UniversalClaimLinter.lint(&doc);
@@ -2898,24 +2898,24 @@ Scenario: app works
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - `get -o` 用于写文件，`--json` 返回结构化输出。
 - 多 ID 时合并所有内容写入单文件。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 单 ID -o 写文件
-  测试: single_id_output
-  假设 存在一个条目
-  当 运行 get -o out.md
-  那么 文件被写入
+Scenario: 单 ID -o 写文件
+  Test: single_id_output
+  Given 存在一个条目
+  When 运行 get -o out.md
+  Then 文件被写入
 
-场景: JSON 模式输出
-  测试: json_output
-  假设 存在一个条目
-  当 运行 get --json
-  那么 返回 JSON
+Scenario: JSON 模式输出
+  Test: json_output
+  Given 存在一个条目
+  When 运行 get --json
+  Then 返回 JSON
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = FlagCombinationCoverageLinter.lint(&doc);
@@ -2934,24 +2934,24 @@ name: "test"
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - `get -o` 用于写文件，`--json` 返回结构化输出。
 - 多 ID 时合并所有内容写入单文件。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 单 ID -o 写文件
-  测试: single_id_output
-  假设 存在一个条目
-  当 运行 get -o out.md
-  那么 文件被写入
+Scenario: 单 ID -o 写文件
+  Test: single_id_output
+  Given 存在一个条目
+  When 运行 get -o out.md
+  Then 文件被写入
 
-场景: 多 ID -o 合并写入
-  测试: multi_id_output
-  假设 存在多个条目
-  当 运行 get a b -o combined.md
-  那么 合并内容写入单文件
+Scenario: 多 ID -o 合并写入
+  Test: multi_id_output
+  Given 存在多个条目
+  When 运行 get a b -o combined.md
+  Then 合并内容写入单文件
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = FlagCombinationCoverageLinter.lint(&doc);
@@ -2968,17 +2968,17 @@ name: "test"
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - 使用 BTreeMap 确保输出顺序。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 输出有序
-  测试: ordered_output
-  假设 已构建注册表
-  当 运行 build
-  那么 输出是确定性的
+Scenario: 输出有序
+  Test: ordered_output
+  Given 已构建注册表
+  When 运行 build
+  Then 输出是确定性的
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = FlagCombinationCoverageLinter.lint(&doc);
@@ -2997,7 +2997,7 @@ name: "test"
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - 读取顺序为 local source -> 本地缓存 -> npm bundled dist -> 远端下载。
 "#;
@@ -3019,7 +3019,7 @@ name: "test"
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - 读取顺序为 local source -> 本地缓存 -> 远端下载。
   （chub-rs 不实现 npm bundled dist 路径，这是 JS 特有 的包分发机制。）
@@ -3039,7 +3039,7 @@ name: "test"
 name: "test"
 ---
 
-## 决策
+## Decisions
 
 - 使用 BTreeMap 和 serde_json。
 - 搜索优先使用预构建 BM25 index。
@@ -3231,34 +3231,34 @@ Scenario: C
 name: "fixture-bad-feature"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: X 文件存在
-  测试:
-    过滤: x_file_exists
-    层级: unit
-    替身: fs.readFile + 静态扫描
-  假设 模块文件应存在
-  当 跑 fs 检查
-  那么 fs.readFile 命中
+Scenario: X 文件存在
+  Test:
+    Filter: x_file_exists
+    Level: unit
+    Test Double: fs.readFile + 静态扫描
+  Given 模块文件应存在
+  When 跑 fs 检查
+  Then fs.readFile 命中
 
-场景: 裸 git diff 检查
-  测试:
-    过滤: bare_git_diff
-    层级: unit
-    替身: git diff
-  假设 修改已落地
-  当 跑 git diff
-  那么 输出非空
+Scenario: 裸 git diff 检查
+  Test:
+    Filter: bare_git_diff
+    Level: unit
+    Test Double: git diff
+  Given 修改已落地
+  When 跑 git diff
+  Then 输出非空
 
-场景: 渲染行为
-  测试:
-    过滤: renders_behavior
-    层级: integration
-    替身: vitest + RTL
-  假设 组件已挂载
-  当 渲染并触发 click
-  那么 DOM 出现期望文本
+Scenario: 渲染行为
+  Test:
+    Filter: renders_behavior
+    Level: integration
+    Test Double: vitest + RTL
+  Given 组件已挂载
+  When 渲染并触发 click
+  Then DOM 出现期望文本
 "#;
 
     #[test]
@@ -3308,25 +3308,25 @@ name: "fixture-bad-feature"
 name: "fixture-clean-behavior"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 单元行为
-  测试:
-    过滤: behavior_unit
-    层级: unit
-    替身: cargo test
-  假设 函数已实现
-  当 调用
-  那么 返回期望
+Scenario: 单元行为
+  Test:
+    Filter: behavior_unit
+    Level: unit
+    Test Double: cargo test
+  Given 函数已实现
+  When 调用
+  Then 返回期望
 
-场景: 集成行为
-  测试:
-    过滤: behavior_integration
-    层级: integration
-    替身: vitest + vi.fn
-  假设 组件挂载
-  当 触发 onClick
-  那么 mock 被调用
+Scenario: 集成行为
+  Test:
+    Filter: behavior_integration
+    Level: integration
+    Test Double: vitest + vi.fn
+  Given 组件挂载
+  When 触发 onClick
+  Then mock 被调用
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         let diags = PseudoScenarioLinter.lint(&doc);

@@ -1763,7 +1763,7 @@ fn generate_template_zh(level: &str, name: &str) -> String {
 name: "{name}"
 ---
 
-## 约束
+## Constraints
 
 - 禁止硬编码任何凭证、API Key、Token 或密码
 - 所有用户输入必须经过校验和清理
@@ -1776,11 +1776,11 @@ name: "{name}"
 inherits: org
 ---
 
-## 意图
+## Intent
 
 在此描述项目的核心目标。
 
-## 约束
+## Constraints
 
 - 在此添加项目级约束
 "#
@@ -1792,41 +1792,41 @@ inherits: project
 tags: []
 ---
 
-## 意图
+## Intent
 
 在此描述任务目标和背景。
 
-## 已定决策
+## Decisions
 
 - 在此写明已经确定的技术选择
 
-## 边界
+## Boundaries
 
-### 允许修改
+### Allowed Changes
 - 在此列出允许修改的文件或模块
 
-### 禁止做
+### Forbidden
 - 在此列出禁止做的事情
 
-## 完成条件
+## Completion Criteria
 
-场景: 正常路径
-  测试:
-    包: your-package
-    过滤: test_happy_path
-  假设 前置条件
-  当 用户执行操作
-  那么 期望结果
+Scenario: 正常路径
+  Test:
+    Package: your-package
+    Filter: test_happy_path
+  Given 前置条件
+  When 用户执行操作
+  Then 期望结果
 
-场景: 异常路径
-  测试:
-    包: your-package
-    过滤: test_error_path
-  假设 前置条件
-  当 用户执行异常操作
-  那么 系统返回错误
+Scenario: 异常路径
+  Test:
+    Package: your-package
+    Filter: test_error_path
+  Given 前置条件
+  When 用户执行异常操作
+  Then 系统返回错误
 
-## 排除范围
+## Out of Scope
 
 - 不在本任务范围内的功能
 "#
@@ -1901,13 +1901,13 @@ Scenario: Happy path
   When the user performs an action
   Then the expected result occurs
 
-场景: 异常路径
-  测试:
-    包: your-package
-    过滤: test_error_path
-  假设 前置条件
-  当 用户执行异常操作
-  那么 系统返回错误
+Scenario: 异常路径
+  Test:
+    Package: your-package
+    Filter: test_error_path
+  Given 前置条件
+  When 用户执行异常操作
+  Then 系统返回错误
 
 ## Out of Scope
 
@@ -1926,76 +1926,76 @@ inherits: project
 tags: [rewrite, parity]
 ---
 
-## 意图
+## Intent
 
 将 `<待重写系统或命令>` 的可观察行为迁移到新实现，并在编码前绑定关键行为矩阵。
 
-## 已定决策
+## Decisions
 
 - 兼容性基线以 `<上游实现 / 现有 CLI / 现有 MCP>` 的可观察行为为准
 - 在写代码前先梳理行为矩阵：命令 x 输出模式、local x remote、warm cache x cold start、成功 x 部分失败 x 硬失败
 - 所有 stdout/stderr、`--json`、`-o/--output`、fallback / precedence order 都必须落成显式场景
 - 对外部 I/O 行为优先使用本地 stub 或 fixture 验证，不依赖真实网络或真实 HOME
 
-## 边界
+## Boundaries
 
-### 允许修改
+### Allowed Changes
 - 在此列出允许修改的适配层、运行时层和测试文件
 
-### 禁止做
+### Forbidden
 - 不要把兼容性要求只写成 prose；必须绑定到 Completion Criteria
 - 不要用新的用户可见行为替换现有行为，除非本任务明确声明要改 contract
 
-## 完成条件
+## Completion Criteria
 
-场景: 人类模式保持兼容输出
-  测试:
-    包: your-package
-    过滤: test_human_mode_parity
-    层级: cli
-    替身: fixture_cache
-    命中: src/commands/get.rs, tests/cli_get.rs
-  假设 `<命令>` 从已缓存内容读取结果
-  当 用户以默认人类模式执行命令
-  那么 stdout 与兼容性基线保持一致
-  而且 stderr 不包含额外噪音
+Scenario: 人类模式保持兼容输出
+  Test:
+    Package: your-package
+    Filter: test_human_mode_parity
+    Level: cli
+    Test Double: fixture_cache
+    Targets: src/commands/get.rs, tests/cli_get.rs
+  Given `<命令>` 从已缓存内容读取结果
+  When 用户以默认人类模式执行命令
+  Then stdout 与兼容性基线保持一致
+  And stderr 不包含额外噪音
 
-场景: JSON 模式返回稳定结构
-  测试:
-    包: your-package
-    过滤: test_json_mode_parity
-    层级: cli
-    替身: fixture_cache
-    命中: src/commands/get.rs
-  假设 `<命令>` 以 `--json` 模式运行
-  当 用户请求同一份内容
-  那么 stdout 只包含稳定 JSON
-  而且 省略字段策略与兼容性基线一致
+Scenario: JSON 模式返回稳定结构
+  Test:
+    Package: your-package
+    Filter: test_json_mode_parity
+    Level: cli
+    Test Double: fixture_cache
+    Targets: src/commands/get.rs
+  Given `<命令>` 以 `--json` 模式运行
+  When 用户请求同一份内容
+  Then stdout 只包含稳定 JSON
+  And 省略字段策略与兼容性基线一致
 
-场景: 冷启动遵守 fallback 顺序
-  测试:
-    包: your-package
-    过滤: test_cold_start_fallback_order
-    层级: integration
-    替身: local_http_stub
-    命中: src/core/cache.rs, src/core/registry.rs
-  假设 本地正文缓存为空
-  当 系统解析 `<local source -> cache -> bundled content -> remote fetch>` 的读取路径
-  那么 每一步 fallback 顺序都可观察且稳定
+Scenario: 冷启动遵守 fallback 顺序
+  Test:
+    Package: your-package
+    Filter: test_cold_start_fallback_order
+    Level: integration
+    Test Double: local_http_stub
+    Targets: src/core/cache.rs, src/core/registry.rs
+  Given 本地正文缓存为空
+  When 系统解析 `<local source -> cache -> bundled content -> remote fetch>` 的读取路径
+  Then 每一步 fallback 顺序都可观察且稳定
 
-场景: 远端失败返回稳定错误
-  测试:
-    包: your-package
-    过滤: test_remote_fetch_failure_contract
-    层级: integration
-    替身: local_http_stub
-    命中: src/core/cache.rs, src/commands/update.rs
-  假设 远端返回非 2xx 或超时
-  当 系统执行远端读取或刷新
-  那么 返回稳定错误
-  而且 不写入损坏缓存或错误 freshness 元数据
+Scenario: 远端失败返回稳定错误
+  Test:
+    Package: your-package
+    Filter: test_remote_fetch_failure_contract
+    Level: integration
+    Test Double: local_http_stub
+    Targets: src/core/cache.rs, src/commands/update.rs
+  Given 远端返回非 2xx 或超时
+  When 系统执行远端读取或刷新
+  Then 返回稳定错误
+  And 不写入损坏缓存或错误 freshness 元数据
 
-## 排除范围
+## Out of Scope
 
 - 本任务未明确声明的新增功能
 - 只为通过测试而修改兼容性基线本身
@@ -2051,17 +2051,17 @@ Scenario: human mode keeps parity output
   Then stdout stays compatible with the baseline
   And stderr does not contain extra noise
 
-场景: JSON 模式返回稳定结构
-  测试:
-    包: your-package
-    过滤: test_json_mode_parity
-    层级: cli
-    替身: fixture_cache
-    命中: src/commands/get.rs
-  假设 `<命令>` 以 `--json` 模式运行
-  当 用户请求同一份内容
-  那么 stdout 只包含稳定 JSON
-  而且 省略字段策略与兼容性基线一致
+Scenario: JSON 模式返回稳定结构
+  Test:
+    Package: your-package
+    Filter: test_json_mode_parity
+    Level: cli
+    Test Double: fixture_cache
+    Targets: src/commands/get.rs
+  Given `<命令>` 以 `--json` 模式运行
+  When 用户请求同一份内容
+  Then stdout 只包含稳定 JSON
+  And 省略字段策略与兼容性基线一致
 
 Scenario: cold start follows fallback order
   Test:
@@ -2074,17 +2074,17 @@ Scenario: cold start follows fallback order
   When the system resolves `<local source -> cache -> bundled content -> remote fetch>`
   Then each fallback step is observable and stable
 
-场景: 远端失败返回稳定错误
-  测试:
-    包: your-package
-    过滤: test_remote_fetch_failure_contract
-    层级: integration
-    替身: local_http_stub
-    命中: src/core/cache.rs, src/commands/update.rs
-  假设 远端返回非 2xx 或超时
-  当 系统执行远端读取或刷新
-  那么 返回稳定错误
-  而且 不写入损坏缓存或错误 freshness 元数据
+Scenario: 远端失败返回稳定错误
+  Test:
+    Package: your-package
+    Filter: test_remote_fetch_failure_contract
+    Level: integration
+    Test Double: local_http_stub
+    Targets: src/core/cache.rs, src/commands/update.rs
+  Given 远端返回非 2xx 或超时
+  When 系统执行远端读取或刷新
+  Then 返回稳定错误
+  And 不写入损坏缓存或错误 freshness 元数据
 
 ## Out of Scope
 
@@ -3064,17 +3064,23 @@ Scenario: Contract alias
             generate_rewrite_parity_template_en("Rewrite Template"),
             generate_rewrite_parity_template_both("Bilingual Rewrite"),
         ] {
+            // Parsing with the English-only parser must succeed: a generated
+            // template that emitted any CJK structural keyword would now error
+            // (detect_removed_cjk_keyword) and panic here.
             let doc = crate::spec_parser::parse_spec_from_str(&lang).unwrap();
-            let scenario_count = doc
-                .sections
-                .iter()
-                .filter_map(|section| match section {
-                    crate::spec_core::Section::AcceptanceCriteria { scenarios, .. } => {
-                        Some(scenarios.len())
+            let mut scenario_count = 0usize;
+            for section in &doc.sections {
+                if let crate::spec_core::Section::AcceptanceCriteria { scenarios, .. } = section {
+                    for scenario in scenarios {
+                        assert!(
+                            !scenario.steps.is_empty(),
+                            "generated template scenario '{}' lost its steps (silent CJK keyword drop?)",
+                            scenario.name
+                        );
                     }
-                    _ => None,
-                })
-                .sum::<usize>();
+                    scenario_count += scenarios.len();
+                }
+            }
             assert!(scenario_count > 0, "task template should contain scenarios");
         }
     }
@@ -4550,17 +4556,17 @@ Scenario: pass
         write_spec_file(
             &dir,
             "spec-a",
-            "spec: task\nname: \"A\"\ntags: []\n---\n\n## 意图\n\nA\n",
+            "spec: task\nname: \"A\"\ntags: []\n---\n\n## Intent\n\nA\n",
         );
         write_spec_file(
             &dir,
             "spec-b",
-            "spec: task\nname: \"B\"\ntags: []\ndepends: [spec-a]\n---\n\n## 意图\n\nB\n",
+            "spec: task\nname: \"B\"\ntags: []\ndepends: [spec-a]\n---\n\n## Intent\n\nB\n",
         );
         write_spec_file(
             &dir,
             "spec-c",
-            "spec: task\nname: \"C\"\ntags: []\ndepends: [spec-a, spec-b]\n---\n\n## 意图\n\nC\n",
+            "spec: task\nname: \"C\"\ntags: []\ndepends: [spec-a, spec-b]\n---\n\n## Intent\n\nC\n",
         );
 
         // Use cmd_graph internals: collect, parse, generate DOT
@@ -4637,7 +4643,7 @@ Scenario: pass
         write_spec_file(
             &dir,
             "spec-est",
-            "spec: task\nname: \"EstTest\"\ntags: []\nestimate: 2d\n---\n\n## 意图\n\nTest\n",
+            "spec: task\nname: \"EstTest\"\ntags: []\nestimate: 2d\n---\n\n## Intent\n\nTest\n",
         );
 
         let mut spec_files = Vec::new();
@@ -4667,12 +4673,12 @@ Scenario: pass
         write_spec_file(
             &dir,
             "spec-x",
-            "spec: task\nname: \"X\"\ntags: []\n---\n\n## 意图\n\nX\n",
+            "spec: task\nname: \"X\"\ntags: []\n---\n\n## Intent\n\nX\n",
         );
         write_spec_file(
             &dir,
             "spec-y",
-            "spec: task\nname: \"Y\"\ntags: []\n---\n\n## 意图\n\nY\n",
+            "spec: task\nname: \"Y\"\ntags: []\n---\n\n## Intent\n\nY\n",
         );
 
         let mut spec_files = Vec::new();
@@ -4713,17 +4719,17 @@ Scenario: pass
         write_spec_file(
             &dir,
             "spec-a",
-            "spec: task\nname: \"A\"\ntags: []\nestimate: 1d\n---\n\n## 意图\n\nA\n",
+            "spec: task\nname: \"A\"\ntags: []\nestimate: 1d\n---\n\n## Intent\n\nA\n",
         );
         write_spec_file(
             &dir,
             "spec-b",
-            "spec: task\nname: \"B\"\ntags: []\ndepends: [spec-a]\nestimate: 2d\n---\n\n## 意图\n\nB\n",
+            "spec: task\nname: \"B\"\ntags: []\ndepends: [spec-a]\nestimate: 2d\n---\n\n## Intent\n\nB\n",
         );
         write_spec_file(
             &dir,
             "spec-c",
-            "spec: task\nname: \"C\"\ntags: []\ndepends: [spec-b]\nestimate: 1d\n---\n\n## 意图\n\nC\n",
+            "spec: task\nname: \"C\"\ntags: []\ndepends: [spec-b]\nestimate: 1d\n---\n\n## Intent\n\nC\n",
         );
 
         let mut spec_files = Vec::new();

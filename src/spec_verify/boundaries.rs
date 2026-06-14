@@ -330,12 +330,12 @@ mod tests {
 name: "边界"
 ---
 
-## 边界
+## Boundaries
 
-### 允许修改
+### Allowed Changes
 - crates/spec-parser/**
 
-### 禁止做
+### Forbidden
 - crates/spec-gateway/**
 "#,
         )
@@ -451,12 +451,12 @@ name: "边界"
 name: "边界"
 ---
 
-## 边界
+## Boundaries
 
-### 允许修改
+### Allowed Changes
 - crates/spec-gateway/**
 
-### 禁止做
+### Forbidden
 - crates/spec-gateway/src/lib.rs
 "#,
         )

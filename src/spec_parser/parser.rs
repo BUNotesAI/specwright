@@ -5,11 +5,23 @@ use crate::spec_core::{
 use std::path::{Path, PathBuf};
 
 use super::keywords::{
-    SectionKind, TestSelectorField, extract_params, match_depends_field, match_mode_field,
-    match_review_field, match_scenario_header, match_scenario_tags, match_section_header,
-    match_step_keyword, match_test_selector, match_test_selector_field,
+    RemovedKeyword, SectionKind, TestSelectorField, detect_removed_cjk_keyword, extract_params,
+    match_depends_field, match_mode_field, match_review_field, match_scenario_header,
+    match_scenario_tags, match_section_header, match_step_keyword, match_test_selector,
+    match_test_selector_field,
 };
 use super::meta::parse_meta;
+
+/// Build the clear English parse error for a now-removed Chinese keyword.
+fn cjk_keyword_error(removed: RemovedKeyword, line_num: usize) -> SpecError {
+    SpecError::Parse {
+        message: format!(
+            "keywords must be English; '{}' is not recognized — use '{}'",
+            removed.cjk, removed.english
+        ),
+        span: Span::line(line_num),
+    }
+}
 
 /// Parse a .spec/.spec.md file from disk.
 pub fn parse_spec(path: &Path) -> SpecResult<SpecDocument> {
@@ -115,7 +127,7 @@ fn build_section(
             Ok(Section::Intent { content, span })
         }
         SectionKind::Constraints => {
-            let items = parse_constraints(lines);
+            let items = parse_constraints(lines)?;
             Ok(Section::Constraints { items, span })
         }
         SectionKind::Decisions => {
@@ -123,7 +135,7 @@ fn build_section(
             Ok(Section::Decisions { items, span })
         }
         SectionKind::Boundaries => {
-            let items = parse_boundaries(lines);
+            let items = parse_boundaries(lines)?;
             Ok(Section::Boundaries { items, span })
         }
         SectionKind::AcceptanceCriteria => {
@@ -143,22 +155,24 @@ fn build_section(
     }
 }
 
-fn parse_constraints(lines: &[(usize, &str)]) -> Vec<Constraint> {
+fn parse_constraints(lines: &[(usize, &str)]) -> SpecResult<Vec<Constraint>> {
     let mut constraints = Vec::new();
     let mut category = ConstraintCategory::General;
 
     for &(line_num, line) in lines {
         let trimmed = line.trim();
 
-        // Sub-section headers for constraint categories
-        if trimmed.starts_with("###") || trimmed.starts_with("### ") {
+        // Sub-section headers for constraint categories (English-only)
+        if trimmed.starts_with("###") {
             let header = trimmed.trim_start_matches('#').trim().to_lowercase();
-            if header.contains("必须做") || header.contains("must") && !header.contains("not") {
+            if header.contains("must") && !header.contains("not") {
                 category = ConstraintCategory::Must;
-            } else if header.contains("禁止") || header.contains("must not") {
+            } else if header.contains("must not") {
                 category = ConstraintCategory::MustNot;
-            } else if header.contains("已定") || header.contains("decided") {
+            } else if header.contains("decided") {
                 category = ConstraintCategory::Decided;
+            } else if let Some(removed) = detect_removed_cjk_keyword(trimmed) {
+                return Err(cjk_keyword_error(removed, line_num));
             }
             continue;
         }
@@ -176,7 +190,7 @@ fn parse_constraints(lines: &[(usize, &str)]) -> Vec<Constraint> {
         }
     }
 
-    constraints
+    Ok(constraints)
 }
 
 fn parse_string_list(lines: &[(usize, &str)]) -> Vec<String> {
@@ -188,24 +202,24 @@ fn parse_string_list(lines: &[(usize, &str)]) -> Vec<String> {
         .collect()
 }
 
-fn parse_boundaries(lines: &[(usize, &str)]) -> Vec<Boundary> {
+fn parse_boundaries(lines: &[(usize, &str)]) -> SpecResult<Vec<Boundary>> {
     let mut items = Vec::new();
     let mut category = BoundaryCategory::General;
 
     for &(line_num, line) in lines {
         let trimmed = line.trim();
 
-        if trimmed.starts_with("###") || trimmed.starts_with("### ") {
+        if trimmed.starts_with("###") {
             let header = trimmed.trim_start_matches('#').trim().to_lowercase();
-            if header.contains("允许修改") || header.contains("allowed") || header.contains("allow")
-            {
+            if header.contains("allowed") || header.contains("allow") {
                 category = BoundaryCategory::Allow;
-            } else if header.contains("禁止")
-                || header.contains("forbidden")
+            } else if header.contains("forbidden")
                 || header.contains("must not")
                 || header.contains("disallow")
             {
                 category = BoundaryCategory::Deny;
+            } else if let Some(removed) = detect_removed_cjk_keyword(trimmed) {
+                return Err(cjk_keyword_error(removed, line_num));
             }
             continue;
         }
@@ -222,7 +236,7 @@ fn parse_boundaries(lines: &[(usize, &str)]) -> Vec<Boundary> {
         }
     }
 
-    items
+    Ok(items)
 }
 
 #[allow(clippy::too_many_lines)] // Exception: legacy scenario parser state machine; refactor is outside this migration checkpoint.
@@ -331,6 +345,10 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<Vec<Scenario>> {
         {
             step.table.push(row);
             step.span.end_line = line_num;
+        } else if let Some(removed) = detect_removed_cjk_keyword(line) {
+            // A removed Chinese keyword at a scenario/step/selector/tags
+            // position must error, not silently vanish from the AST.
+            return Err(cjk_keyword_error(removed, line_num));
         }
         // Ignore blank lines and non-step text inside scenarios
     }
@@ -372,7 +390,7 @@ fn finalize_test_selector(
 
     let Some(filter) = draft.filter else {
         return Err(SpecError::Parse {
-            message: "test selector is missing required `Filter:` / `过滤:` field".into(),
+            message: "test selector is missing required `Filter:` field".into(),
             span: Span::line(line_num),
         });
     };
@@ -418,32 +436,32 @@ inherits: project
 tags: [payment, refund]
 ---
 
-## 意图
+## Intent
 
 为支付网关添加退款功能，支持全额和部分退款。
 
-## 约束
+## Constraints
 
 - 退款金额不得超过原始交易金额
 - 退款操作需要管理员权限
 - 退款必须在原交易后 90 天内发起
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 全额退款
-  假设 存在一笔金额为 "100.00" 元的已完成交易 "TXN-001"
-  并且 当前用户具有管理员权限
-  当 用户对 "TXN-001" 发起全额退款
-  那么 退款状态变为 "processing"
-  并且 原始交易状态变为 "refunding"
+Scenario: 全额退款
+  Given 存在一笔金额为 "100.00" 元的已完成交易 "TXN-001"
+  And 当前用户具有管理员权限
+  When 用户对 "TXN-001" 发起全额退款
+  Then 退款状态变为 "processing"
+  And 原始交易状态变为 "refunding"
 
-场景: 退款拒绝 - 超期
-  假设 存在一笔 91 天前完成的交易 "TXN-003"
-  当 用户对 "TXN-003" 发起退款
-  那么 系统拒绝退款
-  并且 返回错误信息包含 "超过退款期限"
+Scenario: 退款拒绝 - 超期
+  Given 存在一笔 91 天前完成的交易 "TXN-003"
+  When 用户对 "TXN-003" 发起退款
+  Then 系统拒绝退款
+  And 返回错误信息包含 "超过退款期限"
 
-## 排除范围
+## Out of Scope
 
 - 登录功能
 - 密码重置
@@ -550,28 +568,32 @@ Scenario: Successful registration
     }
 
     #[test]
-    fn test_parse_mixed_lang_spec() {
+    fn test_parse_english_keyword_chinese_description() {
+        // Core regression: English keywords + Chinese description + a code
+        // identifier parse, with the Chinese text and identifier preserved.
         let input = r#"spec: task
-name: "混合语言测试"
+name: "scope 推导"
 ---
 
-## 验收标准
+## Completion Criteria
 
-Scenario: 混合场景
-  Given 用户已登录
-  当 用户点击 "submit" 按钮
-  Then 页面应显示成功消息
-  并且 数据库中有新记录
+Scenario: 数据 scope 由角色变体推导
+  Given 平台角色
+  When scope_of 映射每个角色
+  Then 平台角色得到 Scope::All
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         match &doc.sections[0] {
             Section::AcceptanceCriteria { scenarios, .. } => {
                 let s = &scenarios[0];
-                assert_eq!(s.steps.len(), 4);
+                assert_eq!(s.name, "数据 scope 由角色变体推导");
+                assert_eq!(s.steps.len(), 3);
                 assert_eq!(s.steps[0].kind, StepKind::Given);
+                assert_eq!(s.steps[0].text, "平台角色");
                 assert_eq!(s.steps[1].kind, StepKind::When);
+                assert_eq!(s.steps[1].text, "scope_of 映射每个角色");
                 assert_eq!(s.steps[2].kind, StepKind::Then);
-                assert_eq!(s.steps[3].kind, StepKind::And);
+                assert_eq!(s.steps[2].text, "平台角色得到 Scope::All");
             }
             other => panic!("expected AcceptanceCriteria, got {other:?}"),
         }
@@ -583,14 +605,14 @@ Scenario: 混合场景
 name: "表格测试"
 ---
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 注册请求
-  当 发送 POST /api/v1/auth/register 请求:
+Scenario: 注册请求
+  When 发送 POST /api/v1/auth/register 请求:
     | field    | value             |
     | email    | alice@example.com |
     | password | Str0ng!Pass#2024  |
-  那么 响应状态码应为 201
+  Then 响应状态码应为 201
 "#;
 
         let doc = parse_spec_from_str(input).unwrap();
@@ -617,12 +639,12 @@ name: "表格测试"
 name: "普通场景"
 ---
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 无表格
-  假设 用户已登录
-  当 用户点击提交
-  那么 页面显示成功
+Scenario: 无表格
+  Given 用户已登录
+  When 用户点击提交
+  Then 页面显示成功
 "#;
 
         let doc = parse_spec_from_str(input).unwrap();
@@ -700,13 +722,13 @@ Scenario: Parse succeeds
 name: "绑定测试"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 显式绑定
-  测试: test_parse_scenario_with_explicit_test_selector
-  假设 某个场景声明测试选择器
-  当 parser 解析该场景
-  那么 AST 中保留该 selector
+Scenario: 显式绑定
+  Test: test_parse_scenario_with_explicit_test_selector
+  Given 某个场景声明测试选择器
+  When parser 解析该场景
+  Then AST 中保留该 selector
 "#;
 
         let doc = parse_spec_from_str(input).unwrap();
@@ -737,15 +759,15 @@ name: "绑定测试"
 name: "结构化绑定"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 结构化绑定
-  测试:
-    包: spec-parser
-    过滤: test_parse_structured_test_selector_block
-  假设 某个场景声明结构化测试选择器
-  当 parser 解析该场景
-  那么 AST 中保留结构化字段
+Scenario: 结构化绑定
+  Test:
+    Package: spec-parser
+    Filter: test_parse_structured_test_selector_block
+  Given 某个场景声明结构化测试选择器
+  When parser 解析该场景
+  Then AST 中保留结构化字段
 "#;
 
         let doc = parse_spec_from_str(input).unwrap();
@@ -772,18 +794,18 @@ name: "结构化绑定"
 name: "验证元数据"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 结构化验证强度
-  测试:
-    包: agent-spec
-    过滤: test_parse_scenario_verification_metadata_fields
-    层级: integration
-    替身: local_http_stub
-    命中: commands/update
-  假设 某个场景声明验证元数据
-  当 parser 解析该场景
-  那么 AST 中保留这些字段
+Scenario: 结构化验证强度
+  Test:
+    Package: agent-spec
+    Filter: test_parse_scenario_verification_metadata_fields
+    Level: integration
+    Test Double: local_http_stub
+    Targets: commands/update
+  Given 某个场景声明验证元数据
+  When parser 解析该场景
+  Then AST 中保留这些字段
 "#;
 
         let doc = parse_spec_from_str(input).unwrap();
@@ -880,13 +902,13 @@ Scenario: legacy selector
 name: "单行绑定"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 单行绑定
-  测试: test_parse_shorthand_test_selector_as_filter_only
-  假设 某个场景继续使用单行测试绑定
-  当 parser 解析该场景
-  那么 filter 字段被保留
+Scenario: 单行绑定
+  Test: test_parse_shorthand_test_selector_as_filter_only
+  Given 某个场景继续使用单行测试绑定
+  When parser 解析该场景
+  Then filter 字段被保留
 "#;
 
         let doc = parse_spec_from_str(input).unwrap();
@@ -980,14 +1002,14 @@ name: "Markdown Scenario"
 name: "模式测试"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 优化场景
-  模式: optimize
-  测试: test_parse_mode_field_in_scenario
-  假设 某个场景声明 optimize 模式
-  当 parser 解析该场景
-  那么 AST 中 mode 字段为 Optimize
+Scenario: 优化场景
+  Mode: optimize
+  Test: test_parse_mode_field_in_scenario
+  Given 某个场景声明 optimize 模式
+  When parser 解析该场景
+  Then AST 中 mode 字段为 Optimize
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         match &doc.sections[0] {
@@ -1057,18 +1079,18 @@ Scenario: no mode declared
 name: "依赖测试"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 用户注册
-  假设 注册表单已打开
-  当 用户提交注册
-  那么 注册成功
+Scenario: 用户注册
+  Given 注册表单已打开
+  When 用户提交注册
+  Then 注册成功
 
-场景: 用户登录
-  前置: 用户注册
-  假设 已有注册用户
-  当 用户登录
-  那么 登录成功
+Scenario: 用户登录
+  Depends: 用户注册
+  Given 已有注册用户
+  When 用户登录
+  Then 登录成功
 "#;
         let doc = parse_spec_from_str(input).unwrap();
         match &doc.sections[0] {
@@ -1120,20 +1142,20 @@ Scenario: C
 name: "审核测试"
 ---
 
-## 完成条件
+## Completion Criteria
 
-场景: 需要人类审核
-  审核: human
-  测试: test_parse_review_field_in_scenario
-  假设 某个场景声明审核为 human
-  当 parser 解析该场景
-  那么 AST 中 review 字段为 Human
+Scenario: 需要人类审核
+  Review: human
+  Test: test_parse_review_field_in_scenario
+  Given 某个场景声明审核为 human
+  When parser 解析该场景
+  Then AST 中 review 字段为 Human
 
-场景: 默认自动审核
-  测试: test_default_auto_review
-  假设 某个场景不声明审核字段
-  当 parser 解析该场景
-  那么 AST 中 review 字段为 Auto
+Scenario: 默认自动审核
+  Test: test_default_auto_review
+  Given 某个场景不声明审核字段
+  When parser 解析该场景
+  Then AST 中 review 字段为 Auto
 "#;
 
         let doc = parse_spec_from_str(input).unwrap();
@@ -1152,6 +1174,96 @@ name: "审核测试"
                 );
             }
             other => panic!("expected AcceptanceCriteria, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rejects_cjk_section_header() {
+        let input = "spec: task\nname: \"t\"\n---\n\n## 意图\n\nx\n";
+        match parse_spec_from_str(input) {
+            Err(SpecError::Parse { message, .. }) => {
+                assert!(message.contains("意图"), "message: {message}");
+                assert!(
+                    message.contains("Intent"),
+                    "should name the allowed English section set: {message}"
+                );
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rejects_cjk_scenario_header() {
+        let input =
+            "spec: task\nname: \"t\"\n---\n\n## Completion Criteria\n\n场景: 全额退款\n  Given x\n";
+        match parse_spec_from_str(input) {
+            Err(SpecError::Parse { message, .. }) => {
+                assert!(message.contains("场景:"), "message: {message}");
+                assert!(message.contains("Scenario:"), "message: {message}");
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rejects_cjk_step_keyword() {
+        let input = "spec: task\nname: \"t\"\n---\n\n## Completion Criteria\n\nScenario: s\n  假设 用户已登录\n";
+        match parse_spec_from_str(input) {
+            Err(SpecError::Parse { message, .. }) => {
+                assert!(message.contains("假设"), "message: {message}");
+                assert!(message.contains("Given"), "message: {message}");
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rejects_cjk_test_selector() {
+        let input = "spec: task\nname: \"t\"\n---\n\n## Completion Criteria\n\nScenario: s\n  测试: test_refund\n  Given x\n";
+        match parse_spec_from_str(input) {
+            Err(SpecError::Parse { message, .. }) => {
+                assert!(message.contains("测试:"), "message: {message}");
+                assert!(message.contains("Test:"), "message: {message}");
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rejects_cjk_boundary_subheading() {
+        let input = "spec: task\nname: \"t\"\n---\n\n## Boundaries\n\n### 允许修改\n- src/x\n";
+        match parse_spec_from_str(input) {
+            Err(SpecError::Parse { message, .. }) => {
+                assert!(message.contains("允许修改"), "message: {message}");
+                assert!(message.contains("Allowed Changes"), "message: {message}");
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rejects_cjk_constraint_subheading() {
+        let input = "spec: task\nname: \"t\"\n---\n\n## Constraints\n\n### 禁止做\n- 不要做 x\n";
+        match parse_spec_from_str(input) {
+            Err(SpecError::Parse { message, .. }) => {
+                assert!(message.contains("禁止做"), "message: {message}");
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_keeps_chinese_description_bullet() {
+        // 当 and 场景 here are prose words, not structural keywords; the bullet
+        // must parse and be preserved as a Chinese description, not rejected.
+        let input = "spec: task\nname: \"t\"\n---\n\n## Decisions\n\n- 当 critical 场景 fail 时退出码为 2\n";
+        let doc = parse_spec_from_str(input).unwrap();
+        match &doc.sections[0] {
+            Section::Decisions { items, .. } => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0], "当 critical 场景 fail 时退出码为 2");
+            }
+            other => panic!("expected Decisions, got {other:?}"),
         }
     }
 }

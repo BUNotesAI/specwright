@@ -165,9 +165,9 @@ mod tests {
 name: "项目"
 ---
 
-## 约束
+## Constraints
 
-### 禁止做
+### Must Not
 - 禁止使用 `panic!`
 "#,
         )
@@ -181,16 +181,16 @@ name: "任务"
 inherits: project
 ---
 
-## 意图
+## Intent
 
 实现功能。
 
-## 验收标准
+## Acceptance Criteria
 
-场景: 正常路径
-  假设 输入有效
-  当 调用函数
-  那么 返回 Ok
+Scenario: 正常路径
+  Given 输入有效
+  When 调用函数
+  Then 返回 Ok
 "#,
         )
         .unwrap();
@@ -224,9 +224,9 @@ inherits: project
 name: "项目"
 ---
 
-## 约束
+## Constraints
 
-### 必须做
+### Must
 - 必须保留顶层项目规则
 "#,
         )
@@ -240,16 +240,16 @@ name: "路线图任务"
 inherits: project
 ---
 
-## 意图
+## Intent
 
 把路线图任务放在嵌套目录中。
 
-## 完成条件
+## Completion Criteria
 
-场景: 正常路径
-  假设 存在顶层 `project.spec`
-  当 从 `specs/roadmap/task.spec` 加载任务
-  那么 继承链继续生效
+Scenario: 正常路径
+  Given 存在顶层 `project.spec`
+  When 从 `specs/roadmap/task.spec` 加载任务
+  Then 继承链继续生效
 "#,
         )
         .unwrap();
