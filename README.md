@@ -120,7 +120,7 @@ source lookup order — local source -> cache -> bundled -> remote, including co
 
 - Specs live in `specs/` (future-phase specs staged in `specs/roadmap/`); runnable examples in [`examples/`](examples).
 - Agent skills under [`skills/`](skills), including the **tool-first** workflow skill `specwright-tool-first`. For Claude Code, copy them into `.claude/skills/` (they are manual copies, not symlinked); other agents use their own skills directory (for example `~/.codex/skills/`).
-- To contribute: write a task contract for your change, implement it, then run `specwright lifecycle` and `specwright guard` before committing. Project rules and the agent workflow live in `CLAUDE.md` / `AGENTS.md`.
+- To contribute: write a task contract for your change, implement it, then run `specwright lifecycle` and `specwright guard` before committing.
 
 ## License
 
