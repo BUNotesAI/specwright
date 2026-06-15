@@ -2,21 +2,16 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Fork of [ZhangHanDong/agent-spec](https://github.com/ZhangHanDong/agent-spec).**
-> Upstream verifies agent-written code against a contract for **Cargo** projects with a **bilingual** DSL.
-> `specwright` turns it into a **polyglot, English-DSL, harness-integrated** verifier — see [What this fork adds](#what-this-fork-adds).
+> **Fork of [ZhangHanDong/agent-spec](https://github.com/ZhangHanDong/agent-spec)** — an AI-native BDD/spec verification tool. This fork extends it; see [What this fork adds](#what-this-fork-adds).
 
 `specwright` (*spec* + *-wright*, a "spec-crafter") is an AI-native BDD/spec verification tool: **humans review a contract, agents implement against it, and the machine verifies whether the code satisfies it.** It installs the `specwright` CLI (forked from upstream's `agent-spec` binary).
 
 ## What this fork adds
 
-- **Polyglot test runners** — a pluggable `TestRunner` layer with built-ins for **Cargo, Maven, Gradle (Java/Kotlin), Android, iOS, and Node/TypeScript** (Pytest/Go on the roadmap). Upstream verified Cargo only; nothing else hard-codes `cargo`.
+- **Polyglot test runners** — a pluggable `TestRunner` layer with built-ins for **Cargo, Maven, Gradle (Java/Kotlin), Android, iOS, and Node/TypeScript** (Pytest/Go on the roadmap).
 - **English-only DSL (v2.0.0, breaking)** — structural keywords, section headers, and selectors are English-only; the parser **hard-rejects Chinese keyword aliases** with a clear error (`keywords must be English; '场景:' is not recognized — use 'Scenario:'`). Description free text (scenario names, step prose, quoted params) may still be any language.
-- **Trustworthy verdicts** — a test binding that matches **zero** tests *fails* (no hollow pass); `skip` and all-`#[ignore]` never count as `pass`. Verdicts stay `pass` / `fail` / `skip` / `uncertain`.
-- **Structured test bindings** — `Test:` blocks with `Package` / `Filter` / `Level` / `Test Double` / `Targets`; every scenario must declare an explicit binding.
-- **Boundary & change-set enforcement** — `Boundaries` allowed/forbidden paths are checked mechanically against a change set, with **staged** or **worktree** scope and **Git + [jj](https://github.com/jj-vcs/jj)** support.
-- **Pluggable AI verifier** — provider-agnostic; the host injects the AI backend. Scenarios the machine can't check return `uncertain` with structured `AiAnalysis` evidence.
-- **Completeness linters + harness integration** — behavior-completeness linters (flag-combination, output-mode, precedence/fallback, platform-tag, universal-claim, error-path, decision-coverage); `contract` as the default planning surface (replacing `brief`); an `explain` contract-review loop, run history, spec governance, roadmap staging; Claude Code tool-first skills; and project `init` / `migrate`.
+- **No hollow passes** — a test binding that resolves to **zero** tests *fails* instead of silently passing; `skip` and all-`#[ignore]` never count as `pass`.
+- **Expanded completeness linters** — behavior-completeness checks (flag combinations, output modes, precedence/fallback, platform tags, universal claims, error paths, decision coverage) that flag what a contract forgot to specify.
 
 ## How it works (summary)
 
