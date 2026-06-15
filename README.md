@@ -11,7 +11,6 @@
 - **Polyglot test runners** — a pluggable `TestRunner` layer with built-ins for **Cargo, Maven, Gradle (Java/Kotlin), Android, iOS, and Node/TypeScript** (Pytest/Go on the roadmap).
 - **English-only DSL (v2.0.0, breaking)** — structural keywords, section headers, and selectors are English-only; the parser **hard-rejects Chinese keyword aliases** with a clear error (`keywords must be English; '场景:' is not recognized — use 'Scenario:'`). Description free text (scenario names, step prose, quoted params) may still be any language.
 - **No hollow passes** — a test binding that resolves to **zero** tests *fails* instead of silently passing; `skip` and all-`#[ignore]` never count as `pass`.
-- **Expanded completeness linters** — behavior-completeness checks (flag combinations, output modes, precedence/fallback, platform tags, universal claims, error paths, decision coverage) that flag what a contract forgot to specify.
 
 ## How it works (summary)
 
