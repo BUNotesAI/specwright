@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use crate::spec_core::{SpecError, SpecResult, TestSelector};
 
 use super::{
-    NodePackageManagerDecision, NodeProjectMetadata, PreflightOutcome, RunnerWorkspace,
-    TestCommand, TestRunner, WorkspaceMarkers,
+    NodePackageManagerDecision, NodeProjectMetadata, PreflightOutcome, RunnerOutput,
+    RunnerOutputInterpretation, RunnerWorkspace, TestCommand, TestRunner, WorkspaceMarkers,
 };
 
 /// Generic Node and TypeScript package-script runner.
@@ -50,6 +50,22 @@ impl TestRunner for NodeRunner {
             args,
             cwd: target.cwd,
         })
+    }
+
+    fn interpret_output(
+        &self,
+        selector: &TestSelector,
+        output: &RunnerOutput,
+    ) -> RunnerOutputInterpretation {
+        let default = RunnerOutputInterpretation::from_exit_status(output.status_success);
+        match vitest_zero_match(&output.combined()) {
+            Some(true) if output.status_success => RunnerOutputInterpretation::zero_match(selector),
+            Some(_) => default,
+            None if output.status_success => default.with_warning(
+                "node runner could not parse a vitest test summary; preserving exit-code semantics",
+            ),
+            None => default,
+        }
     }
 
     fn scan_legacy_bindings(
@@ -342,6 +358,37 @@ fn is_node_source(path: &Path) -> bool {
         })
 }
 
+fn vitest_zero_match(combined: &str) -> Option<bool> {
+    combined.lines().find_map(|line| {
+        let trimmed = line.trim();
+        let rest = trimmed.strip_prefix("Tests")?.trim();
+        vitest_total_count(rest).map(|count| count == 0)
+    })
+}
+
+fn vitest_total_count(summary_rest: &str) -> Option<u64> {
+    if let Some(count) = last_parenthesized_number(summary_rest) {
+        return Some(count);
+    }
+    first_number(summary_rest)
+}
+
+fn last_parenthesized_number(input: &str) -> Option<u64> {
+    let close = input.rfind(')')?;
+    let before_close = &input[..close];
+    let open = before_close.rfind('(')?;
+    before_close[open + 1..].trim().parse().ok()
+}
+
+fn first_number(input: &str) -> Option<u64> {
+    let start = input.find(|ch: char| ch.is_ascii_digit())?;
+    let digits: String = input[start..]
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect();
+    digits.parse().ok()
+}
+
 fn program_on_path(program: &str) -> bool {
     let Some(paths) = std::env::var_os("PATH") else {
         return false;
@@ -358,9 +405,10 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::path::PathBuf;
 
-    use crate::spec_core::TestSelector;
+    use crate::spec_core::{TestSelector, Verdict};
     use crate::spec_verify::{
-        RunnerSourceFile, RunnerWorkspace, RunnerWorkspaceMetadata, TestRunner, WorkspaceMarkers,
+        RunnerOutput, RunnerSourceFile, RunnerWorkspace, RunnerWorkspaceMetadata, TestRunner,
+        WorkspaceMarkers,
     };
 
     use super::super::{
@@ -674,6 +722,46 @@ const helper = true
         let bindings = NodeRunner.scan_legacy_bindings(&workspace).unwrap();
 
         assert_eq!(bindings.get("same scenario"), Some(&"first".to_string()));
+    }
+
+    #[test]
+    fn node_vitest_zero_match_fails_verdict() {
+        let output = RunnerOutput {
+            status_success: true,
+            stdout: " Test Files  1 passed (1)\n      Tests  0 passed (0)\n".into(),
+            stderr: String::new(),
+        };
+
+        let interpretation = NodeRunner.interpret_output(&unit_selector("missing title"), &output);
+
+        assert_eq!(interpretation.verdict, Verdict::Fail);
+        assert_eq!(
+            interpretation.reason.as_deref(),
+            Some(
+                "test selector `missing title` matched zero tests; a filter that resolves to nothing is not coverage"
+            )
+        );
+        assert!(interpretation.warnings.is_empty());
+    }
+
+    #[test]
+    fn node_unparseable_output_keeps_exit_code_semantics() {
+        let output = RunnerOutput {
+            status_success: true,
+            stdout: "all files were already typechecked\n".into(),
+            stderr: String::new(),
+        };
+
+        let interpretation = NodeRunner.interpret_output(&unit_selector("any title"), &output);
+
+        assert_eq!(interpretation.verdict, Verdict::Pass);
+        assert!(interpretation.reason.is_none());
+        assert_eq!(
+            interpretation.warnings,
+            vec![
+                "node runner could not parse a vitest test summary; preserving exit-code semantics"
+            ]
+        );
     }
 
     fn workspace(

@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use crate::spec_core::{SpecResult, TestSelector};
 
-use super::{RunnerWorkspace, TestCommand, TestRunner, WorkspaceMarkers};
+use super::{
+    RunnerOutput, RunnerOutputInterpretation, RunnerWorkspace, TestCommand, TestRunner,
+    WorkspaceMarkers,
+};
 
 /// Built-in Cargo test runner.
 pub struct CargoRunner;
@@ -38,6 +41,17 @@ impl TestRunner for CargoRunner {
         })
     }
 
+    fn interpret_output(
+        &self,
+        selector: &TestSelector,
+        output: &RunnerOutput,
+    ) -> RunnerOutputInterpretation {
+        if output.status_success && cargo_zero_match(&output.combined()) == Some(true) {
+            return RunnerOutputInterpretation::zero_match(selector);
+        }
+        RunnerOutputInterpretation::from_exit_status(output.status_success)
+    }
+
     fn scan_legacy_bindings(
         &self,
         workspace: &RunnerWorkspace,
@@ -53,6 +67,26 @@ impl TestRunner for CargoRunner {
         }
         Ok(bindings)
     }
+}
+
+/// Sum every `running N tests` / `running 1 test` summary line.
+/// Returns `None` when no summary line is present.
+fn cargo_zero_match(combined: &str) -> Option<bool> {
+    let mut found = false;
+    let mut total: u64 = 0;
+    for line in combined.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("running ")
+            && let Some(count) = rest
+                .strip_suffix(" tests")
+                .or_else(|| rest.strip_suffix(" test"))
+            && let Ok(value) = count.trim().parse::<u64>()
+        {
+            found = true;
+            total += value;
+        }
+    }
+    found.then_some(total == 0)
 }
 
 pub fn extract_bindings(source: &str) -> Vec<(String, String)> {
@@ -110,9 +144,11 @@ fn extract_fn_name(line: &str) -> Option<String> {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::spec_core::TestSelector;
+    use crate::spec_core::{TestSelector, Verdict};
 
-    use super::super::{RunnerSourceFile, RunnerWorkspace, TestRunner, WorkspaceMarkers};
+    use super::super::{
+        RunnerOutput, RunnerSourceFile, RunnerWorkspace, TestRunner, WorkspaceMarkers,
+    };
     use super::CargoRunner;
 
     #[test]
@@ -186,6 +222,63 @@ fn second_test() {}
         assert_eq!(
             bindings.get("same scenario"),
             Some(&"first_test".to_string())
+        );
+    }
+
+    #[test]
+    fn cargo_zero_match_summary_parsing() {
+        let zero =
+            "   Compiling x\n     Running tests/a.rs\nrunning 0 tests\n\ntest result: ok. 0 passed";
+        assert_eq!(super::cargo_zero_match(zero), Some(true));
+
+        let multi =
+            "running 0 tests\ntest result: ok.\nrunning 2 tests\ntest a ... ok\ntest b ... ok";
+        assert_eq!(super::cargo_zero_match(multi), Some(false));
+
+        let singular = "running 1 test\ntest a ... ok";
+        assert_eq!(super::cargo_zero_match(singular), Some(false));
+
+        let unparseable = "error: could not compile";
+        assert_eq!(super::cargo_zero_match(unparseable), None);
+    }
+
+    #[test]
+    fn cargo_zero_match_preserved_via_interpret_output() {
+        let selector = TestSelector::filter_only("missing_cargo_filter");
+        let zero = RunnerOutput {
+            status_success: true,
+            stdout: "running 0 tests\n\ntest result: ok. 0 passed\n".into(),
+            stderr: String::new(),
+        };
+        let non_zero = RunnerOutput {
+            status_success: true,
+            stdout: "running 1 test\ntest real_test ... ok\n".into(),
+            stderr: String::new(),
+        };
+        let unparseable_success = RunnerOutput {
+            status_success: true,
+            stdout: "finished without cargo test summary\n".into(),
+            stderr: String::new(),
+        };
+
+        let zero_interpretation = CargoRunner.interpret_output(&selector, &zero);
+        assert_eq!(zero_interpretation.verdict, Verdict::Fail);
+        assert_eq!(
+            zero_interpretation.reason.as_deref(),
+            Some(
+                "test selector `missing_cargo_filter` matched zero tests; a filter that resolves to nothing is not coverage"
+            )
+        );
+
+        assert_eq!(
+            CargoRunner.interpret_output(&selector, &non_zero).verdict,
+            Verdict::Pass
+        );
+        assert_eq!(
+            CargoRunner
+                .interpret_output(&selector, &unparseable_success)
+                .verdict,
+            Verdict::Pass
         );
     }
 }

@@ -7,7 +7,7 @@ use crate::spec_core::{
     TestSelector, Verdict,
 };
 
-use super::{VerificationContext, Verifier};
+use super::{RunnerOutput, VerificationContext, Verifier};
 
 pub struct TestVerifier;
 
@@ -68,53 +68,29 @@ impl Verifier for TestVerifier {
                 })?;
             let duration_ms = started.elapsed().as_millis() as u64;
 
-            let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-            let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-            let combined = if stderr.trim().is_empty() {
-                stdout.clone()
-            } else if stdout.trim().is_empty() {
-                stderr.clone()
-            } else {
-                format!("{stdout}\n{stderr}")
+            let runner_output = RunnerOutput {
+                status_success: output.status.success(),
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
             };
-
-            let zero_match =
-                output.status.success() && cargo_zero_match_applies(slot.runner.id(), &combined);
-            let verdict = if zero_match {
-                Verdict::Fail
-            } else if output.status.success() {
-                if scenario.review == ReviewMode::Human {
-                    Verdict::PendingReview
-                } else {
-                    Verdict::Pass
-                }
+            let combined = runner_output.combined();
+            let interpretation = slot
+                .runner
+                .interpret_output(&binding.selector, &runner_output);
+            let verdict = if interpretation.verdict == Verdict::Pass
+                && scenario.review == ReviewMode::Human
+            {
+                Verdict::PendingReview
             } else {
-                Verdict::Fail
+                interpretation.verdict
             };
             let selector_label = binding.selector.label();
-            let reason = if zero_match {
-                format!(
-                    "test selector `{selector_label}` matched zero tests; a filter that resolves to nothing is not coverage"
-                )
-            } else if output.status.success() {
-                match binding.source {
-                    BindingSource::ExplicitScenarioSelector => {
-                        format!("covered by explicit test `{selector_label}`")
-                    }
-                    BindingSource::LegacyComment => {
-                        format!("covered by legacy @spec test `{selector_label}`")
-                    }
-                }
-            } else {
-                match binding.source {
-                    BindingSource::ExplicitScenarioSelector => {
-                        format!("explicit test `{selector_label}` failed")
-                    }
-                    BindingSource::LegacyComment => {
-                        format!("legacy @spec test `{selector_label}` failed")
-                    }
-                }
-            };
+            let reason = append_runner_warnings(
+                interpretation.reason.unwrap_or_else(|| {
+                    default_test_reason(&binding, &selector_label, runner_output.status_success)
+                }),
+                &interpretation.warnings,
+            );
 
             let step_results = scenario
                 .steps
@@ -145,6 +121,43 @@ impl Verifier for TestVerifier {
         }
 
         Ok(results)
+    }
+}
+
+fn default_test_reason(
+    binding: &TestBinding,
+    selector_label: &str,
+    status_success: bool,
+) -> String {
+    if status_success {
+        match binding.source {
+            BindingSource::ExplicitScenarioSelector => {
+                format!("covered by explicit test `{selector_label}`")
+            }
+            BindingSource::LegacyComment => {
+                format!("covered by legacy @spec test `{selector_label}`")
+            }
+        }
+    } else {
+        match binding.source {
+            BindingSource::ExplicitScenarioSelector => {
+                format!("explicit test `{selector_label}` failed")
+            }
+            BindingSource::LegacyComment => {
+                format!("legacy @spec test `{selector_label}` failed")
+            }
+        }
+    }
+}
+
+fn append_runner_warnings(reason: String, warnings: &[String]) -> String {
+    if warnings.is_empty() {
+        reason
+    } else {
+        format!(
+            "{reason}; runner warning: {}",
+            warnings.join("; runner warning: ")
+        )
     }
 }
 
@@ -234,8 +247,9 @@ mod tests {
         StepKind, TestSelector, Verdict,
     };
     use crate::spec_verify::{
-        AiMode, PreflightOutcome, ResolutionSource, RoutedContexts, RunnerResolution, RunnerSlot,
-        RunnerWorkspace, TestCommand, TestRunner, VerificationContext, Verifier, WorkspaceMarkers,
+        AiMode, PreflightOutcome, ResolutionSource, RoutedContexts, RunnerOutput,
+        RunnerOutputInterpretation, RunnerResolution, RunnerSlot, RunnerWorkspace, TestCommand,
+        TestRunner, VerificationContext, Verifier, WorkspaceMarkers,
     };
 
     use super::{BindingSource, TestBinding, TestVerifier, resolve_test_binding};
@@ -626,6 +640,98 @@ fn helper() {}
         );
     }
 
+    struct InterpretFailRunner;
+
+    impl TestRunner for InterpretFailRunner {
+        fn id(&self) -> &'static str {
+            "node"
+        }
+
+        fn detect(&self, _markers: &WorkspaceMarkers) -> bool {
+            true
+        }
+
+        fn build_test_command(
+            &self,
+            _workspace: &RunnerWorkspace,
+            _selector: &TestSelector,
+        ) -> crate::spec_core::SpecResult<TestCommand> {
+            Ok(TestCommand {
+                program: "sh".into(),
+                args: vec!["-c".into(), "printf 'running 0 tests\\n'".into()],
+                cwd: None,
+            })
+        }
+
+        fn scan_legacy_bindings(
+            &self,
+            _workspace: &RunnerWorkspace,
+        ) -> crate::spec_core::SpecResult<HashMap<String, String>> {
+            Ok(HashMap::new())
+        }
+
+        fn interpret_output(
+            &self,
+            selector: &TestSelector,
+            output: &RunnerOutput,
+        ) -> RunnerOutputInterpretation {
+            assert_eq!(output.combined(), "running 0 tests\n");
+            RunnerOutputInterpretation::zero_match(selector)
+        }
+    }
+
+    #[test]
+    fn zero_match_selector_fails_verdict() {
+        let scenario = Scenario {
+            name: "Node zero match".into(),
+            steps: vec![Step {
+                kind: StepKind::Then,
+                text: "zero matched tests fail".into(),
+                params: vec![],
+                table: vec![],
+                span: Span::line(1),
+            }],
+            test_selector: Some(TestSelector::filter_only("missing node test")),
+            tags: Vec::new(),
+            review: Default::default(),
+            mode: Default::default(),
+            depends_on: vec![],
+            span: Span::line(1),
+        };
+        let runner: Arc<dyn TestRunner> = Arc::new(InterpretFailRunner);
+        let resolution = RunnerResolution {
+            name: "node".into(),
+            source: ResolutionSource::SpecFrontmatter,
+            overridden_spec: None,
+            config_warnings: Vec::new(),
+        };
+        let workspace = RunnerWorkspace::for_test(".");
+        let ctx = VerificationContext {
+            code_paths: vec![".".into()],
+            change_paths: vec![],
+            ai_mode: AiMode::Off,
+            resolved_spec: resolved_spec_for_scenario(scenario),
+            routed_contexts: RoutedContexts::default_only(RunnerSlot {
+                runner: runner.clone(),
+                runner_workspace: workspace.clone(),
+                runner_resolution: resolution.clone(),
+            }),
+            runner,
+            runner_workspace: workspace,
+            runner_resolution: resolution,
+            config_warnings: Vec::new(),
+        };
+
+        let results = TestVerifier.verify(&ctx).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].verdict, Verdict::Fail);
+        assert_eq!(
+            results[0].step_results[0].reason,
+            "test selector `missing node test` matched zero tests; a filter that resolves to nothing is not coverage"
+        );
+    }
+
     fn routed_test_context(scenario: Scenario) -> VerificationContext {
         let default_runner: Arc<dyn TestRunner> = Arc::new(DefaultSkipRunner);
         let routed_runner: Arc<dyn TestRunner> = Arc::new(RoutedPassRunner);
@@ -727,68 +833,5 @@ fn helper() {}
                 "test_parse_structured_test_selector_block".to_string(),
             ]
         );
-    }
-}
-
-/// True when a successful cargo run's summed test-summary lines total zero.
-///
-/// Conservative by design: only the cargo runner is parsed, and output
-/// without any `running N tests` summary line yields no zero-match claim.
-fn cargo_zero_match_applies(runner_id: &str, combined: &str) -> bool {
-    runner_id == "cargo" && cargo_zero_match(combined) == Some(true)
-}
-
-/// Sum every `running N tests` / `running 1 test` summary line.
-/// Returns `None` when no summary line is present (unparseable output).
-fn cargo_zero_match(combined: &str) -> Option<bool> {
-    let mut found = false;
-    let mut total: u64 = 0;
-    for line in combined.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("running ")
-            && let Some(count) = rest
-                .strip_suffix(" tests")
-                .or_else(|| rest.strip_suffix(" test"))
-            && let Ok(value) = count.trim().parse::<u64>()
-        {
-            found = true;
-            total += value;
-        }
-    }
-    found.then_some(total == 0)
-}
-
-#[cfg(test)]
-mod zero_match_tests {
-    use super::{cargo_zero_match, cargo_zero_match_applies};
-
-    #[test]
-    fn cargo_zero_match_summary_parsing() {
-        let zero =
-            "   Compiling x\n     Running tests/a.rs\nrunning 0 tests\n\ntest result: ok. 0 passed";
-        assert_eq!(cargo_zero_match(zero), Some(true));
-
-        let multi =
-            "running 0 tests\ntest result: ok.\nrunning 2 tests\ntest a ... ok\ntest b ... ok";
-        assert_eq!(cargo_zero_match(multi), Some(false));
-
-        let singular = "running 1 test\ntest a ... ok";
-        assert_eq!(cargo_zero_match(singular), Some(false));
-
-        let unparseable = "error: could not compile";
-        assert_eq!(cargo_zero_match(unparseable), None);
-    }
-
-    #[test]
-    fn zero_match_selector_fails_verdict() {
-        // Cargo + summed-zero output is the only combination that flips the
-        // verdict; unparseable output and non-cargo runners stay unchanged.
-        assert!(cargo_zero_match_applies("cargo", "running 0 tests\n"));
-        assert!(!cargo_zero_match_applies("cargo", "no summary lines here"));
-        assert!(!cargo_zero_match_applies("node", "running 0 tests\n"));
-        assert!(!cargo_zero_match_applies(
-            "cargo",
-            "running 0 tests\nrunning 3 tests\n"
-        ));
     }
 }

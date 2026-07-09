@@ -21,8 +21,9 @@ pub use runners::{CargoRunner, extract_bindings};
 #[allow(unused_imports)]
 pub use runners::{
     HostPlatform, NodePackageManager, NodePackageManagerDecision, NodePackageManagerSource,
-    NodePackageMetadata, NodeProjectMetadata, ResolutionSource, RunnerRoutingPlan, RunnerSelection,
-    RunnerWarning, RunnerWorkspaceMetadata, TestCommand,
+    NodePackageMetadata, NodeProjectMetadata, ResolutionSource, RunnerOutput,
+    RunnerOutputInterpretation, RunnerRoutingPlan, RunnerSelection, RunnerWarning,
+    RunnerWorkspaceMetadata, TestCommand,
 };
 pub use runners::{
     PreflightOutcome, RunnerRegistry, RunnerResolution, RunnerSourceFile, RunnerWorkspace,

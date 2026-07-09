@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use crate::spec_core::{SpecResult, TestSelector};
+use crate::spec_core::{SpecResult, TestSelector, Verdict};
 
 /// Host platform supported by a test runner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +95,65 @@ pub struct TestCommand {
     pub program: String,
     pub args: Vec<String>,
     pub cwd: Option<PathBuf>,
+}
+
+/// Process output collected by the verifier and interpreted by the runner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunnerOutput {
+    pub status_success: bool,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl RunnerOutput {
+    /// Returns stdout/stderr in the same display form used by test evidence.
+    pub fn combined(&self) -> String {
+        if self.stderr.trim().is_empty() {
+            self.stdout.clone()
+        } else if self.stdout.trim().is_empty() {
+            self.stderr.clone()
+        } else {
+            format!("{}\n{}", self.stdout, self.stderr)
+        }
+    }
+}
+
+/// Runner-owned classification of process output.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunnerOutputInterpretation {
+    pub verdict: Verdict,
+    pub reason: Option<String>,
+    pub warnings: Vec<String>,
+}
+
+impl RunnerOutputInterpretation {
+    pub fn from_exit_status(status_success: bool) -> Self {
+        Self {
+            verdict: if status_success {
+                Verdict::Pass
+            } else {
+                Verdict::Fail
+            },
+            reason: None,
+            warnings: Vec::new(),
+        }
+    }
+
+    pub fn zero_match(selector: &TestSelector) -> Self {
+        Self {
+            verdict: Verdict::Fail,
+            reason: Some(format!(
+                "test selector `{}` matched zero tests; a filter that resolves to nothing is not coverage",
+                selector.label()
+            )),
+            warnings: Vec::new(),
+        }
+    }
+
+    pub fn with_warning(mut self, warning: impl Into<String>) -> Self {
+        self.warnings.push(warning.into());
+        self
+    }
 }
 
 /// Source file contents available to pure runner scanners.
@@ -265,6 +324,14 @@ pub trait TestRunner: Send + Sync {
         workspace: &RunnerWorkspace,
         selector: &TestSelector,
     ) -> SpecResult<TestCommand>;
+
+    fn interpret_output(
+        &self,
+        _selector: &TestSelector,
+        output: &RunnerOutput,
+    ) -> RunnerOutputInterpretation {
+        RunnerOutputInterpretation::from_exit_status(output.status_success)
+    }
 
     fn scan_legacy_bindings(
         &self,
