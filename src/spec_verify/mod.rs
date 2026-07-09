@@ -17,15 +17,16 @@ pub use ai_verifier::{AiBackend, AiVerifier, build_ai_request};
 pub use boundaries::BoundariesVerifier;
 pub use complexity::ComplexityVerifier;
 #[cfg(test)]
-pub use runners::{CargoRunner, ResolutionSource, extract_bindings};
+pub use runners::{CargoRunner, extract_bindings};
 #[allow(unused_imports)]
 pub use runners::{
     HostPlatform, NodePackageManager, NodePackageManagerDecision, NodePackageManagerSource,
-    NodeProjectMetadata, RunnerSelection, RunnerWarning, RunnerWorkspaceMetadata, TestCommand,
+    NodeProjectMetadata, ResolutionSource, RunnerRoutingPlan, RunnerSelection, RunnerWarning,
+    RunnerWorkspaceMetadata, TestCommand,
 };
 pub use runners::{
     PreflightOutcome, RunnerRegistry, RunnerResolution, RunnerSourceFile, RunnerWorkspace,
-    TestRunner, WorkspaceMarkers, resolve_detected_runner, resolve_runner_choice,
+    TestRunner, WorkspaceMarkers, resolve_detected_runner, resolve_runner_routing,
 };
 pub use structural::StructuralVerifier;
 pub use test_verifier::TestVerifier;
@@ -46,10 +47,74 @@ pub struct VerificationContext {
     pub change_paths: Vec<PathBuf>,
     pub ai_mode: AiMode,
     pub resolved_spec: ResolvedSpec,
+    pub routed_contexts: RoutedContexts,
     pub runner: Arc<dyn TestRunner>,
     pub runner_workspace: RunnerWorkspace,
     pub runner_resolution: RunnerResolution,
     pub config_warnings: Vec<RunnerWarning>,
+}
+
+/// One probed runner context available during verification.
+pub struct RunnerSlot {
+    pub runner: Arc<dyn TestRunner>,
+    pub runner_workspace: RunnerWorkspace,
+    pub runner_resolution: RunnerResolution,
+}
+
+/// Probed verification contexts for the default runner and routed packages.
+pub struct RoutedContexts {
+    slots: Vec<RunnerSlot>,
+    by_package: BTreeMap<String, usize>,
+}
+
+impl RoutedContexts {
+    /// Creates routed contexts with only the default runner slot.
+    pub fn default_only(default_slot: RunnerSlot) -> Self {
+        Self {
+            slots: vec![default_slot],
+            by_package: BTreeMap::new(),
+        }
+    }
+
+    /// Creates routed contexts and validates package-token indexes.
+    pub fn new(slots: Vec<RunnerSlot>, by_package: BTreeMap<String, usize>) -> SpecResult<Self> {
+        if slots.is_empty() {
+            return Err(SpecError::Verification(
+                "routed verification contexts require a default slot".into(),
+            ));
+        }
+        for (package, index) in &by_package {
+            if *index >= slots.len() {
+                return Err(SpecError::Verification(format!(
+                    "package route `{package}` points to missing runner slot {index}"
+                )));
+            }
+        }
+        Ok(Self { slots, by_package })
+    }
+
+    /// Returns all probed runner slots in selection order.
+    pub fn slots(&self) -> &[RunnerSlot] {
+        &self.slots
+    }
+
+    /// Returns the default runner slot.
+    pub fn default_slot(&self) -> &RunnerSlot {
+        &self.slots[0]
+    }
+
+    /// Returns a slot by index when it exists.
+    pub fn slot_at(&self, index: usize) -> Option<&RunnerSlot> {
+        self.slots.get(index)
+    }
+
+    /// Resolves a package token to a routed slot, falling back to default.
+    pub fn slot_for(&self, package: Option<&str>) -> &RunnerSlot {
+        package
+            .and_then(|token| self.by_package.get(token))
+            .and_then(|index| self.slots.get(*index))
+            .unwrap_or_else(|| self.default_slot())
+    }
 }
 
 pub fn probe_and_build_context(
@@ -97,50 +162,257 @@ fn probe_and_build_context_with_registry_and_host(
     cli_runner: Option<&str>,
     host_platform: HostPlatform,
 ) -> SpecResult<VerificationContext> {
-    let selection = resolve_runner_choice(&registry, &resolved_spec, cli_runner)?;
-
-    if let RunnerSelection::ByName { name, .. } = &selection
-        && let Some(runner) = registry.get(name)
-    {
-        ensure_runner_supported_on_host(runner.as_ref(), host_platform)?;
-    }
+    let routing_plan = resolve_runner_routing(&registry, &resolved_spec, cli_runner)?;
+    ensure_routing_host_supported(&registry, &routing_plan, host_platform)?;
 
     let root = find_workspace_root(&code_paths);
     let markers = probe_workspace_markers(root.as_deref());
-    let (runner, mut runner_resolution) = resolve_detected_runner(&registry, selection, &markers)?;
-    ensure_runner_supported_on_host(runner.as_ref(), host_platform)?;
-    let source_files = collect_source_files(
+    let SlotInputPlan {
+        slot_inputs,
+        by_package,
+        config_warnings: routing_warnings,
+    } = build_slot_inputs(
+        &registry,
         &code_paths,
-        runner.source_extensions(),
-        runner.ignored_source_dirs(),
-    )?;
-    let metadata = build_workspace_metadata(
-        runner.as_ref(),
-        root.as_deref(),
-        &markers,
-        &resolved_spec.task.meta.runner_config,
-    )?;
-    let runner_workspace = RunnerWorkspace::new(
         root,
-        code_paths.clone(),
-        resolved_spec.task.meta.runner_config.clone(),
         markers,
-        source_files,
-        metadata,
-    );
-    let config_warnings = build_config_warnings(runner.as_ref(), &runner_workspace);
-    runner_resolution.config_warnings = config_warnings.clone();
+        &resolved_spec,
+        routing_plan,
+        host_platform,
+    )?;
+
+    let participating_runners: Vec<Arc<dyn TestRunner>> = slot_inputs
+        .iter()
+        .map(|input| Arc::clone(&input.runner))
+        .collect();
+    let source_files = collect_source_files_for_runners(&code_paths, &participating_runners)?;
+    let (slots, config_warnings) = build_runner_slots(slot_inputs, source_files, routing_warnings)?;
+
+    let default_runner = Arc::clone(&slots[0].runner);
+    let default_workspace = slots[0].runner_workspace.clone();
+    let default_resolution = slots[0].runner_resolution.clone();
 
     Ok(VerificationContext {
         code_paths,
         change_paths,
         ai_mode,
         resolved_spec,
-        runner,
-        runner_workspace,
-        runner_resolution,
+        routed_contexts: RoutedContexts::new(slots, by_package)?,
+        runner: default_runner,
+        runner_workspace: default_workspace,
+        runner_resolution: default_resolution,
         config_warnings,
     })
+}
+
+fn ensure_routing_host_supported(
+    registry: &RunnerRegistry,
+    routing_plan: &RunnerRoutingPlan,
+    host_platform: HostPlatform,
+) -> SpecResult<()> {
+    if let RunnerSelection::ByName { name, .. } = &routing_plan.default_runner
+        && let Some(runner) = registry.get(name)
+    {
+        ensure_runner_supported_on_host(runner.as_ref(), host_platform)?;
+    }
+    for route in &routing_plan.routes {
+        if let Some(runner) = registry.get(&route.runner) {
+            ensure_runner_supported_on_host(runner.as_ref(), host_platform)?;
+        }
+    }
+    Ok(())
+}
+
+fn build_slot_inputs(
+    registry: &RunnerRegistry,
+    code_paths: &[PathBuf],
+    root: Option<PathBuf>,
+    markers: WorkspaceMarkers,
+    resolved_spec: &ResolvedSpec,
+    routing_plan: RunnerRoutingPlan,
+    host_platform: HostPlatform,
+) -> SpecResult<SlotInputPlan> {
+    let (default_runner, default_resolution) =
+        resolve_detected_runner(registry, routing_plan.default_runner, &markers)?;
+    ensure_runner_supported_on_host(default_runner.as_ref(), host_platform)?;
+    let mut slot_inputs = vec![SlotInput {
+        runner: default_runner,
+        root: root.clone(),
+        code_paths: code_paths.to_vec(),
+        config: resolved_spec.task.meta.runner_config.clone(),
+        markers,
+        resolution: default_resolution,
+    }];
+    let mut by_package = BTreeMap::new();
+    let routes = routing_plan.routes;
+
+    if !routes.is_empty() {
+        let base_root = routed_base_root(root.as_deref(), code_paths)?;
+        for route in routes {
+            push_route_slot(
+                registry,
+                &mut slot_inputs,
+                &mut by_package,
+                &base_root,
+                route,
+            )?;
+        }
+    }
+
+    Ok(SlotInputPlan {
+        slot_inputs,
+        by_package,
+        config_warnings: routing_plan.config_warnings,
+    })
+}
+
+fn push_route_slot(
+    registry: &RunnerRegistry,
+    slot_inputs: &mut Vec<SlotInput>,
+    by_package: &mut BTreeMap<String, usize>,
+    base_root: &Path,
+    route: runners::ValidatedRoute,
+) -> SpecResult<()> {
+    let route_root = resolve_declared_path(
+        base_root,
+        route.root.as_deref().unwrap_or("."),
+        "route root",
+    )?;
+    if !route_root.is_dir() {
+        return Err(SpecError::Verification(format!(
+            "route root for `{}` runner does not exist: {}",
+            route.runner,
+            route_root.display()
+        )));
+    }
+
+    for (package, relative_dir) in &route.packages {
+        let package_root = resolve_declared_path(&route_root, relative_dir, "package route")?;
+        if !package_root.is_dir() {
+            return Err(SpecError::Verification(format!(
+                "package route `{package}` for `{}` runner points to missing directory: {}",
+                route.runner,
+                package_root.display()
+            )));
+        }
+    }
+
+    let runner = registry.get(&route.runner).ok_or_else(|| {
+        SpecError::Verification(format!(
+            "unknown test runner `{}` after route validation",
+            route.runner
+        ))
+    })?;
+    let markers = probe_workspace_markers(Some(&route_root));
+    let resolution = RunnerResolution {
+        name: route.runner.clone(),
+        source: ResolutionSource::SpecFrontmatter,
+        overridden_spec: None,
+        config_warnings: Vec::new(),
+    };
+    let slot_index = slot_inputs.len();
+    for package in route.packages.keys() {
+        by_package.insert(package.clone(), slot_index);
+    }
+    slot_inputs.push(SlotInput {
+        runner,
+        root: Some(route_root.clone()),
+        code_paths: vec![route_root],
+        config: route.config,
+        markers,
+        resolution,
+    });
+    Ok(())
+}
+
+fn build_runner_slots(
+    slot_inputs: Vec<SlotInput>,
+    source_files: Vec<RunnerSourceFile>,
+    mut config_warnings: Vec<RunnerWarning>,
+) -> SpecResult<(Vec<RunnerSlot>, Vec<RunnerWarning>)> {
+    let mut slots = Vec::new();
+    for input in slot_inputs {
+        let metadata = build_workspace_metadata(
+            input.runner.as_ref(),
+            input.root.as_deref(),
+            &input.markers,
+            &input.config,
+        )?;
+        let runner_workspace = RunnerWorkspace::new(
+            input.root,
+            input.code_paths,
+            input.config,
+            input.markers,
+            source_files.clone(),
+            metadata,
+        );
+        let slot_warnings = build_config_warnings(input.runner.as_ref(), &runner_workspace);
+        let mut resolution = input.resolution;
+        resolution.config_warnings = slot_warnings.clone();
+        config_warnings.extend(slot_warnings);
+        slots.push(RunnerSlot {
+            runner: input.runner,
+            runner_workspace,
+            runner_resolution: resolution,
+        });
+    }
+    Ok((slots, config_warnings))
+}
+
+struct SlotInput {
+    runner: Arc<dyn TestRunner>,
+    root: Option<PathBuf>,
+    code_paths: Vec<PathBuf>,
+    config: BTreeMap<String, String>,
+    markers: WorkspaceMarkers,
+    resolution: RunnerResolution,
+}
+
+struct SlotInputPlan {
+    slot_inputs: Vec<SlotInput>,
+    by_package: BTreeMap<String, usize>,
+    config_warnings: Vec<RunnerWarning>,
+}
+
+fn routed_base_root(root: Option<&Path>, code_paths: &[PathBuf]) -> SpecResult<PathBuf> {
+    if let Some(root) = root {
+        return Ok(root.to_path_buf());
+    }
+
+    let Some(path) = code_paths.first() else {
+        return Err(SpecError::Verification(
+            "routed runner declarations require at least one code path".into(),
+        ));
+    };
+
+    if path.is_file() {
+        path.parent().map(Path::to_path_buf).ok_or_else(|| {
+            SpecError::Verification(format!(
+                "could not resolve route base from file path {}",
+                path.display()
+            ))
+        })
+    } else {
+        Ok(path.clone())
+    }
+}
+
+fn resolve_declared_path(base: &Path, relative: &str, label: &str) -> SpecResult<PathBuf> {
+    let path = Path::new(relative);
+    if path.is_absolute() {
+        return Err(SpecError::Verification(format!(
+            "{label} `{relative}` must be relative to the code root"
+        )));
+    }
+    if path
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(SpecError::Verification(format!(
+            "{label} `{relative}` must not contain parent-directory components"
+        )));
+    }
+    Ok(base.join(path))
 }
 
 fn build_config_warnings(
@@ -432,6 +704,22 @@ fn probe_workspace_markers(root: Option<&Path>) -> WorkspaceMarkers {
     WorkspaceMarkers::from_files(markers)
 }
 
+fn collect_source_files_for_runners(
+    code_paths: &[PathBuf],
+    runners: &[Arc<dyn TestRunner>],
+) -> SpecResult<Vec<RunnerSourceFile>> {
+    let mut source_extensions = BTreeSet::new();
+    let mut ignored_source_dirs = BTreeSet::new();
+    for runner in runners {
+        source_extensions.extend(runner.source_extensions().iter().copied());
+        ignored_source_dirs.extend(runner.ignored_source_dirs().iter().copied());
+    }
+
+    let source_extensions: Vec<&str> = source_extensions.into_iter().collect();
+    let ignored_source_dirs: Vec<&str> = ignored_source_dirs.into_iter().collect();
+    collect_source_files(code_paths, &source_extensions, &ignored_source_dirs)
+}
+
 fn collect_source_files(
     code_paths: &[PathBuf],
     source_extensions: &[&str],
@@ -587,6 +875,16 @@ impl VerificationContext {
             change_paths,
             ai_mode,
             resolved_spec,
+            routed_contexts: RoutedContexts::default_only(RunnerSlot {
+                runner: Arc::new(CargoRunner),
+                runner_workspace: RunnerWorkspace::for_test("."),
+                runner_resolution: RunnerResolution {
+                    name: "cargo".into(),
+                    source: ResolutionSource::Detected,
+                    overridden_spec: None,
+                    config_warnings: Vec::new(),
+                },
+            }),
             runner: Arc::new(CargoRunner),
             runner_workspace: RunnerWorkspace::for_test("."),
             runner_resolution: RunnerResolution {
@@ -608,15 +906,16 @@ mod tests {
     use std::sync::Arc;
 
     use crate::spec_core::{
-        ResolvedSpec, Scenario, ScenarioResult, Section, Span, SpecDocument, SpecLevel, SpecMeta,
-        Step, StepKind, TestSelector, Verdict,
+        ResolvedSpec, RunnerRouteDecl, Scenario, ScenarioResult, Section, Span, SpecDocument,
+        SpecLevel, SpecMeta, Step, StepKind, TestSelector, Verdict,
     };
 
     use super::{
         AiMode, CargoRunner, HostPlatform, NodePackageManager, NodePackageManagerDecision,
-        NodePackageManagerSource, ResolutionSource, RunnerRegistry, RunnerResolution,
-        RunnerWarning, RunnerWorkspace, TestCommand, TestRunner, VerificationContext, Verifier,
-        WorkspaceMarkers, probe_and_build_context_with_registry_and_host, run_verification,
+        NodePackageManagerSource, ResolutionSource, RoutedContexts, RunnerRegistry,
+        RunnerResolution, RunnerSlot, RunnerWarning, RunnerWorkspace, TestCommand, TestRunner,
+        VerificationContext, Verifier, WorkspaceMarkers,
+        probe_and_build_context_with_registry_and_host, run_verification,
         select_node_package_manager,
     };
 
@@ -712,11 +1011,11 @@ mod tests {
             depends_on: vec![],
             span: Span::line(1),
         };
-        let ctx = VerificationContext {
-            code_paths: vec![PathBuf::from(".")],
-            change_paths: vec![],
-            ai_mode: AiMode::Off,
-            resolved_spec: ResolvedSpec {
+        let ctx = VerificationContext::for_test(
+            vec![PathBuf::from(".")],
+            vec![],
+            AiMode::Off,
+            ResolvedSpec {
                 task: SpecDocument {
                     meta: SpecMeta {
                         level: SpecLevel::Task,
@@ -741,16 +1040,7 @@ mod tests {
                 inherited_decisions: vec![],
                 all_scenarios: vec![scenario],
             },
-            runner: Arc::new(CargoRunner),
-            runner_workspace: RunnerWorkspace::for_test("."),
-            runner_resolution: RunnerResolution {
-                name: "cargo".into(),
-                source: ResolutionSource::Detected,
-                overridden_spec: None,
-                config_warnings: Vec::new(),
-            },
-            config_warnings: Vec::new(),
-        };
+        );
 
         let first = FirstVerifier;
         let second = SecondVerifier;
@@ -1330,8 +1620,169 @@ mod tests {
         );
     }
 
+    #[test]
+    fn slot_for_unmatched_package_uses_default() {
+        let routed = RoutedContexts::new(
+            vec![
+                RunnerSlot {
+                    runner: Arc::new(CargoRunner),
+                    runner_workspace: RunnerWorkspace::for_test("."),
+                    runner_resolution: RunnerResolution {
+                        name: "cargo".into(),
+                        source: ResolutionSource::Detected,
+                        overridden_spec: None,
+                        config_warnings: Vec::new(),
+                    },
+                },
+                RunnerSlot {
+                    runner: Arc::new(crate::spec_verify::runners::NodeRunner),
+                    runner_workspace: RunnerWorkspace::for_test("web"),
+                    runner_resolution: RunnerResolution {
+                        name: "node".into(),
+                        source: ResolutionSource::SpecFrontmatter,
+                        overridden_spec: None,
+                        config_warnings: Vec::new(),
+                    },
+                },
+            ],
+            BTreeMap::from([("admin".to_string(), 1)]),
+        )
+        .unwrap();
+
+        assert_eq!(routed.slot_for(None).runner.id(), "cargo");
+        assert_eq!(routed.slot_for(Some("unknown")).runner.id(), "cargo");
+        assert_eq!(routed.slot_for(Some("admin")).runner.id(), "node");
+    }
+
+    #[test]
+    fn probe_builds_default_and_routed_slots() {
+        let root = temp_workspace_path("routed-context-slots");
+        write_file(
+            &root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(&root.join("src/lib.rs"), "pub fn backend() {}\n");
+        write_file(
+            &root.join("web/package.json"),
+            r#"{"packageManager":"bun@1.3.8","scripts":{"test":"vitest"}}"#,
+        );
+        write_file(
+            &root.join("web/apps/admin/package.json"),
+            r#"{"scripts":{"test":"vitest"}}"#,
+        );
+
+        let ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root.clone()],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_admin_route(),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+
+        assert_eq!(ctx.routed_contexts.slots().len(), 2);
+        assert_eq!(ctx.routed_contexts.default_slot().runner.id(), "cargo");
+        assert_eq!(
+            ctx.routed_contexts.slot_for(Some("admin")).runner.id(),
+            "node"
+        );
+        assert_eq!(
+            ctx.routed_contexts.slot_for(Some("iam")).runner.id(),
+            "cargo"
+        );
+    }
+
+    #[test]
+    fn probe_errors_on_missing_route_package_dir() {
+        let root = temp_workspace_path("routed-context-missing-package");
+        write_file(
+            &root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("web/package.json"),
+            r#"{"packageManager":"bun@1.3.8","scripts":{"test":"vitest"}}"#,
+        );
+
+        let err = match probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root.clone()],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_admin_route(),
+            None,
+            HostPlatform::MacOS,
+        ) {
+            Ok(_) => panic!("missing routed package directory should fail verification"),
+            Err(err) => err.to_string(),
+        };
+
+        assert!(err.contains("admin"));
+        assert!(err.contains(&root.join("web/apps/admin").display().to_string()));
+    }
+
+    #[test]
+    fn source_collection_unions_runner_extensions() {
+        let root = temp_workspace_path("routed-context-source-union");
+        write_file(
+            &root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(&root.join("src/lib.rs"), "pub fn backend() {}\n");
+        write_file(
+            &root.join("web/package.json"),
+            r#"{"packageManager":"bun@1.3.8","scripts":{"test":"vitest"}}"#,
+        );
+        write_file(
+            &root.join("web/apps/admin/package.json"),
+            r#"{"scripts":{"test":"vitest"}}"#,
+        );
+        write_file(
+            &root.join("web/apps/admin/src/preview.test.ts"),
+            "test(\"preview\", () => {})\n",
+        );
+
+        let ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_admin_route(),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        let source_paths: Vec<String> = ctx
+            .routed_contexts
+            .slots()
+            .iter()
+            .flat_map(|slot| &slot.runner_workspace.source_files)
+            .map(|source| source.path.to_string_lossy().into_owned())
+            .collect();
+
+        assert!(source_paths.iter().any(|path| path.ends_with("src/lib.rs")));
+        assert!(
+            source_paths
+                .iter()
+                .any(|path| path.ends_with("web/apps/admin/src/preview.test.ts"))
+        );
+    }
+
     fn resolved_spec_with_runner(runner: Option<&str>) -> ResolvedSpec {
         resolved_spec_with_runner_and_config(runner, BTreeMap::new())
+    }
+
+    fn resolved_spec_with_admin_route() -> ResolvedSpec {
+        let mut spec = resolved_spec_with_runner(Some("cargo"));
+        spec.task.meta.runner_routes = vec![RunnerRouteDecl {
+            runner: "node".into(),
+            root: Some("web".into()),
+            packages: BTreeMap::from([("admin".to_string(), "apps/admin".to_string())]),
+            config: BTreeMap::from([("package_manager".to_string(), "bun".to_string())]),
+        }];
+        spec
     }
 
     fn resolved_spec_with_runner_and_config(

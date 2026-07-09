@@ -21,6 +21,7 @@ enum BindingSource {
 struct TestBinding {
     selector: TestSelector,
     source: BindingSource,
+    slot_index: Option<usize>,
 }
 
 impl Verifier for TestVerifier {
@@ -30,30 +31,30 @@ impl Verifier for TestVerifier {
 
     #[allow(clippy::too_many_lines)] // Exception: legacy Cargo verifier path; runner refactor will split this under task_3455b7d6.
     fn verify(&self, ctx: &VerificationContext) -> SpecResult<Vec<ScenarioResult>> {
-        let Some(workspace_root) = ctx.runner_workspace.root.as_ref() else {
-            return Ok(Vec::new());
-        };
-
-        let legacy_bindings = ctx.runner.scan_legacy_bindings(&ctx.runner_workspace)?;
+        let legacy_bindings = scan_legacy_bindings(ctx)?;
         let mut results = Vec::new();
 
         for scenario in &ctx.resolved_spec.all_scenarios {
             let Some(binding) = resolve_test_binding(scenario, &legacy_bindings) else {
                 continue;
             };
+            let slot = slot_for_binding(ctx, &binding);
+            let Some(workspace_root) = slot.runner_workspace.root.as_ref() else {
+                continue;
+            };
 
-            if let super::PreflightOutcome::MissingCapability { capability, reason } = ctx
-                .runner
-                .preflight(&ctx.runner_workspace, &binding.selector)?
+            if let super::PreflightOutcome::MissingCapability { capability, reason } =
+                slot.runner
+                    .preflight(&slot.runner_workspace, &binding.selector)?
             {
                 results.push(skip_for_missing_capability(scenario, &capability, &reason));
                 continue;
             }
 
             let started = Instant::now();
-            let command = ctx
+            let command = slot
                 .runner
-                .build_test_command(&ctx.runner_workspace, &binding.selector)?;
+                .build_test_command(&slot.runner_workspace, &binding.selector)?;
             let output = Command::new(&command.program)
                 .args(&command.args)
                 .current_dir(workspace_root)
@@ -61,7 +62,7 @@ impl Verifier for TestVerifier {
                 .map_err(|err| {
                     SpecError::Verification(format!(
                         "failed to run {} test command: {err}",
-                        ctx.runner.id()
+                        slot.runner.id()
                     ))
                 })?;
             let duration_ms = started.elapsed().as_millis() as u64;
@@ -77,7 +78,7 @@ impl Verifier for TestVerifier {
             };
 
             let zero_match =
-                output.status.success() && cargo_zero_match_applies(ctx.runner.id(), &combined);
+                output.status.success() && cargo_zero_match_applies(slot.runner.id(), &combined);
             let verdict = if zero_match {
                 Verdict::Fail
             } else if output.status.success() {
@@ -132,7 +133,7 @@ impl Verifier for TestVerifier {
                     test_name: selector_label,
                     stdout: combined,
                     passed: output.status.success(),
-                    command_program: command_program_evidence(ctx.runner.id(), &command.program),
+                    command_program: command_program_evidence(slot.runner.id(), &command.program),
                     package: binding.selector.package.clone(),
                     level: binding.selector.level.clone(),
                     test_double: binding.selector.test_double.clone(),
@@ -146,23 +147,46 @@ impl Verifier for TestVerifier {
     }
 }
 
+fn scan_legacy_bindings(ctx: &VerificationContext) -> SpecResult<HashMap<String, TestBinding>> {
+    let mut legacy_bindings = HashMap::new();
+    for (slot_index, slot) in ctx.routed_contexts.slots().iter().enumerate() {
+        for (scenario, selector) in slot.runner.scan_legacy_bindings(&slot.runner_workspace)? {
+            legacy_bindings.entry(scenario).or_insert(TestBinding {
+                selector: TestSelector::filter_only(selector),
+                source: BindingSource::LegacyComment,
+                slot_index: Some(slot_index),
+            });
+        }
+    }
+    Ok(legacy_bindings)
+}
+
+fn slot_for_binding<'a>(
+    ctx: &'a VerificationContext,
+    binding: &TestBinding,
+) -> &'a super::RunnerSlot {
+    binding
+        .slot_index
+        .and_then(|index| ctx.routed_contexts.slot_at(index))
+        .unwrap_or_else(|| {
+            ctx.routed_contexts
+                .slot_for(binding.selector.package.as_deref())
+        })
+}
+
 fn resolve_test_binding(
     scenario: &Scenario,
-    legacy_bindings: &HashMap<String, String>,
+    legacy_bindings: &HashMap<String, TestBinding>,
 ) -> Option<TestBinding> {
     if let Some(selector) = scenario.test_selector.as_ref() {
         return Some(TestBinding {
             selector: selector.clone(),
             source: BindingSource::ExplicitScenarioSelector,
+            slot_index: None,
         });
     }
 
-    legacy_bindings
-        .get(&scenario.name)
-        .map(|selector| TestBinding {
-            selector: TestSelector::filter_only(selector.clone()),
-            source: BindingSource::LegacyComment,
-        })
+    legacy_bindings.get(&scenario.name).cloned()
 }
 
 fn command_program_evidence(runner_id: &str, program: &str) -> Option<String> {
@@ -201,19 +225,19 @@ fn skip_for_missing_capability(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
     use std::sync::Arc;
 
     use crate::spec_core::{
-        ResolvedSpec, Scenario, Section, Span, SpecDocument, SpecLevel, SpecMeta, Step, StepKind,
-        TestSelector, Verdict,
+        Evidence, ResolvedSpec, Scenario, Section, Span, SpecDocument, SpecLevel, SpecMeta, Step,
+        StepKind, TestSelector, Verdict,
     };
     use crate::spec_verify::{
-        AiMode, PreflightOutcome, ResolutionSource, RunnerResolution, RunnerWorkspace, TestCommand,
-        TestRunner, VerificationContext, Verifier, WorkspaceMarkers,
+        AiMode, PreflightOutcome, ResolutionSource, RoutedContexts, RunnerResolution, RunnerSlot,
+        RunnerWorkspace, TestCommand, TestRunner, VerificationContext, Verifier, WorkspaceMarkers,
     };
 
-    use super::{BindingSource, TestVerifier, resolve_test_binding};
+    use super::{BindingSource, TestBinding, TestVerifier, resolve_test_binding};
 
     #[test]
     fn extracts_spec_bindings_from_test_comments() {
@@ -260,7 +284,7 @@ fn helper() {}
             depends_on: vec![],
             span: Span::default(),
         };
-        let legacy = HashMap::from([("场景一".to_string(), "legacy_test_name".to_string())]);
+        let legacy = HashMap::from([("场景一".to_string(), legacy_binding("legacy_test_name", 0))]);
 
         let binding = resolve_test_binding(&scenario, &legacy).unwrap();
         assert_eq!(
@@ -270,6 +294,7 @@ fn helper() {}
             )
         );
         assert_eq!(binding.source, BindingSource::ExplicitScenarioSelector);
+        assert_eq!(binding.slot_index, None);
     }
 
     #[test]
@@ -286,7 +311,10 @@ fn helper() {}
         };
         let legacy = HashMap::from([(
             "场景一".to_string(),
-            "test_legacy_comment_binding_is_used_when_no_explicit_selector_exists".to_string(),
+            legacy_binding(
+                "test_legacy_comment_binding_is_used_when_no_explicit_selector_exists",
+                1,
+            ),
         )]);
 
         let binding = resolve_test_binding(&scenario, &legacy).unwrap();
@@ -297,6 +325,15 @@ fn helper() {}
             )
         );
         assert_eq!(binding.source, BindingSource::LegacyComment);
+        assert_eq!(binding.slot_index, Some(1));
+    }
+
+    fn legacy_binding(selector: &str, slot_index: usize) -> TestBinding {
+        TestBinding {
+            selector: TestSelector::filter_only(selector),
+            source: BindingSource::LegacyComment,
+            slot_index: Some(slot_index),
+        }
     }
 
     #[test]
@@ -384,6 +421,15 @@ fn helper() {}
             depends_on: vec![],
             span: Span::line(1),
         };
+        let runner = Arc::new(MissingAdbRunner);
+        let workspace = RunnerWorkspace::for_test(".");
+        let resolution = RunnerResolution {
+            name: "android".into(),
+            source: ResolutionSource::SpecFrontmatter,
+            overridden_spec: None,
+            config_warnings: Vec::new(),
+        };
+
         VerificationContext {
             code_paths: vec![".".into()],
             change_paths: vec![],
@@ -413,14 +459,14 @@ fn helper() {}
                 inherited_decisions: vec![],
                 all_scenarios: vec![scenario],
             },
-            runner: Arc::new(MissingAdbRunner),
-            runner_workspace: RunnerWorkspace::for_test("."),
-            runner_resolution: RunnerResolution {
-                name: "android".into(),
-                source: ResolutionSource::SpecFrontmatter,
-                overridden_spec: None,
-                config_warnings: Vec::new(),
-            },
+            routed_contexts: RoutedContexts::default_only(RunnerSlot {
+                runner: runner.clone(),
+                runner_workspace: workspace.clone(),
+                runner_resolution: resolution.clone(),
+            }),
+            runner,
+            runner_workspace: workspace,
+            runner_resolution: resolution,
             config_warnings: Vec::new(),
         }
     }
@@ -437,6 +483,218 @@ fn helper() {}
             results[0].step_results[0].reason,
             "adb-device: adb devices did not report an active device"
         );
+    }
+
+    struct DefaultSkipRunner;
+    struct RoutedPassRunner;
+
+    impl TestRunner for DefaultSkipRunner {
+        fn id(&self) -> &'static str {
+            "cargo"
+        }
+
+        fn detect(&self, _markers: &WorkspaceMarkers) -> bool {
+            true
+        }
+
+        fn build_test_command(
+            &self,
+            _workspace: &RunnerWorkspace,
+            _selector: &TestSelector,
+        ) -> crate::spec_core::SpecResult<TestCommand> {
+            panic!("routed package selector should not use the default slot")
+        }
+
+        fn scan_legacy_bindings(
+            &self,
+            _workspace: &RunnerWorkspace,
+        ) -> crate::spec_core::SpecResult<HashMap<String, String>> {
+            Ok(HashMap::new())
+        }
+
+        fn preflight(
+            &self,
+            _workspace: &RunnerWorkspace,
+            _selector: &TestSelector,
+        ) -> crate::spec_core::SpecResult<PreflightOutcome> {
+            Ok(PreflightOutcome::MissingCapability {
+                capability: "wrong-slot".into(),
+                reason: "default slot was selected".into(),
+            })
+        }
+    }
+
+    impl TestRunner for RoutedPassRunner {
+        fn id(&self) -> &'static str {
+            "node"
+        }
+
+        fn detect(&self, _markers: &WorkspaceMarkers) -> bool {
+            false
+        }
+
+        fn build_test_command(
+            &self,
+            _workspace: &RunnerWorkspace,
+            _selector: &TestSelector,
+        ) -> crate::spec_core::SpecResult<TestCommand> {
+            Ok(TestCommand {
+                program: "true".into(),
+                args: Vec::new(),
+            })
+        }
+
+        fn scan_legacy_bindings(
+            &self,
+            _workspace: &RunnerWorkspace,
+        ) -> crate::spec_core::SpecResult<HashMap<String, String>> {
+            Ok(HashMap::from([(
+                "Legacy admin scenario".to_string(),
+                "admin_test".to_string(),
+            )]))
+        }
+    }
+
+    #[test]
+    fn test_package_selector_uses_routed_slot() {
+        let scenario = Scenario {
+            name: "Admin scenario".into(),
+            steps: vec![Step {
+                kind: StepKind::Then,
+                text: "admin package test runs".into(),
+                params: vec![],
+                table: vec![],
+                span: Span::line(1),
+            }],
+            test_selector: Some(TestSelector {
+                package: Some("admin".into()),
+                filter: "admin_test".into(),
+                level: Some("unit".into()),
+                test_double: None,
+                targets: None,
+            }),
+            tags: Vec::new(),
+            review: Default::default(),
+            mode: Default::default(),
+            depends_on: vec![],
+            span: Span::line(1),
+        };
+        let ctx = routed_test_context(scenario);
+
+        let results = TestVerifier.verify(&ctx).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].verdict, Verdict::Pass);
+        let Evidence::TestOutput {
+            command_program, ..
+        } = &results[0].evidence[0]
+        else {
+            panic!("routed selector should produce test output evidence");
+        };
+        assert_eq!(command_program.as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn test_legacy_binding_uses_source_slot() {
+        let scenario = Scenario {
+            name: "Legacy admin scenario".into(),
+            steps: vec![Step {
+                kind: StepKind::Then,
+                text: "legacy admin test runs".into(),
+                params: vec![],
+                table: vec![],
+                span: Span::line(1),
+            }],
+            test_selector: None,
+            tags: Vec::new(),
+            review: Default::default(),
+            mode: Default::default(),
+            depends_on: vec![],
+            span: Span::line(1),
+        };
+        let ctx = routed_test_context(scenario);
+
+        let results = TestVerifier.verify(&ctx).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].verdict, Verdict::Pass);
+        assert_eq!(
+            results[0].step_results[0].reason,
+            "covered by legacy @spec test `admin_test`"
+        );
+    }
+
+    fn routed_test_context(scenario: Scenario) -> VerificationContext {
+        let default_runner: Arc<dyn TestRunner> = Arc::new(DefaultSkipRunner);
+        let routed_runner: Arc<dyn TestRunner> = Arc::new(RoutedPassRunner);
+        let default_workspace = RunnerWorkspace::for_test(".");
+        let default_resolution = RunnerResolution {
+            name: "cargo".into(),
+            source: ResolutionSource::Detected,
+            overridden_spec: None,
+            config_warnings: Vec::new(),
+        };
+        let routed_resolution = RunnerResolution {
+            name: "node".into(),
+            source: ResolutionSource::SpecFrontmatter,
+            overridden_spec: None,
+            config_warnings: Vec::new(),
+        };
+
+        VerificationContext {
+            code_paths: vec![".".into()],
+            change_paths: vec![],
+            ai_mode: AiMode::Off,
+            resolved_spec: resolved_spec_for_scenario(scenario),
+            routed_contexts: RoutedContexts::new(
+                vec![
+                    RunnerSlot {
+                        runner: default_runner.clone(),
+                        runner_workspace: default_workspace.clone(),
+                        runner_resolution: default_resolution.clone(),
+                    },
+                    RunnerSlot {
+                        runner: routed_runner,
+                        runner_workspace: RunnerWorkspace::for_test("."),
+                        runner_resolution: routed_resolution,
+                    },
+                ],
+                BTreeMap::from([("admin".to_string(), 1)]),
+            )
+            .unwrap(),
+            runner: default_runner,
+            runner_workspace: default_workspace,
+            runner_resolution: default_resolution,
+            config_warnings: Vec::new(),
+        }
+    }
+
+    fn resolved_spec_for_scenario(scenario: Scenario) -> ResolvedSpec {
+        ResolvedSpec {
+            task: SpecDocument {
+                meta: SpecMeta {
+                    level: SpecLevel::Task,
+                    name: "routed selector".into(),
+                    inherits: None,
+                    lang: vec![],
+                    tags: vec![],
+                    runner: Some("cargo".into()),
+                    runner_config: Default::default(),
+                    runner_routes: Vec::new(),
+                    depends: vec![],
+                    estimate: None,
+                },
+                sections: vec![Section::AcceptanceCriteria {
+                    scenarios: vec![scenario.clone()],
+                    span: Span::line(1),
+                }],
+                parser_warnings: Vec::new(),
+                source_path: Default::default(),
+            },
+            inherited_constraints: vec![],
+            inherited_decisions: vec![],
+            all_scenarios: vec![scenario],
+        }
     }
 
     #[test]

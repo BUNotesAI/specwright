@@ -22,4 +22,4 @@ pub use model::{
     TestCommand, TestRunner, ValidatedRoute, WorkspaceMarkers,
 };
 pub use node::NodeRunner;
-pub use registry::{RunnerRegistry, resolve_detected_runner, resolve_runner_choice};
+pub use registry::{RunnerRegistry, resolve_detected_runner, resolve_runner_routing};
