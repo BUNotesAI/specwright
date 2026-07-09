@@ -17,9 +17,9 @@ pub use ios::IosRunner;
 pub use maven::MavenRunner;
 pub use model::{
     HostPlatform, NodePackageManager, NodePackageManagerDecision, NodePackageManagerSource,
-    NodeProjectMetadata, PreflightOutcome, ResolutionSource, RunnerResolution, RunnerSelection,
-    RunnerSourceFile, RunnerWarning, RunnerWorkspace, RunnerWorkspaceMetadata, TestCommand,
-    TestRunner, WorkspaceMarkers,
+    NodeProjectMetadata, PreflightOutcome, ResolutionSource, RunnerResolution, RunnerRoutingPlan,
+    RunnerSelection, RunnerSourceFile, RunnerWarning, RunnerWorkspace, RunnerWorkspaceMetadata,
+    TestCommand, TestRunner, ValidatedRoute, WorkspaceMarkers,
 };
 pub use node::NodeRunner;
 pub use registry::{RunnerRegistry, resolve_detected_runner, resolve_runner_choice};

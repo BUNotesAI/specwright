@@ -237,6 +237,7 @@ mod tests {
                         tags: vec![],
                         runner: None,
                         runner_config: Default::default(),
+                        runner_routes: Vec::new(),
                         depends: vec![],
                         estimate: None,
                     },
@@ -258,6 +259,7 @@ mod tests {
                             span: Span::line(3),
                         },
                     ],
+                    parser_warnings: Vec::new(),
                     source_path: PathBuf::new(),
                 },
                 inherited_constraints: vec![Constraint {

@@ -1,4 +1,4 @@
-use crate::spec_core::{Lang, SpecLevel, SpecMeta};
+use crate::spec_core::{Lang, RunnerRouteDecl, SpecLevel, SpecMeta};
 use std::collections::BTreeMap;
 
 /// Parse front-matter block (before `---`) into SpecMeta.
@@ -13,11 +13,75 @@ pub fn parse_meta(lines: &[&str]) -> Result<SpecMeta, String> {
     let mut estimate = None;
     let mut runner = None;
     let mut runner_config = BTreeMap::new();
+    let mut runner_routes = Vec::new();
+    let mut current_route: Option<RunnerRouteDecl> = None;
+    let mut reading_runners_block = false;
 
     for line in lines {
+        let indent = line.chars().take_while(|ch| *ch == ' ').count();
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
+        }
+
+        if reading_runners_block {
+            if indent == 2 {
+                if let Some(route) = current_route.take() {
+                    runner_routes.push(route);
+                }
+                let Some(route_name) = trimmed.strip_suffix(':') else {
+                    return Err("runners entries must be runner ids ending with `:`".to_string());
+                };
+                let route_name = route_name.trim();
+                if route_name.is_empty() {
+                    return Err("runners entries must name a runner id".to_string());
+                }
+                current_route = Some(RunnerRouteDecl {
+                    runner: route_name.to_string(),
+                    root: None,
+                    packages: BTreeMap::new(),
+                    config: BTreeMap::new(),
+                });
+                continue;
+            }
+
+            if indent == 4 {
+                let route = current_route
+                    .as_mut()
+                    .ok_or_else(|| "runners nested keys must follow a runner id".to_string())?;
+                let Some((key, value)) = trimmed.split_once(':') else {
+                    return Err("runners nested keys must use `key: value` syntax".to_string());
+                };
+                let key = key.trim().to_lowercase();
+                let value = value.trim().trim_matches('"');
+                match key.as_str() {
+                    "root" => {
+                        if !value.is_empty() {
+                            route.root = Some(value.to_string());
+                        }
+                    }
+                    "packages" => {
+                        route.packages = parse_inline_string_map_named("runners.packages", value)?;
+                    }
+                    "config" => {
+                        route.config = parse_inline_string_map_named("runners.config", value)?;
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
+            if indent > 0 {
+                return Err(
+                    "runners block supports runner ids at two spaces and keys at four spaces"
+                        .to_string(),
+                );
+            }
+
+            if let Some(route) = current_route.take() {
+                runner_routes.push(route);
+            }
+            reading_runners_block = false;
         }
 
         let Some((key, value)) = trimmed.split_once(':') else {
@@ -86,8 +150,18 @@ pub fn parse_meta(lines: &[&str]) -> Result<SpecMeta, String> {
             "runner_config" => {
                 runner_config = parse_inline_string_map(value)?;
             }
+            "runners" => {
+                if !value.is_empty() {
+                    return Err("runners must use an indented block".to_string());
+                }
+                reading_runners_block = true;
+            }
             _ => {} // ignore unknown keys
         }
+    }
+
+    if let Some(route) = current_route {
+        runner_routes.push(route);
     }
 
     Ok(SpecMeta {
@@ -102,12 +176,20 @@ pub fn parse_meta(lines: &[&str]) -> Result<SpecMeta, String> {
         tags,
         runner,
         runner_config,
+        runner_routes,
         depends,
         estimate,
     })
 }
 
 fn parse_inline_string_map(value: &str) -> Result<BTreeMap<String, String>, String> {
+    parse_inline_string_map_named("runner_config", value)
+}
+
+fn parse_inline_string_map_named(
+    field: &str,
+    value: &str,
+) -> Result<BTreeMap<String, String>, String> {
     let mut map = BTreeMap::new();
     let value = value.trim();
     if value.is_empty() || value == "{}" {
@@ -116,7 +198,7 @@ fn parse_inline_string_map(value: &str) -> Result<BTreeMap<String, String>, Stri
     let body = value
         .strip_prefix('{')
         .and_then(|v| v.strip_suffix('}'))
-        .ok_or_else(|| "runner_config must use inline map syntax".to_string())?;
+        .ok_or_else(|| format!("{field} must use inline map syntax"))?;
 
     for part in split_inline_map_entries(body) {
         let part = part.trim();
@@ -124,7 +206,7 @@ fn parse_inline_string_map(value: &str) -> Result<BTreeMap<String, String>, Stri
             continue;
         }
         let Some((key, value)) = part.split_once(':') else {
-            return Err(format!("invalid runner_config entry: {part}"));
+            return Err(format!("invalid {field} entry: {part}"));
         };
         let key = key.trim().trim_matches('"');
         let value = value.trim().trim_matches('"');
@@ -251,5 +333,61 @@ mod tests {
         assert!(meta.runner_config.is_empty());
         assert!(value.get("runner_config").is_none());
         assert!(value.get("runner").is_none());
+    }
+
+    #[test]
+    fn parse_runners_block_happy_path() {
+        let lines = vec![
+            "spec: task",
+            r#"name: "Mixed runner""#,
+            "runner: cargo",
+            "runners:",
+            "  node:",
+            "    root: web",
+            r#"    packages: { admin: "apps/admin", web: "." }"#,
+            r#"    config: { package_manager: "bun", unit_filter_style: "vitest" }"#,
+        ];
+
+        let meta = parse_meta(&lines).unwrap();
+
+        assert_eq!(meta.runner.as_deref(), Some("cargo"));
+        assert_eq!(meta.runner_routes.len(), 1);
+        let route = &meta.runner_routes[0];
+        assert_eq!(route.runner, "node");
+        assert_eq!(route.root.as_deref(), Some("web"));
+        assert_eq!(route.packages["admin"], "apps/admin");
+        assert_eq!(route.packages["web"], ".");
+        assert_eq!(route.config["package_manager"], "bun");
+        assert_eq!(route.config["unit_filter_style"], "vitest");
+    }
+
+    #[test]
+    fn runners_block_does_not_leak_runner_config() {
+        let lines = vec![
+            "spec: task",
+            r#"name: "Nested route config""#,
+            "runner: cargo",
+            "runners:",
+            "  node:",
+            r#"    config: { package_manager: "bun", unit_filter_style: "vitest" }"#,
+        ];
+
+        let meta = parse_meta(&lines).unwrap();
+
+        assert!(meta.runner_config.is_empty());
+        assert_eq!(meta.runner_routes.len(), 1);
+        assert_eq!(meta.runner_routes[0].config["package_manager"], "bun");
+    }
+
+    #[test]
+    fn spec_without_routes_round_trips_byte_identical() {
+        let lines = vec!["spec: task", r#"name: "No routes""#, "runner: cargo"];
+        let meta = parse_meta(&lines).unwrap();
+        let value = serde_json::to_value(&meta).unwrap();
+
+        assert!(meta.runner_routes.is_empty());
+        assert!(value.get("runner_routes").is_none());
+        assert_eq!(value["runner"], "cargo");
+        assert!(value.get("runner_config").is_none());
     }
 }

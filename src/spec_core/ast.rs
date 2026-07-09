@@ -33,6 +33,9 @@ pub struct SpecMeta {
     /// Runner-specific configuration from front-matter.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub runner_config: BTreeMap<String, String>,
+    /// Declared package-token routes for secondary runners.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runner_routes: Vec<RunnerRouteDecl>,
     /// Spec-level dependencies: names of other specs this spec depends on.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends: Vec<String>,
@@ -41,11 +44,33 @@ pub struct SpecMeta {
     pub estimate: Option<String>,
 }
 
+/// One `runners:` front-matter entry before route validation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunnerRouteDecl {
+    pub runner: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub packages: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub config: BTreeMap<String, String>,
+}
+
+/// Non-fatal parser warning preserved for later lint/verify surfacing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParserWarning {
+    pub label: String,
+    pub message: String,
+    pub span: Span,
+}
+
 /// A parsed .spec document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpecDocument {
     pub meta: SpecMeta,
     pub sections: Vec<Section>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parser_warnings: Vec<ParserWarning>,
     #[serde(skip)]
     pub source_path: PathBuf,
 }

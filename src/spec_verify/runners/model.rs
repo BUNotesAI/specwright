@@ -72,6 +72,23 @@ pub struct RunnerResolution {
     pub config_warnings: Vec<RunnerWarning>,
 }
 
+/// A route declaration after pure runner-id and package-token validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidatedRoute {
+    pub runner: String,
+    pub root: Option<String>,
+    pub packages: BTreeMap<String, String>,
+    pub config: BTreeMap<String, String>,
+}
+
+/// Pure runner routing plan before effectful workspace probing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunnerRoutingPlan {
+    pub default_runner: RunnerSelection,
+    pub routes: Vec<ValidatedRoute>,
+    pub config_warnings: Vec<RunnerWarning>,
+}
+
 /// Command data produced by a runner. Execution happens outside runner modules.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestCommand {

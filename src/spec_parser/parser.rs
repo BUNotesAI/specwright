@@ -1,6 +1,6 @@
 use crate::spec_core::{
-    Boundary, BoundaryCategory, Constraint, ConstraintCategory, ReviewMode, Scenario, ScenarioMode,
-    Section, Span, SpecDocument, SpecError, SpecResult, Step, TestSelector,
+    Boundary, BoundaryCategory, Constraint, ConstraintCategory, ParserWarning, ReviewMode,
+    Scenario, ScenarioMode, Section, Span, SpecDocument, SpecError, SpecResult, Step, TestSelector,
 };
 use std::path::{Path, PathBuf};
 
@@ -50,18 +50,20 @@ pub fn parse_spec_from_str(input: &str) -> SpecResult<SpecDocument> {
 
     let meta = parse_meta(meta_lines).map_err(SpecError::FrontMatter)?;
 
-    let sections = parse_body(body_lines, body_offset)?;
+    let (sections, parser_warnings) = parse_body(body_lines, body_offset)?;
 
     Ok(SpecDocument {
         meta,
         sections,
+        parser_warnings,
         source_path: PathBuf::new(),
     })
 }
 
 /// Parse the body of a spec (after `---`) into sections.
-fn parse_body(lines: &[&str], offset: usize) -> SpecResult<Vec<Section>> {
+fn parse_body(lines: &[&str], offset: usize) -> SpecResult<(Vec<Section>, Vec<ParserWarning>)> {
     let mut sections = Vec::new();
+    let mut parser_warnings = Vec::new();
     let mut current_section: Option<(SectionKind, usize)> = None; // (kind, start_line)
     let mut section_lines: Vec<(usize, &str)> = Vec::new(); // (absolute_line, text)
 
@@ -71,8 +73,9 @@ fn parse_body(lines: &[&str], offset: usize) -> SpecResult<Vec<Section>> {
         if let Some(kind) = match_section_header(line) {
             // Flush previous section
             if let Some((prev_kind, start)) = current_section.take() {
-                let section = build_section(prev_kind, &section_lines, start)?;
+                let (section, warnings) = build_section(prev_kind, &section_lines, start)?;
                 sections.push(section);
+                parser_warnings.extend(warnings);
                 section_lines.clear();
             }
             current_section = Some((kind, abs_line));
@@ -91,11 +94,12 @@ fn parse_body(lines: &[&str], offset: usize) -> SpecResult<Vec<Section>> {
 
     // Flush last section
     if let Some((kind, start)) = current_section {
-        let section = build_section(kind, &section_lines, start)?;
+        let (section, warnings) = build_section(kind, &section_lines, start)?;
         sections.push(section);
+        parser_warnings.extend(warnings);
     }
 
-    Ok(sections)
+    Ok((sections, parser_warnings))
 }
 
 fn markdown_heading_level(line: &str) -> Option<usize> {
@@ -111,7 +115,7 @@ fn build_section(
     kind: SectionKind,
     lines: &[(usize, &str)],
     start_line: usize,
-) -> SpecResult<Section> {
+) -> SpecResult<(Section, Vec<ParserWarning>)> {
     let end_line = lines.last().map_or(start_line, |(ln, _)| *ln);
     let span = Span::new(start_line, 0, end_line, 0);
 
@@ -124,23 +128,23 @@ fn build_section(
                 .join("\n")
                 .trim()
                 .to_string();
-            Ok(Section::Intent { content, span })
+            Ok((Section::Intent { content, span }, Vec::new()))
         }
         SectionKind::Constraints => {
             let items = parse_constraints(lines)?;
-            Ok(Section::Constraints { items, span })
+            Ok((Section::Constraints { items, span }, Vec::new()))
         }
         SectionKind::Decisions => {
             let items = parse_string_list(lines);
-            Ok(Section::Decisions { items, span })
+            Ok((Section::Decisions { items, span }, Vec::new()))
         }
         SectionKind::Boundaries => {
             let items = parse_boundaries(lines)?;
-            Ok(Section::Boundaries { items, span })
+            Ok((Section::Boundaries { items, span }, Vec::new()))
         }
         SectionKind::AcceptanceCriteria => {
-            let scenarios = parse_scenarios(lines)?;
-            Ok(Section::AcceptanceCriteria { scenarios, span })
+            let (scenarios, warnings) = parse_scenarios(lines)?;
+            Ok((Section::AcceptanceCriteria { scenarios, span }, warnings))
         }
         SectionKind::OutOfScope => {
             let items = lines
@@ -150,7 +154,7 @@ fn build_section(
                     trimmed.filter(|s| !s.is_empty()).map(String::from)
                 })
                 .collect();
-            Ok(Section::OutOfScope { items, span })
+            Ok((Section::OutOfScope { items, span }, Vec::new()))
         }
     }
 }
@@ -240,8 +244,9 @@ fn parse_boundaries(lines: &[(usize, &str)]) -> SpecResult<Vec<Boundary>> {
 }
 
 #[allow(clippy::too_many_lines)] // Exception: legacy scenario parser state machine; refactor is outside this migration checkpoint.
-fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<Vec<Scenario>> {
+fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<(Vec<Scenario>, Vec<ParserWarning>)> {
     let mut scenarios = Vec::new();
+    let mut parser_warnings = Vec::new();
     let mut current_name: Option<(String, usize)> = None;
     let mut current_steps: Vec<Step> = Vec::new();
     let mut current_test_selector: Option<TestSelectorDraft> = None;
@@ -328,6 +333,9 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<Vec<Scenario>> {
             if line.trim().is_empty() {
                 continue;
             }
+            if let Some(warning) = unknown_test_selector_label_warning(line, line_num) {
+                parser_warnings.push(warning);
+            }
             reading_test_selector_block = false;
         }
 
@@ -368,7 +376,28 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<Vec<Scenario>> {
         });
     }
 
-    Ok(scenarios)
+    Ok((scenarios, parser_warnings))
+}
+
+fn unknown_test_selector_label_warning(line: &str, line_num: usize) -> Option<ParserWarning> {
+    let trimmed = line.trim().trim_start_matches('#').trim();
+    let (label, _) = trimmed.split_once(':')?;
+    let label = label.trim();
+    if label.is_empty()
+        || !label
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, ' ' | '_' | '-'))
+    {
+        return None;
+    }
+
+    Some(ParserWarning {
+        label: label.to_string(),
+        message: format!(
+            "unknown Test selector label `{label}`; expected Package, Filter, Level, Test Double, or Targets"
+        ),
+        span: Span::line(line_num),
+    })
 }
 
 #[derive(Default)]
@@ -828,6 +857,43 @@ Scenario: 结构化验证强度
         assert!(json.contains("\"level\""));
         assert!(json.contains("\"test_double\""));
         assert!(json.contains("\"targets\""));
+    }
+
+    #[test]
+    fn unknown_selector_label_records_warning() {
+        let input = r#"spec: task
+name: "Unknown selector label"
+---
+
+## Acceptance Criteria
+
+Scenario: Reject unknown selector labels without extending schema
+  Test:
+    Filter: unknown_selector_label_records_warning
+    Runner: node
+  Given a structured selector block
+  When the parser sees an unknown selector-shaped label
+  Then it records a parser warning
+"#;
+
+        let doc = parse_spec_from_str(input).unwrap();
+
+        assert_eq!(doc.parser_warnings.len(), 1);
+        let warning = &doc.parser_warnings[0];
+        assert_eq!(warning.label, "Runner");
+        assert!(
+            warning
+                .message
+                .contains("unknown Test selector label `Runner`")
+        );
+
+        match &doc.sections[0] {
+            Section::AcceptanceCriteria { scenarios, .. } => {
+                let selector = scenarios[0].test_selector.as_ref().unwrap();
+                assert_eq!(selector.filter, "unknown_selector_label_records_warning");
+            }
+            other => panic!("expected AcceptanceCriteria, got {other:?}"),
+        }
     }
 
     #[test]

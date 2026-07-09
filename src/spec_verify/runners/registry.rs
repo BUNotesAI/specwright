@@ -4,7 +4,8 @@ use crate::spec_core::{ResolvedSpec, SpecError, SpecResult};
 
 use super::{
     AndroidRunner, CargoRunner, GradleRunner, IosRunner, MavenRunner, NodeRunner, ResolutionSource,
-    RunnerResolution, RunnerSelection, TestRunner, WorkspaceMarkers,
+    RunnerResolution, RunnerRoutingPlan, RunnerSelection, RunnerWarning, TestRunner,
+    ValidatedRoute, WorkspaceMarkers,
 };
 
 /// Registry of available test runners.
@@ -40,6 +41,10 @@ impl RunnerRegistry {
             .iter()
             .find(|runner| runner.id() == name)
             .cloned()
+    }
+
+    fn runner_ids(&self) -> Vec<&'static str> {
+        self.runners.iter().map(|runner| runner.id()).collect()
     }
 
     pub fn detect(&self, markers: &WorkspaceMarkers) -> SpecResult<Option<Arc<dyn TestRunner>>> {
@@ -130,6 +135,70 @@ pub fn resolve_runner_choice(
     Ok(selection)
 }
 
+/// Resolve the default runner plus declared package routes without probing the filesystem.
+pub fn resolve_runner_routing(
+    registry: &RunnerRegistry,
+    resolved_spec: &ResolvedSpec,
+    cli_runner: Option<&str>,
+) -> SpecResult<RunnerRoutingPlan> {
+    let default_runner = resolve_runner_choice(registry, resolved_spec, cli_runner)?;
+    let declared_routes = &resolved_spec.task.meta.runner_routes;
+
+    if cli_runner.is_some() {
+        let config_warnings = if declared_routes.is_empty() {
+            Vec::new()
+        } else {
+            vec![RunnerWarning {
+                runner: selection_runner_label(&default_runner).to_string(),
+                key: "runners".to_string(),
+                reason: format!(
+                    "--runner overrides {} declared {}; routes ignored",
+                    declared_routes.len(),
+                    pluralize("route", declared_routes.len())
+                ),
+            }]
+        };
+        return Ok(RunnerRoutingPlan {
+            default_runner,
+            routes: Vec::new(),
+            config_warnings,
+        });
+    }
+
+    let mut seen_packages: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    let mut routes = Vec::new();
+    for route in declared_routes {
+        if registry.get(&route.runner).is_none() {
+            return Err(unknown_route_runner_error(&route.runner, registry));
+        }
+
+        for package in route.packages.keys() {
+            if let Some(previous_runner) =
+                seen_packages.insert(package.clone(), route.runner.clone())
+            {
+                return Err(SpecError::Verification(format!(
+                    "duplicate package route token `{package}` declared for both `{previous_runner}` and `{}`",
+                    route.runner
+                )));
+            }
+        }
+
+        routes.push(ValidatedRoute {
+            runner: route.runner.clone(),
+            root: route.root.clone(),
+            packages: route.packages.clone(),
+            config: route.config.clone(),
+        });
+    }
+
+    Ok(RunnerRoutingPlan {
+        default_runner,
+        routes,
+        config_warnings: Vec::new(),
+    })
+}
+
 pub fn resolve_detected_runner(
     registry: &RunnerRegistry,
     selection: RunnerSelection,
@@ -179,6 +248,34 @@ fn unknown_runner_error(name: &str) -> SpecError {
     }
 }
 
+fn unknown_route_runner_error(name: &str, registry: &RunnerRegistry) -> SpecError {
+    let valid = registry.runner_ids().join(", ");
+    if matches!(name, "vitest" | "jest" | "tsc" | "playwright") {
+        SpecError::Verification(format!(
+            "unknown test runner `{name}`; did you mean runner: node; valid runners: {valid}"
+        ))
+    } else {
+        SpecError::Verification(format!(
+            "unknown test runner `{name}`; valid runners: {valid}"
+        ))
+    }
+}
+
+fn selection_runner_label(selection: &RunnerSelection) -> &str {
+    match selection {
+        RunnerSelection::NeedsDetect => "detect",
+        RunnerSelection::ByName { name, .. } => name,
+    }
+}
+
+fn pluralize(noun: &str, count: usize) -> String {
+    if count == 1 {
+        noun.to_string()
+    } else {
+        format!("{noun}s")
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -187,14 +284,17 @@ mod tests {
     use std::sync::Arc;
 
     use crate::spec_core::{
-        ResolvedSpec, Section, Span, SpecDocument, SpecLevel, SpecMeta, TestSelector,
+        ResolvedSpec, RunnerRouteDecl, Section, Span, SpecDocument, SpecLevel, SpecMeta,
+        TestSelector,
     };
 
     use super::super::{
         HostPlatform, PreflightOutcome, ResolutionSource, RunnerSelection, RunnerSourceFile,
         RunnerWorkspace, TestCommand, TestRunner, WorkspaceMarkers,
     };
-    use super::{RunnerRegistry, resolve_detected_runner, resolve_runner_choice};
+    use super::{
+        RunnerRegistry, resolve_detected_runner, resolve_runner_choice, resolve_runner_routing,
+    };
 
     struct FakeRunner;
 
@@ -660,6 +760,88 @@ class PaymentRiskRulesTest {
     }
 
     #[test]
+    fn resolve_rejects_duplicate_package_token() {
+        let registry = RunnerRegistry::with_defaults();
+        let spec = resolved_spec_with_routes(
+            Some("cargo"),
+            vec![
+                route("node", &[("admin", "apps/admin")]),
+                route("cargo", &[("admin", "admin-copy")]),
+            ],
+        );
+
+        let err = resolve_runner_routing(&registry, &spec, None)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("duplicate package route token `admin`"));
+        assert!(err.contains("node"));
+        assert!(err.contains("cargo"));
+    }
+
+    #[test]
+    fn resolve_rejects_unknown_route_runner_id() {
+        let registry = RunnerRegistry::with_defaults();
+        let spec = resolved_spec_with_routes(
+            Some("cargo"),
+            vec![route("not_registered", &[("admin", "apps/admin")])],
+        );
+
+        let err = resolve_runner_routing(&registry, &spec, None)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("unknown test runner `not_registered`"));
+        assert!(err.contains("valid runners"));
+        assert!(err.contains("cargo"));
+        assert!(err.contains("node"));
+    }
+
+    #[test]
+    fn cli_override_ignores_routes_with_warning() {
+        let registry = RunnerRegistry::with_defaults();
+        let spec = resolved_spec_with_routes(
+            Some("cargo"),
+            vec![route("node", &[("admin", "apps/admin"), ("web", ".")])],
+        );
+
+        let plan = resolve_runner_routing(&registry, &spec, Some("cargo")).unwrap();
+
+        assert_eq!(plan.routes, Vec::new());
+        assert_eq!(
+            plan.default_runner,
+            RunnerSelection::ByName {
+                name: "cargo".into(),
+                source: ResolutionSource::CliFlag,
+                overridden_spec: None,
+            }
+        );
+        assert_eq!(plan.config_warnings.len(), 1);
+        assert_eq!(plan.config_warnings[0].runner, "cargo");
+        assert_eq!(plan.config_warnings[0].key, "runners");
+        assert!(
+            plan.config_warnings[0]
+                .reason
+                .contains("overrides 1 declared route")
+        );
+    }
+
+    #[test]
+    fn empty_routes_match_single_runner_plan() {
+        let registry = RunnerRegistry::with_defaults();
+        let spec = resolved_spec(Some("cargo"));
+
+        let plan = resolve_runner_routing(&registry, &spec, None).unwrap();
+
+        assert!(plan.routes.is_empty());
+        assert!(plan.config_warnings.is_empty());
+        assert_eq!(
+            plan.default_runner,
+            resolve_runner_choice(&registry, &spec, None).unwrap()
+        );
+    }
+
+    #[test]
     fn test_runner_registry_register_custom_runner_end_to_end() {
         let mut registry = RunnerRegistry::new();
         registry.register(Arc::new(FakeRunner));
@@ -712,6 +894,27 @@ class PaymentRiskRulesTest {
         )
     }
 
+    fn route(runner: &str, packages: &[(&str, &str)]) -> RunnerRouteDecl {
+        RunnerRouteDecl {
+            runner: runner.to_string(),
+            root: Some("web".to_string()),
+            packages: packages
+                .iter()
+                .map(|(token, path)| ((*token).to_string(), (*path).to_string()))
+                .collect(),
+            config: BTreeMap::new(),
+        }
+    }
+
+    fn resolved_spec_with_routes(
+        runner: Option<&str>,
+        routes: Vec<RunnerRouteDecl>,
+    ) -> ResolvedSpec {
+        let mut spec = resolved_spec(runner);
+        spec.task.meta.runner_routes = routes;
+        spec
+    }
+
     fn resolved_spec(runner: Option<&str>) -> ResolvedSpec {
         ResolvedSpec {
             task: SpecDocument {
@@ -723,6 +926,7 @@ class PaymentRiskRulesTest {
                     tags: vec![],
                     runner: runner.map(str::to_string),
                     runner_config: Default::default(),
+                    runner_routes: Vec::new(),
                     depends: vec![],
                     estimate: None,
                 },
@@ -730,6 +934,7 @@ class PaymentRiskRulesTest {
                     scenarios: vec![],
                     span: Span::line(1),
                 }],
+                parser_warnings: Vec::new(),
                 source_path: PathBuf::new(),
             },
             inherited_constraints: vec![],
