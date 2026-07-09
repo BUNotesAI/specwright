@@ -39,9 +39,6 @@ impl Verifier for TestVerifier {
                 continue;
             };
             let slot = slot_for_binding(ctx, &binding);
-            let Some(workspace_root) = slot.runner_workspace.root.as_ref() else {
-                continue;
-            };
 
             if let super::PreflightOutcome::MissingCapability { capability, reason } =
                 slot.runner
@@ -55,9 +52,13 @@ impl Verifier for TestVerifier {
             let command = slot
                 .runner
                 .build_test_command(&slot.runner_workspace, &binding.selector)?;
+            let Some(current_dir) = command.cwd.as_ref().or(slot.runner_workspace.root.as_ref())
+            else {
+                continue;
+            };
             let output = Command::new(&command.program)
                 .args(&command.args)
-                .current_dir(workspace_root)
+                .current_dir(current_dir)
                 .output()
                 .map_err(|err| {
                     SpecError::Verification(format!(
@@ -541,6 +542,7 @@ fn helper() {}
             Ok(TestCommand {
                 program: "true".into(),
                 args: Vec::new(),
+                cwd: None,
             })
         }
 

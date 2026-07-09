@@ -315,6 +315,7 @@ mod tests {
             Ok(TestCommand {
                 program: "cargo".into(),
                 args: vec!["test".into(), "-q".into(), "test_parse_basic_meta".into()],
+                cwd: None,
             })
         }
 

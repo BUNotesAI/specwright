@@ -38,6 +38,7 @@ impl TestRunner for GradleRunner {
                 "--tests".to_string(),
                 selector.filter.replace('#', "."),
             ],
+            cwd: None,
         })
     }
 

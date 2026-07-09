@@ -21,8 +21,8 @@ pub use runners::{CargoRunner, extract_bindings};
 #[allow(unused_imports)]
 pub use runners::{
     HostPlatform, NodePackageManager, NodePackageManagerDecision, NodePackageManagerSource,
-    NodeProjectMetadata, ResolutionSource, RunnerRoutingPlan, RunnerSelection, RunnerWarning,
-    RunnerWorkspaceMetadata, TestCommand,
+    NodePackageMetadata, NodeProjectMetadata, ResolutionSource, RunnerRoutingPlan, RunnerSelection,
+    RunnerWarning, RunnerWorkspaceMetadata, TestCommand,
 };
 pub use runners::{
     PreflightOutcome, RunnerRegistry, RunnerResolution, RunnerSourceFile, RunnerWorkspace,
@@ -181,11 +181,7 @@ fn probe_and_build_context_with_registry_and_host(
         host_platform,
     )?;
 
-    let participating_runners: Vec<Arc<dyn TestRunner>> = slot_inputs
-        .iter()
-        .map(|input| Arc::clone(&input.runner))
-        .collect();
-    let source_files = collect_source_files_for_runners(&code_paths, &participating_runners)?;
+    let source_files = collect_source_files_for_slot_inputs(&slot_inputs)?;
     let (slots, config_warnings) = build_runner_slots(slot_inputs, source_files, routing_warnings)?;
 
     let default_runner = Arc::clone(&slots[0].runner);
@@ -241,6 +237,7 @@ fn build_slot_inputs(
         code_paths: code_paths.to_vec(),
         config: resolved_spec.task.meta.runner_config.clone(),
         markers,
+        package_roots: BTreeMap::new(),
         resolution: default_resolution,
     }];
     let mut by_package = BTreeMap::new();
@@ -286,6 +283,7 @@ fn push_route_slot(
         )));
     }
 
+    let mut package_roots = BTreeMap::new();
     for (package, relative_dir) in &route.packages {
         let package_root = resolve_declared_path(&route_root, relative_dir, "package route")?;
         if !package_root.is_dir() {
@@ -295,6 +293,7 @@ fn push_route_slot(
                 package_root.display()
             )));
         }
+        package_roots.insert(package.clone(), package_root);
     }
 
     let runner = registry.get(&route.runner).ok_or_else(|| {
@@ -311,7 +310,7 @@ fn push_route_slot(
         config_warnings: Vec::new(),
     };
     let slot_index = slot_inputs.len();
-    for package in route.packages.keys() {
+    for package in package_roots.keys() {
         by_package.insert(package.clone(), slot_index);
     }
     slot_inputs.push(SlotInput {
@@ -320,6 +319,7 @@ fn push_route_slot(
         code_paths: vec![route_root],
         config: route.config,
         markers,
+        package_roots,
         resolution,
     });
     Ok(())
@@ -337,6 +337,7 @@ fn build_runner_slots(
             input.root.as_deref(),
             &input.markers,
             &input.config,
+            &input.package_roots,
         )?;
         let runner_workspace = RunnerWorkspace::new(
             input.root,
@@ -365,6 +366,7 @@ struct SlotInput {
     code_paths: Vec<PathBuf>,
     config: BTreeMap<String, String>,
     markers: WorkspaceMarkers,
+    package_roots: BTreeMap<String, PathBuf>,
     resolution: RunnerResolution,
 }
 
@@ -440,13 +442,19 @@ fn build_workspace_metadata(
     root: Option<&Path>,
     markers: &WorkspaceMarkers,
     config: &BTreeMap<String, String>,
+    package_roots: &BTreeMap<String, PathBuf>,
 ) -> SpecResult<RunnerWorkspaceMetadata> {
     if runner.id() != "node" {
         return Ok(RunnerWorkspaceMetadata::default());
     }
 
     Ok(RunnerWorkspaceMetadata {
-        node: Some(build_node_project_metadata(root, markers, config)?),
+        node: Some(build_node_project_metadata(
+            root,
+            markers,
+            config,
+            package_roots,
+        )?),
     })
 }
 
@@ -454,42 +462,81 @@ fn build_node_project_metadata(
     root: Option<&Path>,
     markers: &WorkspaceMarkers,
     config: &BTreeMap<String, String>,
+    package_roots: &BTreeMap<String, PathBuf>,
 ) -> SpecResult<NodeProjectMetadata> {
     let root = root.ok_or_else(|| {
         SpecError::Verification("node runner requires a workspace root with package.json".into())
     })?;
     let package_json_path = root.join("package.json");
-    let package_json = std::fs::read_to_string(&package_json_path).map_err(|err| {
+    let parsed = read_node_package_json(&package_json_path)?;
+    let scripts = node_scripts_from_package_json(&parsed);
+    let root_package_json_package_manager = node_package_manager_from_package_json(&parsed);
+    let lockfiles = node_lockfiles_from_markers(markers);
+    let package_manager = select_node_package_manager(
+        config,
+        root_package_json_package_manager.as_deref(),
+        &lockfiles,
+    )?;
+    let mut routed_packages = BTreeMap::new();
+    for (package, package_root) in package_roots {
+        let package_json_path = package_root.join("package.json");
+        let parsed = read_node_package_json(&package_json_path)?;
+        let scripts = node_scripts_from_package_json(&parsed);
+        let package_json_package_manager = node_package_manager_from_package_json(&parsed);
+        let package_manager = select_routed_node_package_manager(
+            config,
+            package_json_package_manager.as_deref(),
+            root_package_json_package_manager.as_deref(),
+            &lockfiles,
+        )?;
+        routed_packages.insert(
+            package.clone(),
+            NodePackageMetadata {
+                root: package_root.clone(),
+                package_manager,
+                scripts,
+                package_json_package_manager,
+            },
+        );
+    }
+
+    Ok(NodeProjectMetadata {
+        package_manager,
+        scripts,
+        package_json_package_manager: root_package_json_package_manager,
+        lockfiles,
+        routed_packages,
+    })
+}
+
+fn read_node_package_json(package_json_path: &Path) -> SpecResult<serde_json::Value> {
+    let package_json = std::fs::read_to_string(package_json_path).map_err(|err| {
         SpecError::Verification(format!(
             "node runner requires readable package.json at {}: {err}",
             package_json_path.display()
         ))
     })?;
-    let parsed: serde_json::Value = serde_json::from_str(&package_json).map_err(|err| {
+    serde_json::from_str(&package_json).map_err(|err| {
         SpecError::Verification(format!(
             "node runner could not parse package.json at {}: {err}",
             package_json_path.display()
         ))
-    })?;
-    let scripts = parsed
+    })
+}
+
+fn node_scripts_from_package_json(parsed: &serde_json::Value) -> BTreeSet<String> {
+    parsed
         .get("scripts")
         .and_then(serde_json::Value::as_object)
         .map(|scripts| scripts.keys().cloned().collect::<BTreeSet<_>>())
-        .unwrap_or_default();
-    let package_json_package_manager = parsed
+        .unwrap_or_default()
+}
+
+fn node_package_manager_from_package_json(parsed: &serde_json::Value) -> Option<String> {
+    parsed
         .get("packageManager")
         .and_then(serde_json::Value::as_str)
-        .map(str::to_string);
-    let lockfiles = node_lockfiles_from_markers(markers);
-    let package_manager =
-        select_node_package_manager(config, package_json_package_manager.as_deref(), &lockfiles)?;
-
-    Ok(NodeProjectMetadata {
-        package_manager,
-        scripts,
-        package_json_package_manager,
-        lockfiles,
-    })
+        .map(str::to_string)
 }
 
 fn node_lockfiles_from_markers(markers: &WorkspaceMarkers) -> BTreeSet<String> {
@@ -540,6 +587,36 @@ fn select_node_package_manager(
         manager: NodePackageManager::Npm,
         source: NodePackageManagerSource::DefaultNpm,
     })
+}
+
+fn select_routed_node_package_manager(
+    config: &BTreeMap<String, String>,
+    package_json_package_manager: Option<&str>,
+    route_package_json_package_manager: Option<&str>,
+    route_lockfiles: &BTreeSet<String>,
+) -> SpecResult<NodePackageManagerDecision> {
+    if let Some(configured) = config.get("package_manager") {
+        let manager = parse_node_package_manager(configured, "package_manager")?;
+        return Ok(NodePackageManagerDecision {
+            manager,
+            source: NodePackageManagerSource::RunnerConfig,
+        });
+    }
+
+    if let Some(raw) = package_json_package_manager {
+        let name = raw.split('@').next().unwrap_or(raw);
+        let manager = parse_node_package_manager(name, "packageManager")?;
+        return Ok(NodePackageManagerDecision {
+            manager,
+            source: NodePackageManagerSource::PackageJson,
+        });
+    }
+
+    select_node_package_manager(
+        &BTreeMap::new(),
+        route_package_json_package_manager,
+        route_lockfiles,
+    )
 }
 
 fn parse_node_package_manager(value: &str, field_name: &str) -> SpecResult<NodePackageManager> {
@@ -704,20 +781,23 @@ fn probe_workspace_markers(root: Option<&Path>) -> WorkspaceMarkers {
     WorkspaceMarkers::from_files(markers)
 }
 
-fn collect_source_files_for_runners(
-    code_paths: &[PathBuf],
-    runners: &[Arc<dyn TestRunner>],
+fn collect_source_files_for_slot_inputs(
+    slot_inputs: &[SlotInput],
 ) -> SpecResult<Vec<RunnerSourceFile>> {
-    let mut source_extensions = BTreeSet::new();
-    let mut ignored_source_dirs = BTreeSet::new();
-    for runner in runners {
-        source_extensions.extend(runner.source_extensions().iter().copied());
-        ignored_source_dirs.extend(runner.ignored_source_dirs().iter().copied());
+    let mut by_path = BTreeMap::new();
+    for input in slot_inputs {
+        for source in collect_source_files(
+            &input.code_paths,
+            input.runner.source_extensions(),
+            input.runner.ignored_source_dirs(),
+        )? {
+            by_path.entry(source.path).or_insert(source.content);
+        }
     }
-
-    let source_extensions: Vec<&str> = source_extensions.into_iter().collect();
-    let ignored_source_dirs: Vec<&str> = ignored_source_dirs.into_iter().collect();
-    collect_source_files(code_paths, &source_extensions, &ignored_source_dirs)
+    Ok(by_path
+        .into_iter()
+        .map(|(path, content)| RunnerSourceFile { path, content })
+        .collect())
 }
 
 fn collect_source_files(
@@ -978,6 +1058,7 @@ mod tests {
             Ok(TestCommand {
                 program: "cargo".into(),
                 args: vec!["test".into()],
+                cwd: None,
             })
         }
 
@@ -1695,6 +1776,106 @@ mod tests {
     }
 
     #[test]
+    fn routed_node_command_uses_package_root_cwd() {
+        let root = temp_workspace_path("routed-node-package-cwd");
+        write_file(
+            &root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("web/package.json"),
+            r#"{"packageManager":"npm@10.0.0"}"#,
+        );
+        write_file(
+            &root.join("web/apps/admin/package.json"),
+            r#"{"scripts":{"test":"vitest"}}"#,
+        );
+
+        let ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root.clone()],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_admin_route(),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        let slot = ctx.routed_contexts.slot_for(Some("admin"));
+        let command = slot
+            .runner
+            .build_test_command(
+                &slot.runner_workspace,
+                &TestSelector {
+                    package: Some("admin".into()),
+                    filter: "renders dashboard".into(),
+                    level: Some("unit".into()),
+                    test_double: None,
+                    targets: None,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(command.program, "bun");
+        assert_eq!(
+            command.args,
+            vec![
+                "run".to_string(),
+                "test".to_string(),
+                "--".to_string(),
+                "-t".to_string(),
+                "renders dashboard".to_string(),
+            ]
+        );
+        assert_eq!(command.cwd, Some(root.join("web/apps/admin")));
+    }
+
+    #[test]
+    fn package_manager_inherited_from_route_root() {
+        let root = temp_workspace_path("routed-node-package-manager-inheritance");
+        write_file(
+            &root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("web/package.json"),
+            r#"{"packageManager":"bun@1.3.8"}"#,
+        );
+        write_file(
+            &root.join("web/apps/admin/package.json"),
+            r#"{"scripts":{"test":"vitest"}}"#,
+        );
+
+        let ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_admin_route_config(BTreeMap::new()),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        let slot = ctx.routed_contexts.slot_for(Some("admin"));
+        let command = slot
+            .runner
+            .build_test_command(
+                &slot.runner_workspace,
+                &TestSelector {
+                    package: Some("admin".into()),
+                    filter: "-".into(),
+                    level: Some("unit".into()),
+                    test_double: None,
+                    targets: None,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(command.program, "bun");
+        assert_eq!(command.args, vec!["run".to_string(), "test".to_string()]);
+    }
+
+    #[test]
     fn probe_errors_on_missing_route_package_dir() {
         let root = temp_workspace_path("routed-context-missing-package");
         write_file(
@@ -1770,17 +1951,87 @@ mod tests {
         );
     }
 
+    #[test]
+    fn routed_source_collection_scopes_node_ignored_dirs() {
+        let root = temp_workspace_path("routed-context-scoped-ignores");
+        write_file(
+            &root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("dist/lib.rs"),
+            "// @spec: backend from dist\npub fn backend_from_dist() {}\n",
+        );
+        write_file(
+            &root.join("web/package.json"),
+            r#"{"packageManager":"bun@1.3.8","scripts":{"test":"vitest"}}"#,
+        );
+        write_file(
+            &root.join("web/apps/admin/package.json"),
+            r#"{"scripts":{"test":"vitest"}}"#,
+        );
+        write_file(
+            &root.join("web/dist/ignored.test.ts"),
+            "// @spec: ignored generated\ntest(\"ignored\", () => {})\n",
+        );
+        write_file(
+            &root.join("web/apps/admin/src/preview.test.ts"),
+            "test(\"preview\", () => {})\n",
+        );
+
+        let ctx = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![root],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_admin_route(),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        let source_paths: Vec<String> = ctx
+            .routed_contexts
+            .slots()
+            .iter()
+            .flat_map(|slot| &slot.runner_workspace.source_files)
+            .map(|source| source.path.to_string_lossy().into_owned())
+            .collect();
+
+        assert!(
+            source_paths
+                .iter()
+                .any(|path| path.ends_with("dist/lib.rs"))
+        );
+        assert!(
+            source_paths
+                .iter()
+                .any(|path| path.ends_with("web/apps/admin/src/preview.test.ts"))
+        );
+        assert!(
+            !source_paths
+                .iter()
+                .any(|path| path.ends_with("web/dist/ignored.test.ts"))
+        );
+    }
+
     fn resolved_spec_with_runner(runner: Option<&str>) -> ResolvedSpec {
         resolved_spec_with_runner_and_config(runner, BTreeMap::new())
     }
 
     fn resolved_spec_with_admin_route() -> ResolvedSpec {
+        resolved_spec_with_admin_route_config(BTreeMap::from([
+            ("package_manager".to_string(), "bun".to_string()),
+            ("unit_filter_style".to_string(), "vitest".to_string()),
+        ]))
+    }
+
+    fn resolved_spec_with_admin_route_config(config: BTreeMap<String, String>) -> ResolvedSpec {
         let mut spec = resolved_spec_with_runner(Some("cargo"));
         spec.task.meta.runner_routes = vec![RunnerRouteDecl {
             runner: "node".into(),
             root: Some("web".into()),
             packages: BTreeMap::from([("admin".to_string(), "apps/admin".to_string())]),
-            config: BTreeMap::from([("package_manager".to_string(), "bun".to_string())]),
+            config,
         }];
         spec
     }

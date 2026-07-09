@@ -94,6 +94,7 @@ pub struct RunnerRoutingPlan {
 pub struct TestCommand {
     pub program: String,
     pub args: Vec<String>,
+    pub cwd: Option<PathBuf>,
 }
 
 /// Source file contents available to pure runner scanners.
@@ -138,6 +139,16 @@ pub struct NodeProjectMetadata {
     pub scripts: BTreeSet<String>,
     pub package_json_package_manager: Option<String>,
     pub lockfiles: BTreeSet<String>,
+    pub routed_packages: BTreeMap<String, NodePackageMetadata>,
+}
+
+/// Typed metadata for one routed Node package token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodePackageMetadata {
+    pub root: PathBuf,
+    pub package_manager: NodePackageManagerDecision,
+    pub scripts: BTreeSet<String>,
+    pub package_json_package_manager: Option<String>,
 }
 
 /// Selected Node package manager and the source of that decision.

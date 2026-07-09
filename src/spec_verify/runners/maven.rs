@@ -36,6 +36,7 @@ impl TestRunner for MavenRunner {
         Ok(TestCommand {
             program: maven_program(workspace),
             args,
+            cwd: None,
         })
     }
 

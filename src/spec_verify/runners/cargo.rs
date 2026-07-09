@@ -34,6 +34,7 @@ impl TestRunner for CargoRunner {
         Ok(TestCommand {
             program: "cargo".to_string(),
             args,
+            cwd: None,
         })
     }
 

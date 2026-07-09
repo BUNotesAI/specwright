@@ -73,6 +73,7 @@ impl TestRunner for IosRunner {
         Ok(TestCommand {
             program: "xcodebuild".to_string(),
             args,
+            cwd: None,
         })
     }
 

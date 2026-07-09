@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-use std::path::Path;
+use std::collections::{BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
 
 use crate::spec_core::{SpecError, SpecResult, TestSelector};
 
 use super::{
-    NodeProjectMetadata, PreflightOutcome, RunnerWorkspace, TestCommand, TestRunner,
-    WorkspaceMarkers,
+    NodePackageManagerDecision, NodeProjectMetadata, PreflightOutcome, RunnerWorkspace,
+    TestCommand, TestRunner, WorkspaceMarkers,
 };
 
 /// Generic Node and TypeScript package-script runner.
@@ -38,15 +38,17 @@ impl TestRunner for NodeRunner {
                 "node runner requires RunnerWorkspace.metadata.node from package.json probe".into(),
             )
         })?;
-        let script = script_for_selector(workspace, metadata, selector)?;
-        let package_manager = metadata.package_manager.manager;
-        let mut args = package_manager_run_prefix(workspace, selector)?;
+        let target = command_target(metadata, selector);
+        let script = script_for_selector(workspace, target.scripts, selector)?;
+        let package_manager = target.package_manager.manager;
+        let mut args = package_manager_run_prefix(workspace, selector, target.routed_package)?;
         args.push(script.to_string());
         args.extend(filter_args(workspace, selector)?);
 
         Ok(TestCommand {
             program: package_manager.as_str().to_string(),
             args,
+            cwd: target.cwd,
         })
     }
 
@@ -76,7 +78,10 @@ impl TestRunner for NodeRunner {
                 "node runner requires RunnerWorkspace.metadata.node from package.json probe".into(),
             )
         })?;
-        let program = metadata.package_manager.manager.as_str();
+        let program = command_target(metadata, selector)
+            .package_manager
+            .manager
+            .as_str();
         if !program_on_path(program) {
             return Ok(PreflightOutcome::MissingCapability {
                 capability: program.to_string(),
@@ -110,9 +115,42 @@ impl TestRunner for NodeRunner {
     }
 }
 
+struct NodeCommandTarget<'a> {
+    package_manager: &'a NodePackageManagerDecision,
+    scripts: &'a BTreeSet<String>,
+    cwd: Option<PathBuf>,
+    routed_package: bool,
+}
+
+fn command_target<'a>(
+    metadata: &'a NodeProjectMetadata,
+    selector: &TestSelector,
+) -> NodeCommandTarget<'a> {
+    let routed_package = selector
+        .package
+        .as_deref()
+        .and_then(|package| metadata.routed_packages.get(package));
+
+    if let Some(package) = routed_package {
+        return NodeCommandTarget {
+            package_manager: &package.package_manager,
+            scripts: &package.scripts,
+            cwd: Some(package.root.clone()),
+            routed_package: true,
+        };
+    }
+
+    NodeCommandTarget {
+        package_manager: &metadata.package_manager,
+        scripts: &metadata.scripts,
+        cwd: None,
+        routed_package: false,
+    }
+}
+
 fn script_for_selector<'a>(
     workspace: &'a RunnerWorkspace,
-    metadata: &'a NodeProjectMetadata,
+    scripts: &'a BTreeSet<String>,
     selector: &TestSelector,
 ) -> SpecResult<&'a str> {
     let (config_key, default_script) = match selector.level.as_deref().unwrap_or("unit") {
@@ -132,7 +170,7 @@ fn script_for_selector<'a>(
         .get(config_key)
         .map(String::as_str)
         .unwrap_or(default_script);
-    if !metadata.scripts.contains(script) {
+    if !scripts.contains(script) {
         return Err(SpecError::Verification(format!(
             "node runner requires package.json script `{script}` for level `{}`",
             selector.level.as_deref().unwrap_or("unit")
@@ -144,12 +182,15 @@ fn script_for_selector<'a>(
 fn package_manager_run_prefix(
     workspace: &RunnerWorkspace,
     selector: &TestSelector,
+    routed_package: bool,
 ) -> SpecResult<Vec<String>> {
     let package = selector.package.as_deref();
     let configured_filter = workspace.config.get("workspace_filter").map(String::as_str);
-    if package.is_some() || configured_filter.is_some() {
+    if (package.is_some() && !routed_package) || configured_filter.is_some() {
         let mut details = Vec::new();
-        if let Some(package) = package {
+        if let Some(package) = package
+            && !routed_package
+        {
             details.push(format!("Package `{package}`"));
         }
         if let Some(configured) = configured_filter {
@@ -419,6 +460,19 @@ mod tests {
     }
 
     #[test]
+    fn scalar_node_package_still_rejected() {
+        let workspace = workspace(NodePackageManager::Npm, BTreeMap::new(), ["test"]);
+
+        let err = NodeRunner
+            .build_test_command(&workspace, &package_selector("admin"))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("workspace filters"));
+        assert!(err.contains("Package `admin`"));
+    }
+
+    #[test]
     fn test_node_filter_sentinel_for_typecheck_lint_build() {
         let workspace = workspace(
             NodePackageManager::Npm,
@@ -642,6 +696,7 @@ const helper = true
                     scripts: scripts.into_iter().map(str::to_string).collect(),
                     package_json_package_manager: None,
                     lockfiles: BTreeSet::new(),
+                    routed_packages: BTreeMap::new(),
                 }),
             },
         )

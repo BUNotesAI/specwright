@@ -71,6 +71,7 @@ impl TestRunner for AndroidRunner {
                     "--tests".to_string(),
                     selector.filter.replace('#', "."),
                 ],
+                cwd: None,
             }),
             Some("instrumented") => Ok(TestCommand {
                 program: android_gradle_program(workspace),
@@ -81,6 +82,7 @@ impl TestRunner for AndroidRunner {
                         selector.filter
                     ),
                 ],
+                cwd: None,
             }),
             Some(level) => Err(SpecError::Verification(format!(
                 "unknown Android test level `{level}`; expected one of [\"unit\", \"instrumented\"]"
