@@ -101,6 +101,29 @@ Runner-specific behavior:
 - `ios`: detects `Package.swift` or `*.xcodeproj`; macOS-only; uses `runner_config.scheme` and `runner_config.destination` for `xcodebuild test`.
 - `node`: detects `package.json`; runs JavaScript/TypeScript package scripts with `npm`, `pnpm`, `yarn`, or `bun`. Use `runner: node` for TanStack Start, Vite, Vitest, Jest, Playwright, Bun, and other package-script based projects; there is no TanStack Start-specific runner.
 
+Mixed runner frontmatter:
+
+```spec
+spec: task
+name: "Rust API plus admin UI"
+runner: cargo
+runners:
+  node:
+    root: web
+    packages: { admin: "apps/admin" }
+    config: { package_manager: "bun", unit_filter_style: "vitest" }
+---
+```
+
+`Package: admin` selects the routed Node package at `web/apps/admin`; unmatched package tokens continue to use the default Cargo runner. Route package paths are relative to the route `root`. The route table is explicit: specwright does not auto-detect package routes, infer workspaces, or accept per-scenario `Runner:` selectors.
+
+Operational notes for routed Node specs:
+
+- Routed Node source discovery is scoped to the route `root`; Node source outside that subtree is not scanned for bindings.
+- Legacy `@spec` bindings discovered under a routed Node route execute from the route root, not from an inferred package root; mixed specs should prefer explicit `Test:` selectors with routed `Package:` tokens.
+- Node zero-match detection parses the default Vitest human-readable summary line; custom reporters keep exit-code semantics and may emit an unparseable-output warning.
+- Narrow `--code <file>` inputs do not auto-expand to route roots. Verify routed specs with a project or route-root directory scope.
+
 Node runner v1 details:
 
 - Package manager precedence: `runner_config.package_manager` > `package.json.packageManager` > a single lockfile marker > `npm`.
@@ -111,7 +134,7 @@ Node runner v1 details:
 - `unit_filter_style` values: `vitest`, `jest`, `playwright`, `none`.
 - Unit filters are regex-escaped before being passed to the package script.
 - Non-unit levels require `Filter: -`.
-- `Package` selectors and `runner_config.workspace_filter` fail in Node v1.
+- A scalar `runner: node` spec still rejects `Package:` selectors and `runner_config.workspace_filter`.
 - Missing `package.json`, unreadable or invalid `package.json`, missing required scripts, invalid package-manager values, and ambiguous lockfiles fail verification.
 
 When a required external tool or device is unavailable, runner preflight reports `MissingCapability`; `TestVerifier` converts that scenario to `skip`. For Node, this applies to the selected package manager executable and to opt-in `Level: e2e` browser capability.

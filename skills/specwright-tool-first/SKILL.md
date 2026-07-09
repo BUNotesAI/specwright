@@ -75,6 +75,29 @@ runner_config: { scheme: "IosMini", destination: "platform=iOS Simulator,name=iP
 ---
 ```
 
+Mixed repositories can keep one default runner and route explicit `Package:` tokens to another runner:
+
+```spec
+spec: task
+name: "Rust API plus admin UI"
+runner: cargo
+runners:
+  node:
+    root: web
+    packages: { admin: "apps/admin" }
+    config: { package_manager: "bun", unit_filter_style: "vitest" }
+---
+```
+
+In that contract, scenarios with `Package: admin` run through Node in `web/apps/admin`; scenarios with other packages stay on Cargo. Route package paths are relative to the route `root`. This is explicit routing, not stack auto-detection or workspace inference.
+
+Operational notes for routed Node specs:
+
+- Routed Node source discovery is scoped to the route `root`; Node source outside that subtree is not scanned for bindings.
+- Legacy `@spec` bindings discovered under a routed Node route execute from the route root, not from an inferred package root; mixed specs should prefer explicit `Test:` selectors with routed `Package:` tokens.
+- Node zero-match detection parses the default Vitest human-readable summary line; custom reporters keep exit-code semantics and may emit an unparseable-output warning.
+- Narrow `--code <file>` inputs do not auto-expand to route roots. Verify routed specs with a project or route-root directory scope.
+
 Built-in runners:
 
 | Runner | Detection markers | Test command shape | Notes |
@@ -112,7 +135,7 @@ Node/TypeScript runner v1 behavior:
 - Script mapping defaults are `Level: unit` -> `test`, `typecheck` -> `typecheck`, `lint` -> `lint`, `build` -> `build`, and `e2e` -> `e2e`. Override these with the corresponding `*_script` runner config key.
 - Unit filters require `runner_config.unit_filter_style`: `vitest` emits `-- -t <escaped-filter>`, `jest` emits `-- --testNamePattern <escaped-filter>`, `playwright` emits `-- --grep <escaped-filter>`, and `none` requires `Filter: -`.
 - Non-unit levels (`typecheck`, `lint`, `build`, `e2e`) require the no-filter sentinel `Filter: -`.
-- `Package` selectors and `runner_config.workspace_filter` are out of scope for Node v1 and fail loudly. Use separate specs or script-level filtering for monorepos.
+- A scalar `runner: node` spec still rejects `Package:` selectors and `runner_config.workspace_filter`; use a frontmatter `runners:` block when one spec needs Cargo plus routed Node package scenarios.
 - Missing package-manager executables on `PATH` are converted to Skip through `MissingCapability`. Missing or unreadable `package.json`, missing required scripts, and invalid runner config fail verification.
 - `Level: e2e` is opt-in and reports a browser capability skip by default; it is not part of the default close gate.
 

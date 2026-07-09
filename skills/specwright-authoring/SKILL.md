@@ -220,6 +220,29 @@ runner_config: { package_manager: "pnpm", unit_filter_style: "vitest" }
 ---
 ```
 
+For mixed Rust + TypeScript repositories, keep the default runner explicit and route package tokens through `runners:`:
+
+```spec
+spec: task
+name: "Rust API plus admin UI"
+runner: cargo
+runners:
+  node:
+    root: web
+    packages: { admin: "apps/admin" }
+    config: { package_manager: "bun", unit_filter_style: "vitest" }
+---
+```
+
+In routed specs, `Package: admin` selects the Node route and runs inside `web/apps/admin`; unmatched package tokens stay on the default Cargo route. Route package paths are relative to the route `root`. Routing is declarative: specwright does not auto-detect package routes, does not infer workspaces, and does not add per-scenario `Runner:` selectors.
+
+Operational notes for routed Node specs:
+
+- Routed Node source discovery is scoped to the route `root`; Node source outside that subtree is not scanned for bindings.
+- Legacy `@spec` bindings discovered under a routed Node route execute from the route root, not from an inferred package root; mixed specs should prefer explicit `Test:` selectors with routed `Package:` tokens.
+- Node zero-match detection parses the default Vitest human-readable summary line; custom reporters keep exit-code semantics and may emit an unparseable-output warning.
+- Narrow `--code <file>` inputs do not auto-expand to route roots. Verify routed specs with a project or route-root directory scope.
+
 Built-in runner choices:
 
 | Runner | Use when | Notes |
@@ -253,7 +276,7 @@ Node runner authoring rules:
 - Use `Level: unit`, `typecheck`, `lint`, `build`, or `e2e`.
 - Use `Filter: -` for `typecheck`, `lint`, `build`, and `e2e`.
 - For unit tests, either configure `unit_filter_style` and provide a real test-name filter, or set `unit_filter_style: "none"` and use `Filter: -`.
-- Do not use `Package` selectors for Node v1. Mixed Rust and TypeScript repositories should use separate specs or explicit `runner: node` for the TypeScript spec.
+- A scalar `runner: node` spec still rejects `Package:` selectors and `runner_config.workspace_filter`; use a `runners:` block when a single task spec needs Cargo plus routed Node package scenarios.
 - Missing package-manager executables or opt-in e2e browser capability become skipped scenarios. Missing `package.json`, invalid package-manager values, ambiguous lockfiles, and missing required scripts are verification failures.
 
 ## Test Selector Patterns

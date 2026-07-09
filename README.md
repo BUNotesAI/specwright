@@ -10,6 +10,7 @@
 
 - **Polyglot test runners** — a pluggable `TestRunner` layer with built-ins for **Cargo, Maven, Gradle (Java/Kotlin), Android, iOS, and Node/TypeScript** (Pytest/Go on the roadmap).
 - **English-only DSL (v2.0.0, breaking)** — structural keywords, section headers, and selectors are English-only; the parser **hard-rejects Chinese keyword aliases** with a clear error (`keywords must be English; '场景:' is not recognized — use 'Scenario:'`). Description free text (scenario names, step prose, quoted params) may still be any language.
+- **Declarative mixed-runner routing (v2.1.0)** — one task spec can keep Cargo as the default runner while routing selected `Package:` tokens to another runner such as Node/TypeScript.
 - **No hollow passes** — a test binding that resolves to **zero** tests *fails* instead of silently passing; `skip` and all-`#[ignore]` never count as `pass`.
 
 ## How it works (summary)
@@ -27,7 +28,7 @@ A **Task Contract** is a spec with four parts:
 
 ```bash
 cargo install --path .
-specwright --version   # 2.0.0
+specwright --version   # 2.1.0
 ```
 
 ## Example
@@ -63,6 +64,48 @@ Scenario: Successful registration
 ```
 
 Keywords are English-only; description text may be any language. For a non-Cargo project, set `runner: maven | gradle | android | ios | node` in the frontmatter (or let it auto-detect from workspace markers).
+
+For a mixed Rust + TypeScript repository, keep Cargo as the default runner and route explicit package tokens to Node:
+
+```spec
+spec: task
+name: "Rust API plus admin UI"
+runner: cargo
+runners:
+  node:
+    root: web
+    packages: { admin: "apps/admin" }
+    config: { package_manager: "bun", unit_filter_style: "vitest" }
+---
+
+## Completion Criteria
+
+Scenario: Rust API test passes
+  Test:
+    Package: api
+    Filter: test_register_api_returns_201_for_new_user
+  Given the API crate has the registration test
+  When lifecycle verification runs
+  Then Cargo executes that selector
+
+Scenario: Admin page renders
+  Test:
+    Package: admin
+    Filter: renders settings page
+    Level: unit
+  Given the admin package has a Vitest test script
+  When lifecycle verification runs
+  Then specwright runs `bun run test -- -t renders\ settings\ page` in `web/apps/admin`
+```
+
+Routing is explicit. A scalar `runner: node` spec still rejects `Package:` selectors; use the `runners:` block when a single spec needs Cargo plus Node package scenarios. `packages` maps scenario `Package:` tokens to paths relative to the route `root`. specwright does not auto-detect package routes or infer workspaces.
+
+Operational notes for routed Node specs:
+
+- Routed Node source discovery is scoped to the route `root`; Node source outside that subtree is not scanned for bindings.
+- Legacy `@spec` bindings discovered under a routed Node route execute from the route root, not from an inferred package root; mixed specs should prefer explicit `Test:` selectors with routed `Package:` tokens.
+- Node zero-match detection parses the default Vitest human-readable summary line; custom reporters keep exit-code semantics and may emit an unparseable-output warning.
+- Narrow `--code <file>` inputs do not auto-expand to route roots. Verify routed specs with a project or route-root directory scope.
 
 ## Author and verify
 

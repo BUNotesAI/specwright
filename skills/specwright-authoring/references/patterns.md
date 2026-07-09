@@ -165,7 +165,52 @@ Scenario: Typecheck passes
   Then the selected package manager runs the typecheck script
 ```
 
-Node v1 does not support `Package` selectors or `runner_config.workspace_filter`; use separate specs or script-level filtering for monorepos.
+For mixed Rust + TypeScript repositories, keep Cargo as the default and route explicit package tokens through `runners:`:
+
+```spec
+spec: task
+name: "Rust API plus admin UI"
+inherits: project
+runner: cargo
+runners:
+  node:
+    root: web
+    packages: { admin: "apps/admin" }
+    config: { package_manager: "bun", unit_filter_style: "vitest" }
+---
+
+## Intent
+
+Verify a Rust API and a routed admin UI package from one task contract.
+
+## Completion Criteria
+
+Scenario: Cargo API test passes
+  Test:
+    Package: api
+    Filter: test_register_api_returns_201_for_new_user
+  Given the API crate has the registration test
+  When lifecycle verification runs
+  Then Cargo executes the default route
+
+Scenario: Admin unit test passes
+  Test:
+    Package: admin
+    Filter: renders settings page
+    Level: unit
+  Given the admin package has a Vitest test script
+  When lifecycle verification runs
+  Then Node executes the routed package from web/apps/admin
+```
+
+Route package paths are relative to the route `root`. A scalar `runner: node` spec still rejects `Package:` selectors and `runner_config.workspace_filter`; use `runners:` only when one spec needs a default runner plus routed package scenarios.
+
+Operational notes for routed Node specs:
+
+- Routed Node source discovery is scoped to the route `root`; Node source outside that subtree is not scanned for bindings.
+- Legacy `@spec` bindings discovered under a routed Node route execute from the route root, not from an inferred package root; mixed specs should prefer explicit `Test:` selectors with routed `Package:` tokens.
+- Node zero-match detection parses the default Vitest human-readable summary line; custom reporters keep exit-code semantics and may emit an unparseable-output warning.
+- Narrow `--code <file>` inputs do not auto-expand to route roots. Verify routed specs with a project or route-root directory scope.
 
 ## Step Tables
 

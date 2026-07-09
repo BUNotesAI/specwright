@@ -3038,9 +3038,43 @@ Scenario: Contract alias
         assert!(authoring.contains("unit_filter_style"));
         assert!(tool_first.contains("runner: node"));
         assert!(tool_first.contains("Node/TypeScript runner v1 behavior"));
-        assert!(tool_first.contains("Package` selectors"));
+        assert!(tool_first.contains("scalar `runner: node` spec still rejects `Package:`"));
         assert!(commands.contains("runner: cargo | maven | gradle | android | ios | node"));
         assert!(commands.contains("Node runner v1 details"));
+    }
+
+    #[test]
+    fn docs_document_runners_block() {
+        let readme = fs::read_to_string(repo_root().join("README.md")).unwrap();
+        let authoring =
+            fs::read_to_string(repo_root().join("skills/specwright-authoring/SKILL.md")).unwrap();
+        let patterns = fs::read_to_string(
+            repo_root().join("skills/specwright-authoring/references/patterns.md"),
+        )
+        .unwrap();
+        let tool_first =
+            fs::read_to_string(repo_root().join("skills/specwright-tool-first/SKILL.md")).unwrap();
+        let commands = fs::read_to_string(
+            repo_root().join("skills/specwright-tool-first/references/commands.md"),
+        )
+        .unwrap();
+
+        for doc in [&readme, &authoring, &patterns, &tool_first, &commands] {
+            assert!(doc.contains("runners:"));
+            assert!(doc.contains("root: web"));
+            assert!(doc.contains("packages: { admin: \"apps/admin\" }"));
+            assert!(
+                doc.contains("config: { package_manager: \"bun\", unit_filter_style: \"vitest\" }")
+            );
+            assert!(doc.contains("Routed Node source discovery is scoped to the route `root`"));
+            assert!(doc.contains("route root, not from an inferred package root"));
+            assert!(doc.contains("default Vitest human-readable summary line"));
+            assert!(doc.contains("Narrow `--code <file>` inputs do not auto-expand"));
+        }
+
+        assert!(authoring.contains("scalar `runner: node` spec still rejects `Package:`"));
+        assert!(tool_first.contains("scalar `runner: node` spec still rejects `Package:`"));
+        assert!(commands.contains("scalar `runner: node` spec still rejects `Package:`"));
     }
 
     #[test]
