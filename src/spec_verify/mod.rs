@@ -116,6 +116,13 @@ impl RoutedContexts {
             .and_then(|index| self.slots.get(*index))
             .unwrap_or_else(|| self.default_slot())
     }
+
+    /// Returns declared package-token routes and their slot indexes.
+    pub fn package_routes(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
+        self.by_package
+            .iter()
+            .map(|(package, index)| (package.as_str(), *index))
+    }
 }
 
 pub fn probe_and_build_context(

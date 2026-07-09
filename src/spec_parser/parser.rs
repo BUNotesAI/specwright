@@ -383,7 +383,9 @@ fn unknown_test_selector_label_warning(line: &str, line_num: usize) -> Option<Pa
     let trimmed = line.trim().trim_start_matches('#').trim();
     let (label, _) = trimmed.split_once(':')?;
     let label = label.trim();
+    let first_word = label.split_whitespace().next().unwrap_or_default();
     if label.is_empty()
+        || matches!(first_word, "Given" | "When" | "Then" | "And" | "But")
         || !label
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, ' ' | '_' | '-'))
@@ -894,6 +896,30 @@ Scenario: Reject unknown selector labels without extending schema
             }
             other => panic!("expected AcceptanceCriteria, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn unknown_selector_label_ignores_step_text_with_colon() {
+        let input = r#"spec: task
+name: "Colon prose"
+---
+
+## Acceptance Criteria
+
+Scenario: Step prose after selector
+  Test:
+    Filter: unknown_selector_label_ignores_step_text_with_colon
+  When the user enters name: John
+  Then it records no parser warning
+"#;
+
+        let doc = parse_spec_from_str(input).unwrap();
+
+        assert!(
+            doc.parser_warnings.is_empty(),
+            "step prose with a colon must not be treated as an unknown Test selector label: {:?}",
+            doc.parser_warnings
+        );
     }
 
     #[test]

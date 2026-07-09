@@ -5,4 +5,4 @@ pub mod plan;
 #[allow(deprecated)]
 pub use brief::SpecBrief;
 pub use brief::TaskContract;
-pub use lifecycle::SpecGateway;
+pub use lifecycle::{RunnerTrace, SpecGateway};

@@ -2,8 +2,17 @@ use std::path::PathBuf;
 use std::process::Command;
 
 #[test]
+fn lifecycle_json_byte_equivalent_without_routes() -> Result<(), Box<dyn std::error::Error>> {
+    assert_cargo_lifecycle_baseline_unchanged()
+}
+
+#[test]
 fn cargo_lifecycle_default_matches_pre_refactor_baseline() -> Result<(), Box<dyn std::error::Error>>
 {
+    assert_cargo_lifecycle_baseline_unchanged()
+}
+
+fn assert_cargo_lifecycle_baseline_unchanged() -> Result<(), Box<dyn std::error::Error>> {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let output = Command::new(env!("CARGO_BIN_EXE_specwright"))
         .args([

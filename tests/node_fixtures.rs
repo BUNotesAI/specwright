@@ -68,6 +68,63 @@ fn test_node_build_level_runs_build_script() -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
+#[test]
+fn lifecycle_json_adds_runner_routes_when_routed() -> Result<(), Box<dyn std::error::Error>> {
+    let Some(json) = run_mixed_lifecycle_fixture()? else {
+        return Ok(());
+    };
+
+    assert_eq!(json["passed"], true);
+    assert_eq!(
+        json["runner"], "cargo",
+        "routed lifecycle JSON should still identify the default runner"
+    );
+    let routes = json["runner_routes"]
+        .as_array()
+        .ok_or("routed lifecycle JSON should include runner_routes")?;
+    assert_eq!(routes.len(), 1);
+    assert_eq!(routes[0]["runner"], "node");
+    assert_eq!(routes[0]["source"], "spec_frontmatter");
+    assert_eq!(
+        routes[0]["packages"].as_array().ok_or("packages array")?,
+        &vec![serde_json::json!("admin")]
+    );
+    assert!(
+        json.get("passing").is_none(),
+        "CLI lifecycle JSON must not add a new top-level passing alias"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn mixed_fixture_lifecycle_passes() -> Result<(), Box<dyn std::error::Error>> {
+    let Some(json) = run_mixed_lifecycle_fixture()? else {
+        return Ok(());
+    };
+
+    assert_eq!(json["passed"], true);
+    let cargo_result = scenario_result(&json, "mixed cargo scenario");
+    assert_eq!(cargo_result["verdict"], "pass");
+    assert!(
+        cargo_result["evidence"][0].get("command_program").is_none(),
+        "default Cargo evidence keeps command_program omitted"
+    );
+
+    let node_result = scenario_result(&json, "mixed routed admin scenario");
+    assert_eq!(node_result["verdict"], "pass");
+    assert_eq!(node_result["evidence"][0]["command_program"], "npm");
+    assert_eq!(node_result["evidence"][0]["package"], "admin");
+    assert!(
+        node_result["evidence"][0]["stdout"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("MIXED_ADMIN_OK:-t|admin smoke")
+    );
+
+    Ok(())
+}
+
 fn run_node_lifecycle_fixture() -> Result<Option<serde_json::Value>, Box<dyn std::error::Error>> {
     if !has_program("node") || !has_program("npm") {
         eprintln!("skipping Node fixture lifecycle: host node and npm are required");
@@ -75,7 +132,8 @@ fn run_node_lifecycle_fixture() -> Result<Option<serde_json::Value>, Box<dyn std
     }
 
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let fixture = copy_fixture_to_temp(&repo.join("tests/fixtures/node-npm-mini"))?;
+    let fixture =
+        copy_fixture_to_temp(&repo.join("tests/fixtures/node-npm-mini"), "node-npm-mini")?;
     let output = Command::new(env!("CARGO_BIN_EXE_specwright"))
         .args([
             "lifecycle",
@@ -105,11 +163,51 @@ fn run_node_lifecycle_fixture() -> Result<Option<serde_json::Value>, Box<dyn std
     Ok(Some(serde_json::from_slice(&output.stdout)?))
 }
 
-fn copy_fixture_to_temp(source: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn run_mixed_lifecycle_fixture() -> Result<Option<serde_json::Value>, Box<dyn std::error::Error>> {
+    if !has_program("node") || !has_program("npm") || !has_program("cargo") {
+        eprintln!("skipping mixed lifecycle fixture: host cargo, node, and npm are required");
+        return Ok(None);
+    }
+
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let fixture = copy_fixture_to_temp(
+        &repo.join("tests/fixtures/mixed-lifecycle"),
+        "mixed-lifecycle",
+    )?;
+    let output = Command::new(env!("CARGO_BIN_EXE_specwright"))
+        .args([
+            "lifecycle",
+            fixture
+                .join("spec.md")
+                .to_str()
+                .ok_or("non-utf8 spec path")?,
+            "--code",
+            fixture.to_str().ok_or("non-utf8 fixture path")?,
+            "--format",
+            "json",
+            "--change-scope",
+            "none",
+            "--layers",
+            "test",
+        ])
+        .current_dir(&repo)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "mixed lifecycle fixture failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    Ok(Some(serde_json::from_slice(&output.stdout)?))
+}
+
+fn copy_fixture_to_temp(source: &Path, label: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_nanos();
-    let target = std::env::temp_dir().join(format!("agent-spec-node-npm-mini-{unique}"));
+    let target = std::env::temp_dir().join(format!("agent-spec-{label}-{unique}"));
     copy_dir(source, &target)?;
     Ok(target)
 }

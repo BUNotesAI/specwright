@@ -578,7 +578,7 @@ fn cmd_lifecycle(
     // Stage 2: Verify (respecting layers filter)
     let verification_run =
         gw.verify_with_changes_ai_mode_and_runner(code, &effective_changes, ai_mode, runner)?;
-    let runner_resolution = verification_run.runner_resolution;
+    let runner_trace = verification_run.runner_trace;
     let verify_report = verification_run.report;
 
     // If layers filter is active, filter results to only matching layers
@@ -677,7 +677,7 @@ fn cmd_lifecycle(
         if let Some(ref layer_list) = active_layers {
             json_out["layers"] = serde_json::json!(layer_list);
         }
-        add_runner_trace_fields(&mut json_out, &runner_resolution);
+        add_runner_trace_fields(&mut json_out, &runner_trace);
         if !optimization_candidates.is_empty() {
             json_out["optimization_candidates"] = serde_json::json!(optimization_candidates);
         }
@@ -735,16 +735,22 @@ fn cmd_lifecycle(
 
 fn add_runner_trace_fields(
     json_out: &mut serde_json::Value,
-    resolution: &crate::spec_verify::RunnerResolution,
+    trace: &crate::spec_gateway::RunnerTrace,
 ) {
-    if resolution.overridden_spec.is_some() || !resolution.config_warnings.is_empty() {
-        json_out["runner"] = serde_json::json!(resolution.name);
+    if trace.default.overridden_spec.is_some()
+        || !trace.config_warnings.is_empty()
+        || !trace.routes.is_empty()
+    {
+        json_out["runner"] = serde_json::json!(trace.default.name);
     }
-    if let Some(overridden_spec) = &resolution.overridden_spec {
+    if let Some(overridden_spec) = &trace.default.overridden_spec {
         json_out["overridden_spec"] = serde_json::json!(overridden_spec);
     }
-    if !resolution.config_warnings.is_empty() {
-        json_out["config_warnings"] = serde_json::json!(resolution.config_warnings);
+    if !trace.config_warnings.is_empty() {
+        json_out["config_warnings"] = serde_json::json!(trace.config_warnings);
+    }
+    if !trace.routes.is_empty() {
+        json_out["runner_routes"] = serde_json::json!(trace.routes);
     }
 }
 
@@ -3783,7 +3789,7 @@ Scenario: verification metadata stays visible
             config_warnings: Vec::new(),
         };
 
-        super::add_runner_trace_fields(&mut json, &resolution);
+        super::add_runner_trace_fields(&mut json, &runner_trace_for_test(resolution));
 
         assert_eq!(serde_json::to_string_pretty(&json).unwrap(), baseline);
         assert!(json.get("runner").is_none());
@@ -3800,7 +3806,7 @@ Scenario: verification metadata stays visible
             config_warnings: Vec::new(),
         };
 
-        super::add_runner_trace_fields(&mut json, &resolution);
+        super::add_runner_trace_fields(&mut json, &runner_trace_for_test(resolution));
 
         assert!(json.get("config_warnings").is_none());
         assert!(json.get("runner").is_none());
@@ -3834,7 +3840,7 @@ Scenario: verification metadata stays visible
             config_warnings: Vec::new(),
         };
 
-        super::add_runner_trace_fields(&mut json, &resolution);
+        super::add_runner_trace_fields(&mut json, &runner_trace_for_test(resolution));
 
         assert_eq!(serde_json::to_string_pretty(&json).unwrap(), baseline);
         assert!(json.get("runner").is_none());
@@ -3867,7 +3873,7 @@ Scenario: verification metadata stays visible
             config_warnings: Vec::new(),
         };
 
-        super::add_runner_trace_fields(&mut json, &resolution);
+        super::add_runner_trace_fields(&mut json, &runner_trace_for_test(resolution));
 
         assert_eq!(json["runner"], "cargo");
         assert_eq!(json["overridden_spec"], "maven");
@@ -4785,5 +4791,15 @@ Scenario: pass
         );
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    fn runner_trace_for_test(
+        default: crate::spec_verify::RunnerResolution,
+    ) -> crate::spec_gateway::RunnerTrace {
+        crate::spec_gateway::RunnerTrace {
+            config_warnings: default.config_warnings.clone(),
+            default,
+            routes: Vec::new(),
+        }
     }
 }

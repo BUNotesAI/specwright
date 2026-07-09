@@ -8,8 +8,9 @@ use crate::spec_core::{LintReport, SpecResult, Verdict, VerificationReport};
 use crate::spec_lint::LintPipeline;
 use crate::spec_report::OutputFormat;
 use crate::spec_verify::{
-    AiBackend, AiMode, AiVerifier, BoundariesVerifier, ComplexityVerifier, RunnerResolution,
-    StructuralVerifier, TestVerifier, Verifier, probe_and_build_context, run_verification,
+    AiBackend, AiMode, AiVerifier, BoundariesVerifier, ComplexityVerifier, ResolutionSource,
+    RunnerResolution, RunnerWarning, StructuralVerifier, TestVerifier, VerificationContext,
+    Verifier, probe_and_build_context, run_verification,
 };
 
 use super::TaskContract;
@@ -22,7 +23,51 @@ pub struct SpecGateway {
 
 pub struct VerificationRun {
     pub report: VerificationReport,
-    pub runner_resolution: RunnerResolution,
+    pub runner_trace: RunnerTrace,
+}
+
+pub struct RunnerTrace {
+    pub default: RunnerResolution,
+    pub routes: Vec<RouteTrace>,
+    pub config_warnings: Vec<RunnerWarning>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RouteTrace {
+    pub runner: String,
+    pub packages: Vec<String>,
+    pub source: ResolutionSource,
+}
+
+impl RunnerTrace {
+    fn from_context(ctx: &VerificationContext) -> Self {
+        let mut packages_by_slot = std::collections::BTreeMap::<usize, Vec<String>>::new();
+        for (package, slot_index) in ctx.routed_contexts.package_routes() {
+            packages_by_slot
+                .entry(slot_index)
+                .or_default()
+                .push(package.to_string());
+        }
+
+        let routes = packages_by_slot
+            .into_iter()
+            .filter_map(|(slot_index, packages)| {
+                ctx.routed_contexts
+                    .slot_at(slot_index)
+                    .map(|slot| RouteTrace {
+                        runner: slot.runner_resolution.name.clone(),
+                        packages,
+                        source: slot.runner_resolution.source,
+                    })
+            })
+            .collect();
+
+        Self {
+            default: ctx.runner_resolution.clone(),
+            routes,
+            config_warnings: ctx.config_warnings.clone(),
+        }
+    }
 }
 
 impl SpecGateway {
@@ -242,7 +287,7 @@ impl SpecGateway {
             self.resolved.clone(),
             runner,
         )?;
-        let runner_resolution = ctx.runner_resolution.clone();
+        let runner_trace = RunnerTrace::from_context(&ctx);
 
         let structural = StructuralVerifier;
         let boundaries = BoundariesVerifier;
@@ -252,7 +297,7 @@ impl SpecGateway {
         let report = run_verification(&ctx, &verifiers)?;
         Ok(VerificationRun {
             report,
-            runner_resolution,
+            runner_trace,
         })
     }
 

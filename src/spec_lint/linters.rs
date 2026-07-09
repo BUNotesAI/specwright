@@ -2,7 +2,7 @@ use crate::spec_core::{
     LintDiagnostic, Scenario, Section, Severity, Span, SpecDocument, SpecLevel, StepKind,
     TestSelector,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use super::pipeline::SpecLinter;
 
@@ -534,7 +534,108 @@ impl SpecLinter for ScenarioPresenceLinter {
 }
 
 // =============================================================================
-// 9. SycophancyLinter
+// 9. ParserWarningLinter - surfaces parser compatibility warnings as lint
+// =============================================================================
+
+pub struct ParserWarningLinter;
+
+impl SpecLinter for ParserWarningLinter {
+    fn name(&self) -> &str {
+        "parser-warning"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        doc.parser_warnings
+            .iter()
+            .map(|warning| LintDiagnostic {
+                rule: "parser-warning".into(),
+                severity: Severity::Warning,
+                message: warning.message.clone(),
+                span: warning.span,
+                suggestion: Some(format!(
+                    "replace `{}` with a supported Test selector label or move it into scenario prose",
+                    warning.label
+                )),
+            })
+            .collect()
+    }
+}
+
+// =============================================================================
+// 10. RunnerRouteLinter - checks declared runner routes are actually used
+// =============================================================================
+
+pub struct RunnerRouteLinter;
+
+impl SpecLinter for RunnerRouteLinter {
+    fn name(&self) -> &str {
+        "runner-routes"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        let declared = declared_route_packages(doc);
+        if declared.is_empty() {
+            return Vec::new();
+        }
+
+        let used = used_selector_packages(doc);
+        let mut diags = Vec::new();
+
+        if used.is_empty() {
+            diags.push(LintDiagnostic {
+                rule: "runner-routes".into(),
+                severity: Severity::Warning,
+                message: "runners block declares package routes but no scenario uses Package"
+                    .into(),
+                span: Span::line(0),
+                suggestion: Some(
+                    "add Package-bearing scenarios or remove the unused runners block".into(),
+                ),
+            });
+            return diags;
+        }
+
+        for package in declared.difference(&used) {
+            diags.push(LintDiagnostic {
+                rule: "runner-routes".into(),
+                severity: Severity::Warning,
+                message: format!(
+                    "unused route package `{package}` is declared but no scenario uses `Package: {package}`"
+                ),
+                span: Span::line(0),
+                suggestion: Some(format!(
+                    "remove `{package}` from runners packages or add a matching Package selector"
+                )),
+            });
+        }
+
+        diags
+    }
+}
+
+fn declared_route_packages(doc: &SpecDocument) -> BTreeSet<String> {
+    doc.meta
+        .runner_routes
+        .iter()
+        .flat_map(|route| route.packages.keys().cloned())
+        .collect()
+}
+
+fn used_selector_packages(doc: &SpecDocument) -> BTreeSet<String> {
+    doc.sections
+        .iter()
+        .filter_map(|section| match section {
+            Section::AcceptanceCriteria { scenarios, .. } => Some(scenarios.iter()),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|scenario| scenario.test_selector.as_ref())
+        .filter_map(|selector| selector.package.clone())
+        .collect()
+}
+
+// =============================================================================
+// 11. SycophancyLinter
 // =============================================================================
 
 pub struct SycophancyLinter;
@@ -3359,6 +3460,107 @@ Scenario: 集成行为
             diagnostic.span.start_line, expected_line,
             "diagnostic should point to scenario line {expected_line}, got {}: {}",
             diagnostic.span.start_line, diagnostic.message,
+        );
+    }
+
+    #[test]
+    fn lint_surfaces_unknown_selector_label_parser_warning() {
+        let input = r#"spec: task
+name: "unknown selector lint"
+---
+
+## Completion Criteria
+
+Scenario: typo selector
+  Test:
+    Filter: lint_surfaces_unknown_selector_label_parser_warning
+    Runner: node
+  Given a selector block with an unsupported label
+  When lint runs
+  Then the parser warning is visible as a lint diagnostic
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let report = crate::spec_lint::LintPipeline::with_defaults().run(&doc);
+
+        assert!(
+            report.diagnostics.iter().any(|diag| {
+                diag.rule == "parser-warning"
+                    && diag
+                        .message
+                        .contains("unknown Test selector label `Runner`")
+            }),
+            "expected parser warning diagnostic, got: {:?}",
+            report.diagnostics
+        );
+    }
+
+    #[test]
+    fn lint_warns_unused_route_package_tokens() {
+        let input = r#"spec: task
+name: "unused route token"
+runner: cargo
+runners:
+  node:
+    root: web
+    packages: { admin: "apps/admin", web: "." }
+    config: { package_manager: "npm", unit_filter_style: "vitest" }
+---
+
+## Completion Criteria
+
+Scenario: admin package used
+  Test:
+    Package: admin
+    Filter: lint_warns_unused_route_package_tokens
+    Level: unit
+  Given a routed admin scenario
+  When lint runs
+  Then unused package routes are reported
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = RunnerRouteLinter.lint(&doc);
+
+        assert!(
+            diags.iter().any(|diag| {
+                diag.rule == "runner-routes" && diag.message.contains("unused route package `web`")
+            }),
+            "expected unused route package diagnostic, got: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn lint_warns_routes_without_package_scenarios() {
+        let input = r#"spec: task
+name: "routes without package scenarios"
+runner: cargo
+runners:
+  node:
+    root: web
+    packages: { admin: "apps/admin" }
+    config: { package_manager: "npm", unit_filter_style: "vitest" }
+---
+
+## Completion Criteria
+
+Scenario: default cargo only
+  Test:
+    Filter: lint_warns_routes_without_package_scenarios
+    Level: unit
+  Given a spec with declared routes
+  When no scenario uses Package
+  Then lint reports suspicious unused routing
+"#;
+        let doc = parse_spec_from_str(input).unwrap();
+        let diags = RunnerRouteLinter.lint(&doc);
+
+        assert!(
+            diags.iter().any(|diag| {
+                diag.rule == "runner-routes"
+                    && diag
+                        .message
+                        .contains("runners block declares package routes")
+            }),
+            "expected routes-without-package diagnostic, got: {diags:?}"
         );
     }
 }

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
@@ -85,11 +86,16 @@ impl Verifier for TestVerifier {
                 interpretation.verdict
             };
             let selector_label = binding.selector.label();
-            let reason = append_runner_warnings(
-                interpretation.reason.unwrap_or_else(|| {
-                    default_test_reason(&binding, &selector_label, runner_output.status_success)
-                }),
-                &interpretation.warnings,
+            let reason = append_cargo_route_hint(
+                append_runner_warnings(
+                    interpretation.reason.unwrap_or_else(|| {
+                        default_test_reason(&binding, &selector_label, runner_output.status_success)
+                    }),
+                    &interpretation.warnings,
+                ),
+                slot.runner.id(),
+                &slot.runner_workspace,
+                &binding.selector,
             );
 
             let step_results = scenario
@@ -159,6 +165,64 @@ fn append_runner_warnings(reason: String, warnings: &[String]) -> String {
             warnings.join("; runner warning: ")
         )
     }
+}
+
+fn append_cargo_route_hint(
+    reason: String,
+    runner_id: &str,
+    workspace: &super::RunnerWorkspace,
+    selector: &TestSelector,
+) -> String {
+    let Some(package) = selector.package.as_deref() else {
+        return reason;
+    };
+    if runner_id != "cargo" || !reason.contains("matched zero tests") {
+        return reason;
+    }
+    let Some(root) = workspace.root.as_deref() else {
+        return reason;
+    };
+    let Some(package_root) = find_node_package_token_root_io(root, package) else {
+        return reason;
+    };
+    let display_path = package_root
+        .strip_prefix(root)
+        .unwrap_or(package_root.as_path())
+        .display();
+    format!(
+        "{reason}; Package `{package}` looks like a Node package at `{display_path}`; declare it under `runners:`"
+    )
+}
+
+fn find_node_package_token_root_io(root: &Path, package: &str) -> Option<PathBuf> {
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() {
+                continue;
+            }
+            let path = entry.path();
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if matches!(
+                name.as_ref(),
+                ".git" | "target" | "node_modules" | "dist" | "coverage"
+            ) {
+                continue;
+            }
+            if name == package && path.join("package.json").is_file() {
+                return Some(path);
+            }
+            stack.push(path);
+        }
+    }
+    None
 }
 
 fn scan_legacy_bindings(ctx: &VerificationContext) -> SpecResult<HashMap<String, TestBinding>> {
@@ -641,6 +705,7 @@ fn helper() {}
     }
 
     struct InterpretFailRunner;
+    struct CargoZeroMatchRouteHintRunner;
 
     impl TestRunner for InterpretFailRunner {
         fn id(&self) -> &'static str {
@@ -676,6 +741,43 @@ fn helper() {}
             output: &RunnerOutput,
         ) -> RunnerOutputInterpretation {
             assert_eq!(output.combined(), "running 0 tests\n");
+            RunnerOutputInterpretation::zero_match(selector)
+        }
+    }
+
+    impl TestRunner for CargoZeroMatchRouteHintRunner {
+        fn id(&self) -> &'static str {
+            "cargo"
+        }
+
+        fn detect(&self, _markers: &WorkspaceMarkers) -> bool {
+            true
+        }
+
+        fn build_test_command(
+            &self,
+            _workspace: &RunnerWorkspace,
+            _selector: &TestSelector,
+        ) -> crate::spec_core::SpecResult<TestCommand> {
+            Ok(TestCommand {
+                program: "sh".into(),
+                args: vec!["-c".into(), "printf 'running 0 tests\\n'".into()],
+                cwd: None,
+            })
+        }
+
+        fn scan_legacy_bindings(
+            &self,
+            _workspace: &RunnerWorkspace,
+        ) -> crate::spec_core::SpecResult<HashMap<String, String>> {
+            Ok(HashMap::new())
+        }
+
+        fn interpret_output(
+            &self,
+            selector: &TestSelector,
+            _output: &RunnerOutput,
+        ) -> RunnerOutputInterpretation {
             RunnerOutputInterpretation::zero_match(selector)
         }
     }
@@ -729,6 +831,73 @@ fn helper() {}
         assert_eq!(
             results[0].step_results[0].reason,
             "test selector `missing node test` matched zero tests; a filter that resolves to nothing is not coverage"
+        );
+    }
+
+    #[test]
+    fn cargo_zero_match_hint_suggests_route() {
+        let root = temp_workspace_path("cargo-route-hint");
+        write_file(&root.join("Cargo.toml"), "[workspace]\nmembers = []\n");
+        write_file(
+            &root.join("web/apps/admin/package.json"),
+            "{\"scripts\":{}}\n",
+        );
+        let scenario = Scenario {
+            name: "Cargo zero match with node-looking package".into(),
+            steps: vec![Step {
+                kind: StepKind::Then,
+                text: "route hint is included".into(),
+                params: vec![],
+                table: vec![],
+                span: Span::line(1),
+            }],
+            test_selector: Some(TestSelector {
+                package: Some("admin".into()),
+                filter: "missing_admin_test".into(),
+                level: Some("unit".into()),
+                test_double: None,
+                targets: None,
+            }),
+            tags: Vec::new(),
+            review: Default::default(),
+            mode: Default::default(),
+            depends_on: vec![],
+            span: Span::line(1),
+        };
+        let runner: Arc<dyn TestRunner> = Arc::new(CargoZeroMatchRouteHintRunner);
+        let resolution = RunnerResolution {
+            name: "cargo".into(),
+            source: ResolutionSource::Detected,
+            overridden_spec: None,
+            config_warnings: Vec::new(),
+        };
+        let workspace = RunnerWorkspace::for_test(&root);
+        let ctx = VerificationContext {
+            code_paths: vec![root.clone()],
+            change_paths: vec![],
+            ai_mode: AiMode::Off,
+            resolved_spec: resolved_spec_for_scenario(scenario),
+            routed_contexts: RoutedContexts::default_only(RunnerSlot {
+                runner: runner.clone(),
+                runner_workspace: workspace.clone(),
+                runner_resolution: resolution.clone(),
+            }),
+            runner,
+            runner_workspace: workspace,
+            runner_resolution: resolution,
+            config_warnings: Vec::new(),
+        };
+
+        let results = TestVerifier.verify(&ctx).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].verdict, Verdict::Fail);
+        let reason = &results[0].step_results[0].reason;
+        assert!(
+            reason.contains(
+                "Package `admin` looks like a Node package at `web/apps/admin`; declare it under `runners:`"
+            ),
+            "expected route hint in reason, got: {reason}"
         );
     }
 
@@ -803,6 +972,23 @@ fn helper() {}
             inherited_decisions: vec![],
             all_scenarios: vec![scenario],
         }
+    }
+
+    fn temp_workspace_path(label: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("specwright-{label}-{nanos}"));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn write_file(path: &std::path::Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, contents).unwrap();
     }
 
     #[test]
