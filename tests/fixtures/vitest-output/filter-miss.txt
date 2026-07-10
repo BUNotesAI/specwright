@@ -1,0 +1,8 @@
+ RUN  v3.2.6 /Users/alexwang/codes/ai-agent-workspace/my-applications/operations-work/web/apps/admin
+
+ ↓ src/__probe__/p6-vitest.test.ts (2 tests | 2 skipped)
+
+ Test Files  1 skipped (1)
+      Tests  2 skipped (2)
+   Start at  12:04:03
+   Duration  669ms (transform 36ms, setup 53ms, collect 4ms, tests 0ms, environment 336ms, prepare 90ms)

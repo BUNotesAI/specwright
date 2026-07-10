@@ -240,7 +240,7 @@ Operational notes for routed Node specs:
 
 - Routed Node source discovery is scoped to the route `root`; Node source outside that subtree is not scanned for bindings.
 - Legacy `@spec` bindings discovered under a routed Node route execute from the route root, not from an inferred package root; mixed specs should prefer explicit `Test:` selectors with routed `Package:` tokens.
-- Node zero-match detection parses the default Vitest human-readable summary line; custom reporters keep exit-code semantics and may emit an unparseable-output warning.
+- Node zero-match detection trusts the last structured Vitest `Tests` summary, counts only passed and failed tests as executed, and treats explicit no-test output as zero execution; custom reporters keep exit-code semantics and may emit an unparseable-output warning.
 - Narrow `--code <file>` inputs do not auto-expand to route roots. Verify routed specs with a project or route-root directory scope.
 
 Built-in runner choices:

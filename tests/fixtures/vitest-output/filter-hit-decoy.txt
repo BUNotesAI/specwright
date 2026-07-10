@@ -1,0 +1,11 @@
+ RUN  v3.2.6 /Users/alexwang/codes/ai-agent-workspace/my-applications/operations-work/web/apps/admin
+
+stdout | src/__probe__/p6-vitest.test.ts > alpha works
+Tests remaining: 0 left
+
+ ✓ src/__probe__/p6-vitest.test.ts (2 tests | 1 skipped) 2ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 1 skipped (2)
+   Start at  12:04:04
+   Duration  483ms (transform 22ms, setup 36ms, collect 4ms, tests 2ms, environment 198ms, prepare 60ms)

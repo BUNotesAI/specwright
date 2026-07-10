@@ -3068,7 +3068,8 @@ Scenario: Contract alias
             );
             assert!(doc.contains("Routed Node source discovery is scoped to the route `root`"));
             assert!(doc.contains("route root, not from an inferred package root"));
-            assert!(doc.contains("default Vitest human-readable summary line"));
+            assert!(doc.contains("last structured Vitest `Tests` summary"));
+            assert!(doc.contains("passed and failed tests as executed"));
             assert!(doc.contains("Narrow `--code <file>` inputs do not auto-expand"));
         }
 

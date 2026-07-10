@@ -1,0 +1,7 @@
+ RUN  v3.2.6 /Users/alexwang/codes/ai-agent-workspace/my-applications/operations-work/web/apps/admin
+
+No test files found, exiting with code 0
+
+filter: src/__probe__/missing.test.ts
+include: **/*.{test,spec}.?(c|m)[jt]s?(x)
+exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*

@@ -189,8 +189,7 @@ fn probe_and_build_context_with_registry_and_host(
         host_platform,
     )?;
 
-    let source_files = collect_source_files_for_slot_inputs(&slot_inputs)?;
-    let (slots, config_warnings) = build_runner_slots(slot_inputs, source_files, routing_warnings)?;
+    let (slots, config_warnings) = build_runner_slots(slot_inputs, routing_warnings)?;
 
     let default_runner = Arc::clone(&slots[0].runner);
     let default_workspace = slots[0].runner_workspace.clone();
@@ -335,11 +334,15 @@ fn push_route_slot(
 
 fn build_runner_slots(
     slot_inputs: Vec<SlotInput>,
-    source_files: Vec<RunnerSourceFile>,
     mut config_warnings: Vec<RunnerWarning>,
 ) -> SpecResult<(Vec<RunnerSlot>, Vec<RunnerWarning>)> {
     let mut slots = Vec::new();
     for input in slot_inputs {
+        let source_files = collect_source_files(
+            &input.code_paths,
+            input.runner.source_extensions(),
+            input.runner.ignored_source_dirs(),
+        )?;
         let metadata = build_workspace_metadata(
             input.runner.as_ref(),
             input.root.as_deref(),
@@ -352,7 +355,7 @@ fn build_runner_slots(
             input.code_paths,
             input.config,
             input.markers,
-            source_files.clone(),
+            source_files,
             metadata,
         );
         let slot_warnings = build_config_warnings(input.runner.as_ref(), &runner_workspace);
@@ -789,25 +792,6 @@ fn probe_workspace_markers(root: Option<&Path>) -> WorkspaceMarkers {
     WorkspaceMarkers::from_files(markers)
 }
 
-fn collect_source_files_for_slot_inputs(
-    slot_inputs: &[SlotInput],
-) -> SpecResult<Vec<RunnerSourceFile>> {
-    let mut by_path = BTreeMap::new();
-    for input in slot_inputs {
-        for source in collect_source_files(
-            &input.code_paths,
-            input.runner.source_extensions(),
-            input.runner.ignored_source_dirs(),
-        )? {
-            by_path.entry(source.path).or_insert(source.content);
-        }
-    }
-    Ok(by_path
-        .into_iter()
-        .map(|(path, content)| RunnerSourceFile { path, content })
-        .collect())
-}
-
 fn collect_source_files(
     code_paths: &[PathBuf],
     source_extensions: &[&str],
@@ -825,6 +809,9 @@ fn collect_source_files(
             collect_source_paths(path, source_extensions, ignored_source_dirs, &mut paths);
         }
     }
+
+    paths.sort();
+    paths.dedup();
 
     for path in paths {
         files.push(RunnerSourceFile {
@@ -1913,7 +1900,7 @@ mod tests {
     }
 
     #[test]
-    fn source_collection_unions_runner_extensions() {
+    fn source_collection_is_owned_by_runner_slot() {
         let root = temp_workspace_path("routed-context-source-union");
         write_file(
             &root.join("Cargo.toml"),
@@ -1943,20 +1930,33 @@ mod tests {
             HostPlatform::MacOS,
         )
         .unwrap();
-        let source_paths: Vec<String> = ctx
-            .routed_contexts
-            .slots()
+        let slots = ctx.routed_contexts.slots();
+        assert_eq!(slots.len(), 2);
+        let cargo_paths: Vec<String> = slots[0]
+            .runner_workspace
+            .source_files
             .iter()
-            .flat_map(|slot| &slot.runner_workspace.source_files)
+            .map(|source| source.path.to_string_lossy().into_owned())
+            .collect();
+        let node_paths: Vec<String> = slots[1]
+            .runner_workspace
+            .source_files
+            .iter()
             .map(|source| source.path.to_string_lossy().into_owned())
             .collect();
 
-        assert!(source_paths.iter().any(|path| path.ends_with("src/lib.rs")));
+        assert!(cargo_paths.iter().any(|path| path.ends_with("src/lib.rs")));
         assert!(
-            source_paths
+            !cargo_paths
                 .iter()
                 .any(|path| path.ends_with("web/apps/admin/src/preview.test.ts"))
         );
+        assert!(
+            node_paths
+                .iter()
+                .any(|path| path.ends_with("web/apps/admin/src/preview.test.ts"))
+        );
+        assert!(!node_paths.iter().any(|path| path.ends_with("src/lib.rs")));
     }
 
     #[test]

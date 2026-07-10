@@ -58,7 +58,7 @@ impl TestRunner for NodeRunner {
         output: &RunnerOutput,
     ) -> RunnerOutputInterpretation {
         let default = RunnerOutputInterpretation::from_exit_status(output.status_success);
-        match vitest_zero_match(&output.combined()) {
+        match vitest_zero_execution(&output.combined()) {
             Some(true) if output.status_success => RunnerOutputInterpretation::zero_match(selector),
             Some(_) => default,
             None if output.status_success => default.with_warning(
@@ -358,35 +358,87 @@ fn is_node_source(path: &Path) -> bool {
         })
 }
 
-fn vitest_zero_match(combined: &str) -> Option<bool> {
-    combined.lines().find_map(|line| {
-        let trimmed = line.trim();
-        let rest = trimmed.strip_prefix("Tests")?.trim();
-        vitest_total_count(rest).map(|count| count == 0)
-    })
+fn vitest_zero_execution(combined: &str) -> Option<bool> {
+    combined
+        .lines()
+        .filter_map(parse_vitest_summary_line)
+        .next_back()
+        .map(|summary| summary.executed() == 0)
+        .or_else(|| vitest_reports_no_test_files(combined).then_some(true))
 }
 
-fn vitest_total_count(summary_rest: &str) -> Option<u64> {
-    if let Some(count) = last_parenthesized_number(summary_rest) {
-        return Some(count);
+#[derive(Debug, PartialEq, Eq)]
+struct VitestSummary {
+    passed: u64,
+    failed: u64,
+    skipped: u64,
+    todo: u64,
+    total: u64,
+}
+
+impl VitestSummary {
+    fn executed(&self) -> u64 {
+        self.passed + self.failed
     }
-    first_number(summary_rest)
 }
 
-fn last_parenthesized_number(input: &str) -> Option<u64> {
-    let close = input.rfind(')')?;
-    let before_close = &input[..close];
+fn parse_vitest_summary_line(line: &str) -> Option<VitestSummary> {
+    let summary = line.trim().strip_prefix("Tests")?;
+    if !summary.chars().next().is_some_and(char::is_whitespace) {
+        return None;
+    }
+    let summary = summary.trim();
+    if summary == "no tests" {
+        return Some(VitestSummary {
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+            todo: 0,
+            total: 0,
+        });
+    }
+
+    let before_close = summary.strip_suffix(')')?;
     let open = before_close.rfind('(')?;
-    before_close[open + 1..].trim().parse().ok()
+    let total = before_close[open + 1..].trim().parse().ok()?;
+    let category_counts = before_close[..open].trim();
+    let mut parsed = VitestSummary {
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        todo: 0,
+        total,
+    };
+    let mut seen = BTreeSet::new();
+
+    for category_count in category_counts.split('|') {
+        let mut fields = category_count.split_whitespace();
+        let count = fields.next()?.parse().ok()?;
+        let category = fields.next()?;
+        if fields.next().is_some() || !seen.insert(category) {
+            return None;
+        }
+        match category {
+            "passed" => parsed.passed = count,
+            "failed" => parsed.failed = count,
+            "skipped" => parsed.skipped = count,
+            "todo" => parsed.todo = count,
+            _ => return None,
+        }
+    }
+
+    let categorized_total = parsed
+        .passed
+        .checked_add(parsed.failed)?
+        .checked_add(parsed.skipped)?
+        .checked_add(parsed.todo)?;
+    (categorized_total == parsed.total).then_some(parsed)
 }
 
-fn first_number(input: &str) -> Option<u64> {
-    let start = input.find(|ch: char| ch.is_ascii_digit())?;
-    let digits: String = input[start..]
-        .chars()
-        .take_while(|ch| ch.is_ascii_digit())
-        .collect();
-    digits.parse().ok()
+fn vitest_reports_no_test_files(combined: &str) -> bool {
+    combined
+        .lines()
+        .any(|line| line.trim() == "No test files found, exiting with code 0")
 }
 
 fn program_on_path(program: &str) -> bool {
@@ -416,6 +468,19 @@ mod tests {
         NodeProjectMetadata,
     };
     use super::NodeRunner;
+
+    const VITEST_FILTER_MISS: &str =
+        include_str!("../../../tests/fixtures/vitest-output/filter-miss.txt");
+    const VITEST_FILTER_HIT_DECOY: &str =
+        include_str!("../../../tests/fixtures/vitest-output/filter-hit-decoy.txt");
+    const VITEST_FILTER_MISS_DECOY: &str =
+        include_str!("../../../tests/fixtures/vitest-output/filter-miss-decoy.txt");
+    const VITEST_ALL_TODO: &str =
+        include_str!("../../../tests/fixtures/vitest-output/all-todo.txt");
+    const VITEST_NO_FILES: &str =
+        include_str!("../../../tests/fixtures/vitest-output/no-files-pass-with-no-tests.txt");
+    const VITEST_EMPTY_SUITE: &str =
+        include_str!("../../../tests/fixtures/vitest-output/empty-suite-pass-with-no-tests.txt");
 
     #[test]
     fn test_node_unit_script_argv_matrix_for_package_managers() {
@@ -728,7 +793,7 @@ const helper = true
     fn node_vitest_zero_match_fails_verdict() {
         let output = RunnerOutput {
             status_success: true,
-            stdout: " Test Files  1 passed (1)\n      Tests  0 passed (0)\n".into(),
+            stdout: VITEST_EMPTY_SUITE.into(),
             stderr: String::new(),
         };
 
@@ -742,6 +807,115 @@ const helper = true
             )
         );
         assert!(interpretation.warnings.is_empty());
+    }
+
+    #[test]
+    fn node_vitest_all_skipped_zero_run_fails_verdict() {
+        let output = RunnerOutput {
+            status_success: true,
+            stdout: VITEST_FILTER_MISS.into(),
+            stderr: String::new(),
+        };
+
+        let interpretation = NodeRunner.interpret_output(&unit_selector("missing title"), &output);
+
+        assert_eq!(interpretation.verdict, Verdict::Fail);
+        assert_eq!(
+            interpretation.reason.as_deref(),
+            Some(
+                "test selector `missing title` matched zero tests; a filter that resolves to nothing is not coverage"
+            )
+        );
+        assert!(interpretation.warnings.is_empty());
+    }
+
+    #[test]
+    fn node_vitest_passed_and_skipped_keeps_pass_verdict() {
+        let output = RunnerOutput {
+            status_success: true,
+            stdout: VITEST_FILTER_HIT_DECOY.into(),
+            stderr: String::new(),
+        };
+
+        let interpretation = NodeRunner.interpret_output(&unit_selector("alpha"), &output);
+
+        assert_eq!(interpretation.verdict, Verdict::Pass);
+        assert!(interpretation.reason.is_none());
+        assert!(interpretation.warnings.is_empty());
+    }
+
+    #[test]
+    fn node_vitest_decoy_tests_line_ignored() {
+        let passing = RunnerOutput {
+            status_success: true,
+            stdout: VITEST_FILTER_HIT_DECOY.into(),
+            stderr: String::new(),
+        };
+        let zero_run = RunnerOutput {
+            status_success: true,
+            stdout: VITEST_FILTER_MISS_DECOY.into(),
+            stderr: String::new(),
+        };
+
+        let passing_interpretation = NodeRunner.interpret_output(&unit_selector("alpha"), &passing);
+        let zero_run_interpretation =
+            NodeRunner.interpret_output(&unit_selector("missing title"), &zero_run);
+
+        assert_eq!(passing_interpretation.verdict, Verdict::Pass);
+        assert!(passing_interpretation.warnings.is_empty());
+        assert_eq!(zero_run_interpretation.verdict, Verdict::Fail);
+        assert!(zero_run_interpretation.warnings.is_empty());
+    }
+
+    #[test]
+    fn node_vitest_all_todo_fails_as_zero_execution() {
+        let output = RunnerOutput {
+            status_success: true,
+            stdout: VITEST_ALL_TODO.into(),
+            stderr: String::new(),
+        };
+
+        let interpretation = NodeRunner.interpret_output(&unit_selector("future work"), &output);
+
+        assert_eq!(interpretation.verdict, Verdict::Fail);
+        assert!(interpretation.warnings.is_empty());
+    }
+
+    #[test]
+    fn node_vitest_no_files_with_success_exit_fails_as_zero_execution() {
+        let output = RunnerOutput {
+            status_success: true,
+            stdout: VITEST_NO_FILES.into(),
+            stderr: String::new(),
+        };
+
+        let interpretation = NodeRunner.interpret_output(&unit_selector("missing file"), &output);
+
+        assert_eq!(interpretation.verdict, Verdict::Fail);
+        assert!(interpretation.warnings.is_empty());
+    }
+
+    #[test]
+    fn node_vitest_nonzero_exit_remains_fail() {
+        let output = RunnerOutput {
+            status_success: false,
+            stdout: VITEST_FILTER_HIT_DECOY.into(),
+            stderr: String::new(),
+        };
+
+        let interpretation = NodeRunner.interpret_output(&unit_selector("alpha"), &output);
+
+        assert_eq!(interpretation.verdict, Verdict::Fail);
+        assert!(interpretation.reason.is_none());
+        assert!(interpretation.warnings.is_empty());
+    }
+
+    #[test]
+    fn vitest_legacy_zero_count_summary_remains_supported() {
+        assert_eq!(
+            super::vitest_zero_execution("Tests 0 passed (0)"),
+            Some(true)
+        );
     }
 
     #[test]

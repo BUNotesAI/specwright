@@ -125,6 +125,77 @@ fn mixed_fixture_lifecycle_passes() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[test]
+fn mixed_fixture_filter_miss_fails_zero_match() -> Result<(), Box<dyn std::error::Error>> {
+    let Some(run) = run_mixed_lifecycle_fixture_with_spec("spec-filter-miss.md")? else {
+        return Ok(());
+    };
+
+    assert!(!run.success, "filter-miss lifecycle unexpectedly passed");
+    assert_eq!(run.json["passed"], false);
+    let result = scenario_result(&run.json, "mixed routed admin filter miss");
+    assert_eq!(result["verdict"], "fail");
+    assert!(
+        serde_json::to_string(result)?.contains("matched zero tests"),
+        "filter-miss failure should retain the zero-match reason: {result:#}"
+    );
+    assert!(
+        !run.stderr.contains("unexpected admin"),
+        "fixture runner rejected the intended argv: {}",
+        run.stderr
+    );
+
+    Ok(())
+}
+
+#[test]
+fn legacy_binding_binds_to_owning_route_slot() -> Result<(), Box<dyn std::error::Error>> {
+    if !has_program("node") || !has_program("npm") || !has_program("cargo") {
+        eprintln!("skipping multi-node fixture: host cargo, node, and npm are required");
+        return Ok(());
+    }
+
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let fixture = copy_fixture_to_temp(
+        &repo.join("tests/fixtures/multi-node-legacy"),
+        "multi-node-legacy",
+    )?;
+    let output = Command::new(env!("CARGO_BIN_EXE_specwright"))
+        .args([
+            "lifecycle",
+            fixture
+                .join("spec.md")
+                .to_str()
+                .ok_or("non-utf8 spec path")?,
+            "--code",
+            fixture.to_str().ok_or("non-utf8 fixture path")?,
+            "--format",
+            "json",
+            "--change-scope",
+            "none",
+            "--layers",
+            "test",
+        ])
+        .current_dir(&repo)
+        .output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "multi-node legacy fixture failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    let result = scenario_result(&json, "portal legacy scenario");
+    let evidence_stdout = result["evidence"][0]["stdout"].as_str().unwrap_or_default();
+    assert_eq!(result["verdict"], "pass");
+    assert!(evidence_stdout.contains("PORTAL_ROUTE_OK:"));
+    assert!(evidence_stdout.contains("/portal:-t|portal checkout"));
+    assert!(!evidence_stdout.contains("ADMIN_ROUTE_SHOULD_NOT_RUN"));
+
+    Ok(())
+}
+
 fn run_node_lifecycle_fixture() -> Result<Option<serde_json::Value>, Box<dyn std::error::Error>> {
     if !has_program("node") || !has_program("npm") {
         eprintln!("skipping Node fixture lifecycle: host node and npm are required");
@@ -164,6 +235,27 @@ fn run_node_lifecycle_fixture() -> Result<Option<serde_json::Value>, Box<dyn std
 }
 
 fn run_mixed_lifecycle_fixture() -> Result<Option<serde_json::Value>, Box<dyn std::error::Error>> {
+    let Some(run) = run_mixed_lifecycle_fixture_with_spec("spec.md")? else {
+        return Ok(None);
+    };
+
+    assert!(
+        run.success,
+        "mixed lifecycle fixture failed\nstderr:\n{}",
+        run.stderr
+    );
+    Ok(Some(run.json))
+}
+
+struct LifecycleFixtureRun {
+    success: bool,
+    json: serde_json::Value,
+    stderr: String,
+}
+
+fn run_mixed_lifecycle_fixture_with_spec(
+    spec_name: &str,
+) -> Result<Option<LifecycleFixtureRun>, Box<dyn std::error::Error>> {
     if !has_program("node") || !has_program("npm") || !has_program("cargo") {
         eprintln!("skipping mixed lifecycle fixture: host cargo, node, and npm are required");
         return Ok(None);
@@ -178,7 +270,7 @@ fn run_mixed_lifecycle_fixture() -> Result<Option<serde_json::Value>, Box<dyn st
         .args([
             "lifecycle",
             fixture
-                .join("spec.md")
+                .join(spec_name)
                 .to_str()
                 .ok_or("non-utf8 spec path")?,
             "--code",
@@ -193,14 +285,11 @@ fn run_mixed_lifecycle_fixture() -> Result<Option<serde_json::Value>, Box<dyn st
         .current_dir(&repo)
         .output()?;
 
-    assert!(
-        output.status.success(),
-        "mixed lifecycle fixture failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    Ok(Some(serde_json::from_slice(&output.stdout)?))
+    Ok(Some(LifecycleFixtureRun {
+        success: output.status.success(),
+        json: serde_json::from_slice(&output.stdout)?,
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    }))
 }
 
 fn copy_fixture_to_temp(source: &Path, label: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {

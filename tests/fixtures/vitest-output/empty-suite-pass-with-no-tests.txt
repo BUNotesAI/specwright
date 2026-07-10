@@ -1,0 +1,8 @@
+ RUN  v3.2.6 /Users/alexwang/codes/ai-agent-workspace/my-applications/operations-work/web/apps/admin
+
+ ✓ src/__probe__/p6-vitest-empty-suite.test.ts (0 test) 0ms
+
+ Test Files  1 passed (1)
+      Tests  no tests
+   Start at  12:04:19
+   Duration  509ms (transform 24ms, setup 38ms, collect 3ms, tests 0ms, environment 209ms, prepare 118ms)

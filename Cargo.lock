@@ -315,7 +315,7 @@ dependencies = [
 
 [[package]]
 name = "specwright"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "clap",
  "serde",
