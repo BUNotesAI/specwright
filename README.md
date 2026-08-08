@@ -8,7 +8,7 @@
 
 ## What this fork adds
 
-- **Polyglot test runners** — a pluggable `TestRunner` layer with built-ins for **Cargo, Maven, Gradle (Java/Kotlin), Android, iOS, and Node/TypeScript** (Pytest/Go on the roadmap).
+- **Polyglot test runners** — a pluggable `TestRunner` layer with built-ins for **Cargo, Maven, Gradle (Java/Kotlin), Android, iOS, Node/TypeScript, and CMake/CTest** (Pytest/Go on the roadmap).
 - **English-only DSL (v2.0.0, breaking)** — structural keywords, section headers, and selectors are English-only; the parser **hard-rejects Chinese keyword aliases** with a clear error (`keywords must be English; '场景:' is not recognized — use 'Scenario:'`). Description free text (scenario names, step prose, quoted params) may still be any language.
 - **Declarative mixed-runner routing (v2.1.0)** — one task spec can keep Cargo as the default runner while routing selected `Package:` tokens to another runner such as Node/TypeScript.
 - **No hollow passes** — a test binding that resolves to **zero** tests *fails* instead of silently passing; `skip` and all-`#[ignore]` never count as `pass`.

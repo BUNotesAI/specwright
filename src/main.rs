@@ -72,7 +72,7 @@ enum Commands {
         /// AI verification mode: off, stub
         #[arg(long, default_value = "off")]
         ai_mode: String,
-        /// Explicit test runner override
+        /// Built-in runner override: cargo, maven, gradle, android, ios, node, ctest
         #[arg(long)]
         runner: Option<String>,
         /// Output format: text, json, md
@@ -110,7 +110,7 @@ enum Commands {
         /// AI verification mode: off, stub
         #[arg(long, default_value = "off")]
         ai_mode: String,
-        /// Explicit test runner override
+        /// Built-in runner override: cargo, maven, gradle, android, ios, node, ctest
         #[arg(long)]
         runner: Option<String>,
         /// Minimum quality score
