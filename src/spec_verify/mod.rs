@@ -9,6 +9,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[cfg(test)]
+thread_local! {
+    static SOURCE_WALK_INVOCATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 use crate::spec_core::{
     ResolvedSpec, ScenarioResult, SpecError, SpecResult, StepVerdict, Verdict, VerificationReport,
 };
@@ -238,6 +243,7 @@ fn build_slot_inputs(
     let (default_runner, default_resolution) =
         resolve_detected_runner(registry, routing_plan.default_runner, &markers)?;
     ensure_runner_supported_on_host(default_runner.as_ref(), host_platform)?;
+    let root = explicit_ctest_root_fallback(root, &default_resolution, code_paths);
     let mut slot_inputs = vec![SlotInput {
         runner: default_runner,
         root: root.clone(),
@@ -268,6 +274,26 @@ fn build_slot_inputs(
         by_package,
         config_warnings: routing_plan.config_warnings,
     })
+}
+
+fn explicit_ctest_root_fallback(
+    root: Option<PathBuf>,
+    resolution: &RunnerResolution,
+    code_paths: &[PathBuf],
+) -> Option<PathBuf> {
+    if root.is_some()
+        || resolution.name != "ctest"
+        || !matches!(
+            resolution.source,
+            ResolutionSource::CliFlag | ResolutionSource::SpecFrontmatter
+        )
+        || code_paths.len() != 1
+        || !code_paths[0].is_dir()
+    {
+        return root;
+    }
+
+    Some(code_paths[0].clone())
 }
 
 fn push_route_slot(
@@ -752,14 +778,15 @@ pub fn run_verification(
 }
 
 fn find_workspace_root(code_paths: &[PathBuf]) -> Option<PathBuf> {
+    let mut node_candidate = None;
+    let mut cmake_candidate = None;
+
     for path in code_paths {
         let mut current = if path.is_file() {
             path.parent()?.to_path_buf()
         } else {
             path.clone()
         };
-        let mut node_candidate = None;
-
         loop {
             if has_non_node_workspace_marker(&current) {
                 return Some(current);
@@ -767,17 +794,16 @@ fn find_workspace_root(code_paths: &[PathBuf]) -> Option<PathBuf> {
             if node_candidate.is_none() && has_node_workspace_marker(&current) {
                 node_candidate = Some(current.clone());
             }
+            if cmake_candidate.is_none() && has_cmake_workspace_marker(&current) {
+                cmake_candidate = Some(current.clone());
+            }
             if !current.pop() {
                 break;
             }
         }
-
-        if node_candidate.is_some() {
-            return node_candidate;
-        }
     }
 
-    None
+    node_candidate.or(cmake_candidate)
 }
 
 fn probe_workspace_markers(root: Option<&Path>) -> WorkspaceMarkers {
@@ -797,6 +823,10 @@ fn collect_source_files(
     source_extensions: &[&str],
     ignored_source_dirs: &[&str],
 ) -> SpecResult<Vec<RunnerSourceFile>> {
+    if source_extensions.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let mut files = Vec::new();
     let mut paths = Vec::new();
 
@@ -829,6 +859,9 @@ fn collect_source_paths(
     ignored_source_dirs: &[&str],
     files: &mut Vec<PathBuf>,
 ) {
+    #[cfg(test)]
+    SOURCE_WALK_INVOCATIONS.with(|count| count.set(count.get() + 1));
+
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -885,6 +918,7 @@ const WORKSPACE_MARKERS: &[&str] = &[
     "bun.lockb",
     "yarn.lock",
     "package-lock.json",
+    "CMakeLists.txt",
 ];
 
 const NODE_LOCKFILES: &[&str] = &[
@@ -905,6 +939,10 @@ fn has_node_workspace_marker(dir: &Path) -> bool {
     NODE_WORKSPACE_ROOT_MARKERS
         .iter()
         .any(|marker| workspace_marker_exists(dir, marker))
+}
+
+fn has_cmake_workspace_marker(dir: &Path) -> bool {
+    workspace_marker_exists(dir, "CMakeLists.txt")
 }
 
 fn workspace_marker_exists(dir: &Path, marker: &str) -> bool {
@@ -988,10 +1026,10 @@ mod tests {
     use super::{
         AiMode, CargoRunner, HostPlatform, NodePackageManager, NodePackageManagerDecision,
         NodePackageManagerSource, ResolutionSource, RoutedContexts, RunnerRegistry,
-        RunnerResolution, RunnerSlot, RunnerWarning, RunnerWorkspace, TestCommand, TestRunner,
-        VerificationContext, Verifier, WorkspaceMarkers,
-        probe_and_build_context_with_registry_and_host, run_verification,
-        select_node_package_manager,
+        RunnerResolution, RunnerSlot, RunnerWarning, RunnerWorkspace, SOURCE_WALK_INVOCATIONS,
+        TestCommand, TestRunner, VerificationContext, Verifier, WorkspaceMarkers,
+        collect_source_files, find_workspace_root, probe_and_build_context_with_registry_and_host,
+        probe_workspace_markers, run_verification, select_node_package_manager,
     };
 
     struct FirstVerifier;
@@ -1297,6 +1335,209 @@ mod tests {
 
         assert_eq!(ctx.runner_workspace.root, Some(root));
         assert_eq!(ctx.runner_resolution.name, "cargo");
+    }
+
+    #[test]
+    fn ctest_root_and_detection_precedence_matrix() {
+        let pure_cmake = temp_workspace_path("ctest-root-pure-cmake");
+        write_file(
+            &pure_cmake.join("CMakeLists.txt"),
+            "cmake_minimum_required(VERSION 3.17)\n",
+        );
+
+        let cargo = temp_workspace_path("ctest-root-cargo");
+        write_file(&cargo.join("Cargo.toml"), "[workspace]\nmembers = []\n");
+        write_file(
+            &cargo.join("native/CMakeLists.txt"),
+            "cmake_minimum_required(VERSION 3.17)\n",
+        );
+
+        let node = temp_workspace_path("ctest-root-node");
+        write_file(
+            &node.join("package.json"),
+            "{\"scripts\":{\"test\":\"node test.js\"}}\n",
+        );
+        write_file(
+            &node.join("native/CMakeLists.txt"),
+            "cmake_minimum_required(VERSION 3.17)\n",
+        );
+
+        for (name, marker) in [
+            ("maven", "pom.xml"),
+            ("android", "AndroidManifest.xml"),
+            ("ios", "Package.swift"),
+        ] {
+            let root = temp_workspace_path(&format!("ctest-root-{name}"));
+            write_file(&root.join(marker), "marker\n");
+            write_file(
+                &root.join("native/CMakeLists.txt"),
+                "cmake_minimum_required(VERSION 3.17)\n",
+            );
+            assert_eq!(find_workspace_root(&[root.join("native")]), Some(root));
+        }
+
+        assert_eq!(
+            find_workspace_root(&[cargo.join("native")]),
+            Some(cargo.clone())
+        );
+        assert_eq!(
+            find_workspace_root(&[node.join("native")]),
+            Some(node.clone())
+        );
+        assert_eq!(
+            find_workspace_root(&[pure_cmake.clone(), cargo.join("native")]),
+            Some(cargo.clone())
+        );
+        assert_eq!(
+            find_workspace_root(&[pure_cmake.clone(), node.join("native")]),
+            Some(node)
+        );
+
+        let dual_marker = temp_workspace_path("ctest-root-dual-marker");
+        write_file(
+            &dual_marker.join("Cargo.toml"),
+            "[workspace]\nmembers = []\n",
+        );
+        write_file(
+            &dual_marker.join("CMakeLists.txt"),
+            "cmake_minimum_required(VERSION 3.17)\n",
+        );
+        let dual_context = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![dual_marker.clone()],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(None),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        assert_eq!(dual_context.runner_workspace.root, Some(dual_marker));
+        assert_eq!(dual_context.runner_resolution.name, "cargo");
+
+        let cmake_root = find_workspace_root(std::slice::from_ref(&pure_cmake));
+        assert_eq!(cmake_root, Some(pure_cmake.clone()));
+        let markers = probe_workspace_markers(cmake_root.as_deref());
+        assert!(markers.contains("CMakeLists.txt"));
+        let runner = RunnerRegistry::with_defaults()
+            .detect(&markers)
+            .unwrap()
+            .unwrap();
+        assert_eq!(runner.id(), "ctest");
+    }
+
+    #[test]
+    fn ctest_explicit_markerless_fallback_uses_single_directory() {
+        for (spec_runner, cli_runner) in [(Some("ctest"), None), (None, Some("ctest"))] {
+            let root = temp_workspace_path("ctest-markerless-explicit");
+            std::fs::create_dir_all(&root).unwrap();
+
+            let context = probe_and_build_context_with_registry_and_host(
+                RunnerRegistry::with_defaults(),
+                vec![root.clone()],
+                vec![],
+                AiMode::Off,
+                resolved_spec_with_runner(spec_runner),
+                cli_runner,
+                HostPlatform::MacOS,
+            )
+            .unwrap();
+
+            assert_eq!(context.runner_resolution.name, "ctest");
+            assert_eq!(context.runner_workspace.root, Some(root));
+            assert_eq!(context.routed_contexts.slots().len(), 1);
+        }
+    }
+
+    #[test]
+    fn ctest_explicit_markerless_fallback_rejection_matrix() {
+        let markerless = temp_workspace_path("ctest-markerless-rejections");
+        let second = temp_workspace_path("ctest-markerless-rejections-second");
+        std::fs::create_dir_all(&markerless).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        let file = markerless.join("source.cc");
+        write_file(&file, "int value = 1;\n");
+
+        let autodetect = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![markerless.clone()],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(None),
+            None,
+            HostPlatform::MacOS,
+        );
+        assert!(autodetect.is_err());
+
+        let cargo = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![markerless.clone()],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(Some("cargo")),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        assert_eq!(cargo.runner_workspace.root, None);
+
+        for paths in [
+            Vec::new(),
+            vec![markerless.clone(), second],
+            vec![file],
+            vec![markerless.join("missing")],
+        ] {
+            let context = probe_and_build_context_with_registry_and_host(
+                RunnerRegistry::with_defaults(),
+                paths,
+                vec![],
+                AiMode::Off,
+                resolved_spec_with_runner(Some("ctest")),
+                None,
+                HostPlatform::MacOS,
+            )
+            .unwrap();
+            assert_eq!(context.runner_workspace.root, None);
+        }
+
+        let cmake = temp_workspace_path("ctest-existing-root-not-fallback");
+        write_file(
+            &cmake.join("CMakeLists.txt"),
+            "cmake_minimum_required(VERSION 3.17)\n",
+        );
+        std::fs::create_dir_all(cmake.join("src")).unwrap();
+        let existing = probe_and_build_context_with_registry_and_host(
+            RunnerRegistry::with_defaults(),
+            vec![cmake.join("src")],
+            vec![],
+            AiMode::Off,
+            resolved_spec_with_runner(Some("ctest")),
+            None,
+            HostPlatform::MacOS,
+        )
+        .unwrap();
+        assert_eq!(existing.runner_workspace.root, Some(cmake));
+    }
+
+    #[test]
+    fn ctest_empty_source_extensions_return_before_walk() {
+        let root = temp_workspace_path("ctest-empty-source-extensions");
+        write_file(
+            &root.join("src/nested/example.cpp"),
+            "int main() { return 0; }\n",
+        );
+
+        SOURCE_WALK_INVOCATIONS.with(|count| count.set(0));
+        let sources = collect_source_files(std::slice::from_ref(&root), &[], &[]).unwrap();
+        let walk_count = SOURCE_WALK_INVOCATIONS.with(std::cell::Cell::get);
+        assert!(sources.is_empty());
+        assert_eq!(walk_count, 0);
+
+        SOURCE_WALK_INVOCATIONS.with(|count| count.set(0));
+        let cpp_sources = collect_source_files(&[root], &["cpp"], &[]).unwrap();
+        let nonempty_walk_count = SOURCE_WALK_INVOCATIONS.with(std::cell::Cell::get);
+        assert_eq!(cpp_sources.len(), 1);
+        assert!(nonempty_walk_count > 0);
     }
 
     #[test]

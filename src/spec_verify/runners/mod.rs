@@ -1,5 +1,6 @@
 mod android;
 mod cargo;
+mod ctest;
 mod gradle;
 mod ios;
 mod jvm;
@@ -12,6 +13,7 @@ pub use android::AndroidRunner;
 pub use cargo::CargoRunner;
 #[cfg(test)]
 pub use cargo::extract_bindings;
+pub use ctest::CTestRunner;
 pub use gradle::GradleRunner;
 pub use ios::IosRunner;
 pub use maven::MavenRunner;

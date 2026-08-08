@@ -3,9 +3,9 @@ use std::sync::Arc;
 use crate::spec_core::{ResolvedSpec, SpecError, SpecResult};
 
 use super::{
-    AndroidRunner, CargoRunner, GradleRunner, IosRunner, MavenRunner, NodeRunner, ResolutionSource,
-    RunnerResolution, RunnerRoutingPlan, RunnerSelection, RunnerWarning, TestRunner,
-    ValidatedRoute, WorkspaceMarkers,
+    AndroidRunner, CTestRunner, CargoRunner, GradleRunner, IosRunner, MavenRunner, NodeRunner,
+    ResolutionSource, RunnerResolution, RunnerRoutingPlan, RunnerSelection, RunnerWarning,
+    TestRunner, ValidatedRoute, WorkspaceMarkers,
 };
 
 /// Registry of available test runners.
@@ -29,6 +29,7 @@ impl RunnerRegistry {
         registry.register(Arc::new(IosRunner::new()));
         registry.register(Arc::new(GradleRunner));
         registry.register(Arc::new(NodeRunner));
+        registry.register(Arc::new(CTestRunner));
         registry
     }
 
