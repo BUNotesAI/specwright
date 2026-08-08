@@ -63,7 +63,34 @@ Scenario: Successful registration
   Then the response status is 201
 ```
 
-Keywords are English-only; description text may be any language. For a non-Cargo project, set `runner: maven | gradle | android | ios | node` in the frontmatter (or let it auto-detect from workspace markers).
+Keywords are English-only; description text may be any language. For a non-Cargo project, set `runner: maven | gradle | android | ios | node | ctest` in the frontmatter (or let it auto-detect from workspace markers).
+
+For a prepared CMake/CTest project, configure and build the test tree before verification, then point `runner_config.build_dir` at that repository-relative directory:
+
+```bash
+cmake -S . -B build
+cmake --build build
+specwright lifecycle specs/native.spec.md --code . --format json
+```
+
+```spec
+spec: task
+name: "Native rules"
+runner: ctest
+runner_config: { build_dir: "build" }
+---
+
+## Completion Criteria
+
+Scenario: Native rules pass
+  Test:
+    Filter: ^native_rules$
+  Given the project registered its test with `add_test()` or `gtest_discover_tests()`
+  When lifecycle verification runs
+  Then CTest executes the selected compiled test
+```
+
+The CTest runner requires CMake/CTest 3.17 or newer, runs `ctest --output-on-failure --no-tests=error -R <Filter>` from the checked build directory, and never configures or builds the project. `build_dir` defaults to `build`; empty, absolute, and parent-traversing values are rejected. `Package:` is used only to choose an explicitly routed CTest slot in a mixed repository and is never passed to CTest.
 
 For a mixed Rust + TypeScript repository, keep Cargo as the default runner and route explicit package tokens to Node:
 
