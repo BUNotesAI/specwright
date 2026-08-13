@@ -11,7 +11,7 @@ description: |
 
 # Specwright Tool-First Workflow
 
-> **Version:** 3.4.0 | **Last Updated:** 2026-05-31
+> **Version:** 3.5.0 | **Last Updated:** 2026-08-14
 
 You are an expert at using `specwright` as a CLI tool for contract-driven AI coding. Help users by:
 - **Planning**: Render task contracts with `contract`, generate plan context with `plan`
@@ -19,18 +19,22 @@ You are an expert at using `specwright` as a CLI tool for contract-driven AI cod
 - **Verifying**: Run `lifecycle` / `guard` to check code against specs
 - **Reviewing**: Use `explain` for human-readable summaries, `stamp` for git trailers
 - **Debugging**: Interpret verification failures and fix code accordingly
-- **Runner-aware workflows**: Select Cargo, Maven, Gradle, Android, iOS, or Node/TypeScript runners through spec frontmatter or CLI overrides
+- **Runner-aware workflows**: Select Cargo, Maven, Gradle, Android, iOS, Node/TypeScript, or CMake/CTest runners through spec frontmatter or CLI overrides
+- **External verification**: Keep CI-only scenarios explicitly pending, then resolve complete versioned evidence at close
 
 ## IMPORTANT: CLI Prerequisite Check
 
 **Before running any `specwright` command, Claude MUST check:**
 
 ```bash
-command -v specwright || cargo install specwright
+command -v specwright && specwright --version
 ```
 
-If `specwright` is not installed, inform the user:
-> `specwright` CLI not found. Install with: `cargo install specwright`
+If `specwright` is missing, use the pinned prebuilt install command documented
+in the repository README. Prebuilt binaries are the default because they do not
+require Rust. `cargo install --git https://github.com/BUNotesAI/specwright
+--locked` is the Rust-toolchain fallback; the package is not published on
+crates.io.
 
 ## Core Mental Model
 
@@ -109,6 +113,7 @@ Built-in runners:
 | `android` | `AndroidManifest.xml` plus Gradle markers | Gradle unit or instrumented task selected by `Test.level` | `level: instrumented` requires ADB and a connected device/emulator; missing capability becomes Skip. |
 | `ios` | `Package.swift` or `*.xcodeproj` | `xcodebuild test -scheme <scheme> -destination <destination> -only-testing:<package>/<filter>` | macOS only. Requires Xcode and a booted iOS Simulator; missing capability becomes Skip. |
 | `node` | `package.json` | `<package-manager> run <script> [filter args]` | Generic JavaScript/TypeScript package-script runner. There is no TanStack Start-specific runner; TanStack Start projects use `runner: node`. |
+| `ctest` | prepared CMake build tree | `ctest --output-on-failure --no-tests=error -R <filter>` | Requires CMake/CTest 3.17+. specwright never configures or builds the tree; set `runner_config.build_dir` when it is not `build`. |
 
 Structured selectors can include `Package`, `Filter`, and `Level`:
 
@@ -126,6 +131,7 @@ Known runner config keys:
 |---|---|
 | `ios` | `scheme`, `destination` |
 | `node` | `package_manager`, `unit_script`, `typecheck_script`, `lint_script`, `build_script`, `e2e_script`, `unit_filter_style`, `workspace_filter` |
+| `ctest` | `build_dir` |
 
 Unknown `runner_config` keys are non-blocking warnings in the verification context. Treat spelling mistakes such as `destinaiton` as review findings even when the lifecycle status still passes.
 
@@ -260,9 +266,11 @@ When lifecycle fails, follow this exact sequence:
 3. For `fail`: the bound test ran and failed — read evidence to understand why, fix code
 4. For `skip`: the bound test was not found — check `Test:` selector matches a real test name
 5. For `uncertain`: AI verification pending — review manually or enable AI backend
-6. **Fix code based on evidence. Do NOT modify the spec file** — changing the Contract to make verification pass is sycophancy, not a fix
-7. Re-run lifecycle
-8. After 3 consecutive failures on the same scenario, stop and escalate to the human
+6. For `pending_review`: complete the configured human-review policy
+7. For `external_pending`: keep strict mode at close, or use `allow-pending` only at an explicitly intermediate gate; resolve complete evidence with `resolve-evidence`
+8. **Fix code based on evidence. Do NOT modify the spec file** — changing the Contract to make verification pass is sycophancy, not a fix
+9. Re-run lifecycle
+10. After 3 consecutive failures on the same scenario, stop and escalate to the human
 
 **Critical rule**: The spec defines "what is correct". If the code doesn't match, fix the code. If the spec itself is wrong, switch to authoring mode and update the Contract explicitly — never silently weaken acceptance criteria.
 
@@ -340,8 +348,10 @@ Establishes Contract → Commit traceability chain.
 | `fail` | Scenario failed verification | Read evidence, fix code |
 | `skip` | Test not found or not run | Add missing test or fix selector |
 | `uncertain` | AI stub / manual review needed | Review manually or enable AI backend |
+| `pending_review` | Mechanical verification passed but human review remains | Complete the configured review policy |
+| `external_pending` | Declared external evidence has not been imported | Resolve complete evidence; allow only at an explicit intermediate gate |
 
-**Key rule: `skip` != `pass`**. All four verdicts are distinct.
+**Key rule: `skip` != `pass`**. All six verdicts are distinct.
 
 ## VCS Awareness
 
@@ -382,6 +392,25 @@ specwright lifecycle specs/task.spec --code . --layers lint,boundary,test
 specwright lifecycle specs/task.spec --code . --run-log-dir .specwright/runs
 specwright explain specs/task.spec --history
 ```
+
+### External Verification
+
+Use an external scenario only when verification belongs to CI or another
+evidence producer and cannot execute locally:
+
+```spec
+Scenario: Signed release build
+  Verification: external
+  Evidence: signed-release-build
+  Given the release commit is submitted
+  When external CI finishes
+  Then its versioned evidence manifest records the verdict
+```
+
+`Evidence` is required and spec-unique. The initial verdict is
+`external_pending`, which is non-passing by default. An intermediate stage may
+run `lifecycle --external-mode allow-pending`; close must import a complete
+matching manifest with `resolve-evidence`.
 
 ### AI Mode
 

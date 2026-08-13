@@ -22,6 +22,7 @@ Commands:
   resolve-evidence    Validate and merge external verification evidence
   measure-determinism [Experimental] Measure contract verification determinism
   install-hooks       Install git hooks for automatic spec checking
+  graph               Generate a dependency graph from spec files
 ```
 
 ## Core Flow
@@ -76,12 +77,15 @@ Renders the Task Contract with: Intent, Must/Must NOT, Decisions, Boundaries, Co
 specwright lifecycle <spec> --code <dir> \
   [--change <path>]... \
   [--change-scope none|staged|worktree|jj] \
-  [--ai-mode off|stub] \
+  [--ai-mode off|stub|caller] \
+  [--runner cargo|maven|gradle|android|ios|node|ctest] \
   [--min-score 0.6] \
   [--format text|json|md] \
   [--run-log-dir <dir>] \
   [--adversarial] \
-  [--layers lint,boundary,test,ai]
+  [--layers lint,boundary,test,ai] \
+  [--review-mode auto|strict] \
+  [--external-mode strict|allow-pending]
 ```
 
 Full pipeline: lint -> verify -> report. Default format is `json`.
@@ -89,7 +93,7 @@ Full pipeline: lint -> verify -> report. Default format is `json`.
 Task specs can choose a runner in frontmatter:
 
 ```yaml
-runner: cargo | maven | gradle | android | ios | node
+runner: cargo | maven | gradle | android | ios | node | ctest
 runner_config: { scheme: "IosMini", destination: "platform=iOS Simulator,name=iPhone 16 Pro" }
 ```
 
@@ -101,6 +105,7 @@ Runner-specific behavior:
 - `android`: detects Gradle plus `AndroidManifest.xml`; `Test.level: instrumented` uses connected-device preflight.
 - `ios`: detects `Package.swift` or `*.xcodeproj`; macOS-only; uses `runner_config.scheme` and `runner_config.destination` for `xcodebuild test`.
 - `node`: detects `package.json`; runs JavaScript/TypeScript package scripts with `npm`, `pnpm`, `yarn`, or `bun`. Use `runner: node` for TanStack Start, Vite, Vitest, Jest, Playwright, Bun, and other package-script based projects; there is no TanStack Start-specific runner.
+- `ctest`: requires CMake/CTest 3.17+ and a preconfigured, built tree. It runs `ctest --output-on-failure --no-tests=error -R <Filter>` from `runner_config.build_dir` (`build` by default) and never configures or builds the project.
 
 Mixed runner frontmatter:
 
@@ -159,8 +164,10 @@ Scans all `*.spec` and `*.spec.md` files in `--spec-dir`, runs lint + verify on 
 specwright verify <spec> --code <dir> \
   [--change <path>]... \
   [--change-scope none|staged|worktree] \
-  [--ai-mode off|stub] \
-  [--format text|json|md]
+  [--ai-mode off|stub|caller] \
+  [--runner cargo|maven|gradle|android|ios|node|ctest] \
+  [--format text|json|md] \
+  [--external-mode strict|allow-pending]
 ```
 
 Raw verification without lint quality gate. Default change scope is `none`.
@@ -256,12 +263,21 @@ generation time, every scenario/Evidence ID, artifact URL, digest, verdict,
 and producer or attestation. Unknown, duplicate, and missing IDs fail. Only
 `external_pending` results may be resolved.
 
+## graph
+
+```bash
+specwright graph [--spec-dir specs] [--format dot|svg]
+```
+
+Generates a dependency graph. SVG output requires the system Graphviz `dot`
+executable.
+
 ## AI Mode
 
 - `off` (default) - No AI verification layer
 - `stub` - Returns `uncertain` for all scenarios (testing/scaffolding)
 - `caller` - Agent-as-verifier: emits `AiRequest` JSON, resolved via `resolve-ai`
-- `external` - Reserved for host-injected `AiBackend` trait implementations
+- `external` - Host-library-only `AiBackend` mode; it is not accepted by the CLI flag
 
 ## Verification Layers
 

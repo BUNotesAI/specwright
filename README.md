@@ -13,6 +13,7 @@
 - **Declarative mixed-runner routing (v2.1.0)** — one task spec can keep Cargo as the default runner while routing selected `Package:` tokens to another runner such as Node/TypeScript.
 - **External verification (v2.2.0)** — scenarios may declare external CI evidence, remain strictly non-passing by default, and later be resolved from a versioned evidence manifest.
 - **JSON verdict normalization (v2.2.0, breaking)** — the pre-existing human-review verdict is now serialized as `pending_review` instead of `pendingreview`; all multiword verdict values use snake_case.
+- **Agent-facing CLI help (v2.2.1)** — `verify`, `lifecycle`, and `resolve-evidence --help` document caller AI mode, external-evidence policy, and CTest build prerequisites directly in the binary.
 - **No hollow passes** — a test binding that resolves to **zero** tests *fails* instead of silently passing; `skip` and all-`#[ignore]` never count as `pass`.
 
 ## How it works (summary)
@@ -39,19 +40,19 @@ administrator privileges.
 macOS on Apple Silicon:
 
 ```bash
-curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.2.0/specwright-aarch64-apple-darwin.tar.gz | tar -xz -C /usr/local/bin
+curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.2.1/specwright-aarch64-apple-darwin.tar.gz | tar -xz -C /usr/local/bin
 ```
 
 Linux on x86_64 (recommended static musl build):
 
 ```bash
-curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.2.0/specwright-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /usr/local/bin
+curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.2.1/specwright-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /usr/local/bin
 ```
 
 Verify the installed version:
 
 ```bash
-specwright --version   # specwright 2.2.0
+specwright --version   # specwright 2.2.1
 ```
 
 The same Release also provides `x86_64-unknown-linux-gnu` and
@@ -60,7 +61,7 @@ The same Release also provides `x86_64-unknown-linux-gnu` and
 
 ```bash
 archive=specwright-x86_64-unknown-linux-musl.tar.gz
-base=https://github.com/BUNotesAI/specwright/releases/download/v2.2.0
+base=https://github.com/BUNotesAI/specwright/releases/download/v2.2.1
 curl -fsSLO "$base/$archive"
 curl -fsSLO "$base/$archive.sha256"
 sha256sum -c "$archive.sha256"
@@ -82,7 +83,7 @@ For a reproducible source build, pin the same release tag:
 ```bash
 cargo install \
   --git https://github.com/BUNotesAI/specwright \
-  --tag v2.2.0 \
+  --tag v2.2.1 \
   --locked
 ```
 
@@ -99,7 +100,7 @@ For development from a local source checkout:
 
 ```bash
 cargo install --path .
-specwright --version   # 2.2.0
+specwright --version   # 2.2.1
 ```
 
 ## Example

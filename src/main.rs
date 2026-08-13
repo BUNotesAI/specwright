@@ -18,6 +18,32 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::process::ExitCode;
 
+const VERIFICATION_AFTER_HELP: &str = r#"EXTERNAL VERIFICATION:
+  Declare a scenario with `Verification: external` and a spec-unique
+  `Evidence: <id>`. It produces `external_pending` and blocks in strict mode.
+  Use `--external-mode allow-pending` only for an intermediate gate; JSON still
+  retains the pending count and result list. Resolve it at close with
+  `specwright resolve-evidence`.
+
+CTEST RUNNER:
+  Set `runner: ctest` and optionally
+  `runner_config: { build_dir: "build" }` in spec frontmatter. The build tree
+  must be preconfigured and built. specwright runs CTest but never configures or
+  builds the project."#;
+
+const RESOLVE_EVIDENCE_LONG_ABOUT: &str = r#"Import a complete versioned manifest for scenarios declared with
+`Verification: external` and a spec-unique `Evidence: <id>`.
+
+The manifest must bind the spec identity and SHA-256, subject commit, generation
+time, every scenario and Evidence ID, artifact URL and digest, pass/fail verdict,
+and producer or attestation. Unknown, duplicate, or missing Evidence IDs fail.
+Resolution is atomic, only replaces `external_pending`, and never overwrites a
+mechanical result."#;
+
+const RESOLVE_EVIDENCE_AFTER_HELP: &str = r#"EXAMPLE:
+  specwright resolve-evidence task.spec.md --code . \
+    --manifest evidence.json --format json"#;
+
 /// Check whether a path is a spec file (`.spec` or `.spec.md`).
 fn is_spec_file(p: &Path) -> bool {
     p.file_name()
@@ -57,7 +83,8 @@ enum Commands {
         #[arg(long, default_value = "0.0")]
         min_score: f64,
     },
-    /// Verify code against specs
+    /// Verify code against one spec without the lint quality gate
+    #[command(after_help = VERIFICATION_AFTER_HELP)]
     Verify {
         /// Spec file
         spec: PathBuf,
@@ -70,16 +97,16 @@ enum Commands {
         /// Auto-detected git change scope when --change is omitted: none, staged, worktree
         #[arg(long, default_value = "none")]
         change_scope: String,
-        /// AI verification mode: off, stub
+        /// AI verification mode: off, stub, caller
         #[arg(long, default_value = "off")]
         ai_mode: String,
-        /// Built-in runner override: cargo, maven, gradle, android, ios, node, ctest
+        /// Built-in runner override; ctest requires a prepared build tree
         #[arg(long)]
         runner: Option<String>,
         /// Output format: text, json, md
         #[arg(long, default_value = "text")]
         format: String,
-        /// External evidence policy: strict or allow-pending
+        /// External policy: strict blocks; allow-pending permits intermediate gates
         #[arg(long, default_value = "strict")]
         external_mode: String,
     },
@@ -99,6 +126,7 @@ enum Commands {
         template: String,
     },
     /// Run full lifecycle: lint -> verify -> report (for CI/agent use)
+    #[command(after_help = VERIFICATION_AFTER_HELP)]
     Lifecycle {
         /// Spec file
         spec: PathBuf,
@@ -111,10 +139,10 @@ enum Commands {
         /// Auto-detected git change scope when --change is omitted: none, staged, worktree, jj
         #[arg(long, default_value = "none")]
         change_scope: String,
-        /// AI verification mode: off, stub
+        /// AI verification mode: off, stub, caller
         #[arg(long, default_value = "off")]
         ai_mode: String,
-        /// Built-in runner override: cargo, maven, gradle, android, ios, node, ctest
+        /// Built-in runner override; ctest requires a prepared build tree
         #[arg(long)]
         runner: Option<String>,
         /// Minimum quality score
@@ -138,7 +166,7 @@ enum Commands {
         /// How to treat pending_review verdicts: auto (count as pass) or strict (count as non-passing)
         #[arg(long, default_value = "auto")]
         review_mode: String,
-        /// External evidence policy: strict or allow-pending
+        /// External policy: strict blocks; allow-pending permits intermediate gates
         #[arg(long, default_value = "strict")]
         external_mode: String,
     },
@@ -235,6 +263,10 @@ enum Commands {
         format: String,
     },
     /// Import and resolve declared external verification evidence
+    #[command(
+        long_about = RESOLVE_EVIDENCE_LONG_ABOUT,
+        after_help = RESOLVE_EVIDENCE_AFTER_HELP
+    )]
     ResolveEvidence {
         /// Spec file
         spec: PathBuf,

@@ -10,7 +10,7 @@ description: |
 
 # Specwright Authoring
 
-> **Version:** 3.5.0 | **Last Updated:** 2026-05-31
+> **Version:** 3.5.0 | **Last Updated:** 2026-08-14
 
 You are an expert at writing specwright Task Contracts. Help users by:
 
@@ -19,7 +19,7 @@ You are an expert at writing specwright Task Contracts. Help users by:
 - **Writing scenarios**: BDD-style scenarios with explicit test selectors and deterministic steps.
 - **Debugging specs**: fix parse errors, lint warnings, and weak quality scores.
 - **Self-hosting**: maintain specs for the specwright project itself.
-- **Runner-aware contracts**: choose Cargo, Maven, Gradle, Android, iOS, or Node/TypeScript execution semantics in frontmatter.
+- **Runner-aware contracts**: choose Cargo, Maven, Gradle, Android, iOS, Node/TypeScript, or CMake/CTest execution semantics in frontmatter.
 
 ## Language Boundary
 
@@ -36,14 +36,14 @@ When this skill is used inside the harness workflow:
 Before running any `specwright` command, check:
 
 ```bash
-command -v specwright || cargo install specwright
+command -v specwright && specwright --version
 ```
 
-If `specwright` is not installed, tell the user:
-
-```text
-specwright CLI not found. Install with: cargo install specwright
-```
+If `specwright` is missing, use the pinned prebuilt install command documented
+in the repository README. Prebuilt binaries are the default because they do not
+require Rust. `cargo install --git https://github.com/BUNotesAI/specwright
+--locked` is the Rust-toolchain fallback; the package is not published on
+crates.io.
 
 ## Core Philosophy
 
@@ -253,6 +253,7 @@ Built-in runner choices:
 | `android` | Android Gradle projects | Use selector `Level: unit` or `Level: instrumented`. |
 | `ios` | Swift Package or Xcode XCTest | macOS only; may need `scheme` and `destination`. |
 | `node` | JavaScript and TypeScript package-script projects | Detected from `package.json`. Use this for TanStack Start, Vite, Vitest, Jest, Playwright, Bun, and similar stacks. |
+| `ctest` | Prepared CMake/CTest build tree | Requires CMake/CTest 3.17+; set `runner_config.build_dir` if the tree is not `build`. specwright does not configure or build it. |
 
 `runner_config` must use inline map syntax: `{ key: "value" }`. Unknown keys are warnings; review them as likely contract bugs.
 
