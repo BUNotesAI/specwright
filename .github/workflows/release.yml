@@ -1,0 +1,224 @@
+name: Release prebuilt binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Validate release version
+    runs-on: ubuntu-22.04
+    outputs:
+      crate_version: ${{ steps.version.outputs.crate_version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Match tag to Cargo.toml
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(
+            cargo metadata --locked --no-deps --format-version 1 |
+              jq -r '.packages[] | select(.name == "specwright") | .version'
+          )"
+
+          test -n "$version"
+          test "$version" != "null"
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            test "$GITHUB_REF_NAME" = "v${version}"
+          fi
+
+          echo "crate_version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+            install_musl: false
+
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-22.04
+            install_musl: true
+
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            install_musl: false
+
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+            install_musl: false
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install musl linker
+        if: matrix.install_musl
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build, verify, and package
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.version.outputs.crate_version }}
+        run: |
+          set -euo pipefail
+
+          cargo build \
+            --release \
+            --locked \
+            --target "$TARGET" \
+            --bin specwright
+
+          binary="target/${TARGET}/release/specwright"
+          actual="$("$binary" --version)"
+          test "$actual" = "specwright ${VERSION}"
+
+          if [[ "$TARGET" == *-linux-musl ]]; then
+            readelf -l "$binary" > program-headers.txt
+            if grep -q "Requesting program interpreter" program-headers.txt; then
+              echo "musl artifact is dynamically linked" >&2
+              exit 1
+            fi
+          fi
+
+          mkdir package dist
+          install -m 0755 "$binary" package/specwright
+
+          archive="specwright-${TARGET}.tar.gz"
+          tar -C package -czf "dist/${archive}" specwright
+          test "$(tar -tzf "dist/${archive}")" = "specwright"
+
+          (
+            cd dist
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$archive"
+            else
+              shasum -a 256 "$archive"
+            fi > "${archive}.sha256"
+          )
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    if: github.ref_type == 'tag'
+    needs:
+      - version
+      - build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          archive_count="$(
+            find dist -maxdepth 1 -type f -name '*.tar.gz' |
+              wc -l | tr -d ' '
+          )"
+          checksum_count="$(
+            find dist -maxdepth 1 -type f -name '*.sha256' |
+              wc -l | tr -d ' '
+          )"
+
+          test "$archive_count" -eq 4
+          test "$checksum_count" -eq 4
+
+          (
+            cd dist
+            sha256sum -c ./*.sha256
+          )
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            dist/*.tar.gz \
+            dist/*.sha256 \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "specwright ${TAG}" \
+            --generate-notes \
+            --fail-on-no-commits
+
+  clean-install-smoke:
+    name: Clean Linux installation smoke
+    if: github.ref_type == 'tag'
+    needs:
+      - version
+      - release
+    runs-on: ubuntu-22.04
+    container: debian:bookworm-slim
+    steps:
+      - name: Install only download prerequisites
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends ca-certificates curl
+
+      - name: Install without Rust
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.version.outputs.crate_version }}
+        run: |
+          set -euo pipefail
+
+          if command -v cargo >/dev/null 2>&1; then
+            echo "clean installation image unexpectedly contains cargo" >&2
+            exit 1
+          fi
+          if command -v rustc >/dev/null 2>&1; then
+            echo "clean installation image unexpectedly contains rustc" >&2
+            exit 1
+          fi
+
+          curl -fsSL \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/specwright-x86_64-unknown-linux-musl.tar.gz" |
+            tar -xz -C /usr/local/bin
+
+          test "$(specwright --version)" = "specwright ${VERSION}"

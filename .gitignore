@@ -27,6 +27,7 @@ Thumbs.db
 # Environment
 .env
 .env.*
+.envrc
 
 # specwright run logs
 .specwright/

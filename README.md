@@ -26,6 +26,75 @@ A **Task Contract** is a spec with four parts:
 
 ## Install
 
+### Prebuilt binaries (recommended)
+
+Prebuilt binaries do not require a Rust toolchain or a source checkout. The
+commands below pin the exact release tag so downstream automation cannot change
+without an explicit version update. `/usr/local/bin` must be writable by the
+current user; otherwise run the `tar` side of the pipeline with appropriate
+administrator privileges.
+
+macOS on Apple Silicon:
+
+```bash
+curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.1.1/specwright-aarch64-apple-darwin.tar.gz | tar -xz -C /usr/local/bin
+```
+
+Linux on x86_64 (recommended static musl build):
+
+```bash
+curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.1.1/specwright-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /usr/local/bin
+```
+
+Verify the installed version:
+
+```bash
+specwright --version   # specwright 2.1.1
+```
+
+The same Release also provides `x86_64-unknown-linux-gnu` and
+`aarch64-unknown-linux-gnu` archives. Every archive has a sibling
+`.tar.gz.sha256` file. To verify an archive before extracting it:
+
+```bash
+archive=specwright-x86_64-unknown-linux-musl.tar.gz
+base=https://github.com/BUNotesAI/specwright/releases/download/v2.1.1
+curl -fsSLO "$base/$archive"
+curl -fsSLO "$base/$archive.sha256"
+sha256sum -c "$archive.sha256"
+tar -xzf "$archive" -C /usr/local/bin
+```
+
+On macOS, use `shasum -a 256 -c "$archive.sha256"` for the checksum step.
+
+### Cargo fallback (requires Rust)
+
+Install from the current repository default branch:
+
+```bash
+cargo install --git https://github.com/BUNotesAI/specwright --locked
+```
+
+For a reproducible source build, pin the same release tag:
+
+```bash
+cargo install \
+  --git https://github.com/BUNotesAI/specwright \
+  --tag v2.1.1 \
+  --locked
+```
+
+### Version policy
+
+Downstream workflows should pin an exact release tag and treat major version
+`2.x` as a hard compatibility gate. Every release must have a new `v*` tag.
+Breaking selector or DSL changes require a new version and tag. Published tags
+and assets are immutable: this project does not replace an existing asset,
+repoint a published tag, or silently ship an untagged upgrade to pinned binary
+installations.
+
+For development from a local source checkout:
+
 ```bash
 cargo install --path .
 specwright --version   # 2.1.1
