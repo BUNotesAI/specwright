@@ -40,8 +40,10 @@ fn release_archives_are_single_binary_with_sha256() {
 
     for required in [
         "install -m 0755 \"$binary\" package/specwright",
-        "tar -C package -czf \"dist/${archive}\" specwright",
-        "tar -tzf \"dist/${archive}\"",
+        "tarfile.open(archive_path, \"w:gz\", format=tarfile.USTAR_FORMAT)",
+        "assert len(members) == 1",
+        "assert member.name == \"specwright\"",
+        "assert member.isfile()",
         "sha256sum \"$archive\"",
         "shasum -a 256 \"$archive\"",
         "dist/*.tar.gz",
@@ -50,6 +52,56 @@ fn release_archives_are_single_binary_with_sha256() {
         assert!(
             workflow.contains(required),
             "release workflow should contain packaging contract: {required}"
+        );
+    }
+}
+
+#[test]
+fn release_archives_normalize_root_ownership() {
+    let workflow = read_repo_file(".github/workflows/release.yml");
+
+    for required in [
+        "header.uid = 0",
+        "header.gid = 0",
+        "header.mode = 0o755",
+        "member.uid == 0",
+        "member.gid == 0",
+        "stat --format=\"%u:%g:%a\" /usr/local/bin/specwright",
+        "0:0:755",
+    ] {
+        assert!(
+            workflow.contains(required),
+            "release workflow should enforce archive ownership contract: {required}"
+        );
+    }
+}
+
+#[test]
+fn release_workflow_pins_build_inputs() {
+    let workflow = read_repo_file(".github/workflows/release.yml");
+
+    for required in [
+        "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+        "dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c",
+        "toolchain: 1.93.0",
+    ] {
+        assert!(
+            workflow.contains(required),
+            "release workflow should pin immutable build input: {required}"
+        );
+    }
+
+    for mutable in [
+        "actions/checkout@v6",
+        "actions/upload-artifact@v7",
+        "actions/download-artifact@v8",
+        "dtolnay/rust-toolchain@stable",
+    ] {
+        assert!(
+            !workflow.contains(mutable),
+            "release workflow must not use mutable build input: {mutable}"
         );
     }
 }
@@ -83,10 +135,10 @@ fn readme_documents_pinned_binary_and_cargo_installation() {
     let readme = read_repo_file("README.md");
 
     for required in [
-        "releases/download/v2.1.1/specwright-aarch64-apple-darwin.tar.gz",
-        "releases/download/v2.1.1/specwright-x86_64-unknown-linux-musl.tar.gz",
+        "releases/download/v2.1.2/specwright-aarch64-apple-darwin.tar.gz",
+        "releases/download/v2.1.2/specwright-x86_64-unknown-linux-musl.tar.gz",
         "cargo install --git https://github.com/BUNotesAI/specwright --locked",
-        "--tag v2.1.1",
+        "--tag v2.1.2",
         "2.x",
     ] {
         assert!(

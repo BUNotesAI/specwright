@@ -37,19 +37,19 @@ administrator privileges.
 macOS on Apple Silicon:
 
 ```bash
-curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.1.1/specwright-aarch64-apple-darwin.tar.gz | tar -xz -C /usr/local/bin
+curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.1.2/specwright-aarch64-apple-darwin.tar.gz | tar -xz -C /usr/local/bin
 ```
 
 Linux on x86_64 (recommended static musl build):
 
 ```bash
-curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.1.1/specwright-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /usr/local/bin
+curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.1.2/specwright-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /usr/local/bin
 ```
 
 Verify the installed version:
 
 ```bash
-specwright --version   # specwright 2.1.1
+specwright --version   # specwright 2.1.2
 ```
 
 The same Release also provides `x86_64-unknown-linux-gnu` and
@@ -58,7 +58,7 @@ The same Release also provides `x86_64-unknown-linux-gnu` and
 
 ```bash
 archive=specwright-x86_64-unknown-linux-musl.tar.gz
-base=https://github.com/BUNotesAI/specwright/releases/download/v2.1.1
+base=https://github.com/BUNotesAI/specwright/releases/download/v2.1.2
 curl -fsSLO "$base/$archive"
 curl -fsSLO "$base/$archive.sha256"
 sha256sum -c "$archive.sha256"
@@ -80,7 +80,7 @@ For a reproducible source build, pin the same release tag:
 ```bash
 cargo install \
   --git https://github.com/BUNotesAI/specwright \
-  --tag v2.1.1 \
+  --tag v2.1.2 \
   --locked
 ```
 
@@ -97,7 +97,7 @@ For development from a local source checkout:
 
 ```bash
 cargo install --path .
-specwright --version   # 2.1.1
+specwright --version   # 2.1.2
 ```
 
 ## Example
