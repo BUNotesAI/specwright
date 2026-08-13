@@ -62,6 +62,7 @@ Skill files and skill references are reusable assets and must be English-only. U
 | `specwright stamp <spec> --dry-run` | Preview git trailers | Before committing - traceability |
 | `specwright verify <spec> --code .` | Raw verification only | When you want verify without lint gate |
 | `specwright checkpoint status` | VCS-aware status | Check uncommitted state |
+| `specwright resolve-evidence` | Resolve declared external CI evidence | Close external verification scenarios |
 
 ## Runner-Aware Verification
 

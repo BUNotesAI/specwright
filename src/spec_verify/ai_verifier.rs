@@ -216,6 +216,8 @@ mod tests {
                 },
             ],
             test_selector: None,
+            verification: Default::default(),
+            evidence: None,
             tags: vec![],
             review: Default::default(),
             mode: Default::default(),

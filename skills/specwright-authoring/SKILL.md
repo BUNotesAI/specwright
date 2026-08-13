@@ -281,6 +281,25 @@ Node runner authoring rules:
 
 ## Test Selector Patterns
 
+### External evidence scenarios
+
+When a scenario can only be verified by an external CI or evidence producer,
+declare it explicitly instead of inventing a local `Test:` binding:
+
+```spec
+Scenario: Signed release build
+  Verification: external
+  Evidence: signed-release-build
+  Given the release commit is submitted
+  When external CI finishes
+  Then its versioned evidence manifest records the verdict
+```
+
+`Evidence` is required and must be unique within the spec. External scenarios
+produce `external_pending` until `resolve-evidence` imports a complete matching
+manifest. Ordinary scenarios still require `Test:` and unbound ordinary
+scenarios remain non-passing skips.
+
 Simple selector:
 
 ```spec

@@ -19,6 +19,7 @@ Commands:
   checkpoint          Preview or create a VCS checkpoint
   plan                Generate structured plan context from spec + codebase scan
   resolve-ai          Merge external AI decisions into a verification report
+  resolve-evidence    Validate and merge external verification evidence
   measure-determinism [Experimental] Measure contract verification determinism
   install-hooks       Install git hooks for automatic spec checking
 ```
@@ -235,6 +236,25 @@ The decisions file format:
 ```
 
 Cleans up `pending-ai-requests.json` after successful merge.
+
+## resolve-evidence
+
+```bash
+specwright resolve-evidence <spec> \
+  [--code .] \
+  --manifest <evidence.json> \
+  [--format text|json]
+```
+
+External scenarios declare `Verification: external` and a spec-unique
+`Evidence: <id>`. They produce `external_pending` and block by default. Use
+`verify` or `lifecycle --external-mode allow-pending` only for an intermediate
+gate; JSON retains the pending count and result list.
+
+The versioned manifest binds the spec identity and SHA-256, subject commit,
+generation time, every scenario/Evidence ID, artifact URL, digest, verdict,
+and producer or attestation. Unknown, duplicate, and missing IDs fail. Only
+`external_pending` results may be resolved.
 
 ## AI Mode
 

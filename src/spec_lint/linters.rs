@@ -451,7 +451,9 @@ impl SpecLinter for ExplicitTestBindingLinter {
         for section in &doc.sections {
             if let Section::AcceptanceCriteria { scenarios, .. } = section {
                 for scenario in scenarios {
-                    if scenario.test_selector.is_none() {
+                    if scenario.test_selector.is_none()
+                        && scenario.verification != crate::spec_core::ScenarioVerification::External
+                    {
                         diags.push(LintDiagnostic {
                             rule: "explicit-test-binding".into(),
                             severity: Severity::Error,
@@ -469,6 +471,53 @@ impl SpecLinter for ExplicitTestBindingLinter {
             }
         }
 
+        diags
+    }
+}
+
+// =============================================================================
+// ExternalEvidenceLinter
+// =============================================================================
+
+pub struct ExternalEvidenceLinter;
+
+impl SpecLinter for ExternalEvidenceLinter {
+    fn name(&self) -> &str {
+        "external-evidence"
+    }
+
+    fn lint(&self, doc: &SpecDocument) -> Vec<LintDiagnostic> {
+        let mut seen = std::collections::HashSet::new();
+        let mut diags = Vec::new();
+        for section in &doc.sections {
+            if let Section::AcceptanceCriteria { scenarios, .. } = section {
+                for scenario in scenarios {
+                    if scenario.verification != crate::spec_core::ScenarioVerification::External {
+                        continue;
+                    }
+                    match scenario.evidence.as_deref() {
+                        None | Some("") => diags.push(LintDiagnostic {
+                            rule: self.name().into(),
+                            severity: Severity::Error,
+                            message: format!(
+                                "external scenario '{}' is missing an Evidence ID",
+                                scenario.name
+                            ),
+                            span: scenario.span,
+                            suggestion: Some("add `Evidence: <unique-id>`".into()),
+                        }),
+                        Some(id) if !seen.insert(id.to_string()) => diags.push(LintDiagnostic {
+                            rule: self.name().into(),
+                            severity: Severity::Error,
+                            message: format!("duplicate external Evidence ID `{id}`"),
+                            span: scenario.span,
+                            suggestion: Some("use one unique Evidence ID per spec".into()),
+                        }),
+                        Some(_) => {}
+                    }
+                }
+            }
+        }
         diags
     }
 }

@@ -11,6 +11,8 @@
 - **Polyglot test runners** — a pluggable `TestRunner` layer with built-ins for **Cargo, Maven, Gradle (Java/Kotlin), Android, iOS, Node/TypeScript, and CMake/CTest** (Pytest/Go on the roadmap).
 - **English-only DSL (v2.0.0, breaking)** — structural keywords, section headers, and selectors are English-only; the parser **hard-rejects Chinese keyword aliases** with a clear error (`keywords must be English; '场景:' is not recognized — use 'Scenario:'`). Description free text (scenario names, step prose, quoted params) may still be any language.
 - **Declarative mixed-runner routing (v2.1.0)** — one task spec can keep Cargo as the default runner while routing selected `Package:` tokens to another runner such as Node/TypeScript.
+- **External verification (v2.2.0)** — scenarios may declare external CI evidence, remain strictly non-passing by default, and later be resolved from a versioned evidence manifest.
+- **JSON verdict normalization (v2.2.0, breaking)** — the pre-existing human-review verdict is now serialized as `pending_review` instead of `pendingreview`; all multiword verdict values use snake_case.
 - **No hollow passes** — a test binding that resolves to **zero** tests *fails* instead of silently passing; `skip` and all-`#[ignore]` never count as `pass`.
 
 ## How it works (summary)
@@ -37,19 +39,19 @@ administrator privileges.
 macOS on Apple Silicon:
 
 ```bash
-curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.1.2/specwright-aarch64-apple-darwin.tar.gz | tar -xz -C /usr/local/bin
+curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.2.0/specwright-aarch64-apple-darwin.tar.gz | tar -xz -C /usr/local/bin
 ```
 
 Linux on x86_64 (recommended static musl build):
 
 ```bash
-curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.1.2/specwright-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /usr/local/bin
+curl -fsSL https://github.com/BUNotesAI/specwright/releases/download/v2.2.0/specwright-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /usr/local/bin
 ```
 
 Verify the installed version:
 
 ```bash
-specwright --version   # specwright 2.1.2
+specwright --version   # specwright 2.2.0
 ```
 
 The same Release also provides `x86_64-unknown-linux-gnu` and
@@ -58,7 +60,7 @@ The same Release also provides `x86_64-unknown-linux-gnu` and
 
 ```bash
 archive=specwright-x86_64-unknown-linux-musl.tar.gz
-base=https://github.com/BUNotesAI/specwright/releases/download/v2.1.2
+base=https://github.com/BUNotesAI/specwright/releases/download/v2.2.0
 curl -fsSLO "$base/$archive"
 curl -fsSLO "$base/$archive.sha256"
 sha256sum -c "$archive.sha256"
@@ -80,7 +82,7 @@ For a reproducible source build, pin the same release tag:
 ```bash
 cargo install \
   --git https://github.com/BUNotesAI/specwright \
-  --tag v2.1.2 \
+  --tag v2.2.0 \
   --locked
 ```
 
@@ -97,7 +99,7 @@ For development from a local source checkout:
 
 ```bash
 cargo install --path .
-specwright --version   # 2.1.2
+specwright --version   # 2.2.0
 ```
 
 ## Example
@@ -133,6 +135,42 @@ Scenario: Successful registration
 ```
 
 Keywords are English-only; description text may be any language. For a non-Cargo project, set `runner: maven | gradle | android | ios | node | ctest` in the frontmatter (or let it auto-detect from workspace markers).
+
+### External verification
+
+Use an external scenario when the result must come from CI or another evidence
+producer and cannot run on the current machine:
+
+```spec
+Scenario: HarmonyOS release build
+  Verification: external
+  Evidence: harmony-release-build
+  Tags: [SPC-12, tier3, DCR-04]
+  Given the release commit is submitted to CI
+  When the signed build finishes
+  Then the evidence manifest records the build verdict
+```
+
+`Evidence` is required and unique within the spec. External scenarios do not
+need `Test:` bindings. Their initial verdict is `external_pending`; strict mode
+is the default and remains non-passing. Intermediate stages may opt in without
+losing the pending count or result list:
+
+```bash
+specwright lifecycle task.spec.md --code . --external-mode allow-pending --format json
+```
+
+At close, import a complete versioned manifest. The manifest binds the exact
+spec name and SHA-256, the repository `HEAD`, every scenario and Evidence ID,
+an artifact URL and SHA-256 digest, a `pass` or `fail` verdict, and either a
+producer identity or attestation:
+
+```bash
+specwright resolve-evidence task.spec.md --code . --manifest evidence.json --format json
+```
+
+Unknown, duplicate, or missing Evidence IDs fail the command. Resolution only
+replaces `external_pending` and never overwrites a mechanical result.
 
 For a prepared CMake/CTest project, configure and build the test tree before verification, then point `runner_config.build_dir` at that repository-relative directory:
 
@@ -243,6 +281,7 @@ source lookup order — local source -> cache -> bundled -> remote, including co
 | `explain` | Generate a human-readable contract review summary |
 | `stamp` | Preview git trailers for a verified contract (`--dry-run`) |
 | `resolve-ai` | Merge external AI decisions into a verification report (caller mode) |
+| `resolve-evidence` | Validate a versioned external evidence manifest and resolve pending scenarios |
 | `checkpoint` | Preview VCS-aware checkpoint status (Git / jj) |
 | `graph` | Generate a spec dependency graph (`--format dot` or `svg`) |
 | `install-hooks` | Install git hooks for automatic checking |

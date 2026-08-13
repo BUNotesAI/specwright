@@ -831,6 +831,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn make_test_resolved() -> ResolvedSpec {
         let scenarios = vec![
             Scenario {
@@ -849,6 +850,8 @@ mod tests {
                     test_double: None,
                     targets: None,
                 }),
+                verification: Default::default(),
+                evidence: None,
                 tags: Vec::new(),
                 review: crate::spec_core::ReviewMode::Auto,
                 mode: crate::spec_core::ScenarioMode::Standard,
@@ -859,6 +862,8 @@ mod tests {
                 name: "scenario B".into(),
                 steps: vec![],
                 test_selector: None,
+                verification: Default::default(),
+                evidence: None,
                 tags: Vec::new(),
                 review: crate::spec_core::ReviewMode::Auto,
                 mode: crate::spec_core::ScenarioMode::Standard,
@@ -875,6 +880,8 @@ mod tests {
                     test_double: None,
                     targets: None,
                 }),
+                verification: Default::default(),
+                evidence: None,
                 tags: Vec::new(),
                 review: crate::spec_core::ReviewMode::Auto,
                 mode: crate::spec_core::ScenarioMode::Standard,
@@ -885,6 +892,8 @@ mod tests {
                 name: "scenario D".into(),
                 steps: vec![],
                 test_selector: None,
+                verification: Default::default(),
+                evidence: None,
                 tags: Vec::new(),
                 review: crate::spec_core::ReviewMode::Auto,
                 mode: crate::spec_core::ScenarioMode::Standard,

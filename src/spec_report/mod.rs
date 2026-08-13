@@ -37,6 +37,7 @@ pub fn build_status_report(
     let all_pass = report.summary.failed == 0
         && report.summary.skipped == 0
         && report.summary.uncertain == 0
+        && report.summary.external_pending == 0
         && report.summary.passed > 0;
     let all_fail = report.summary.passed == 0 && report.summary.total > 0;
 
@@ -59,6 +60,7 @@ pub fn build_status_report(
             Verdict::Skip => "skip",
             Verdict::Uncertain => "uncertain",
             Verdict::PendingReview => "pending_review",
+            Verdict::ExternalPending => "external_pending",
         };
         scenarios.insert(
             r.scenario_name.clone(),
@@ -86,13 +88,14 @@ pub fn build_status_report(
 
     // Human-readable notes
     let notes = format!(
-        "{}/{} passed, {} failed, {} skipped, {} uncertain, {} pending_review",
+        "{}/{} passed, {} failed, {} skipped, {} uncertain, {} pending_review, {} external_pending",
         report.summary.passed,
         report.summary.total,
         report.summary.failed,
         report.summary.skipped,
         report.summary.uncertain,
         report.summary.pending_review,
+        report.summary.external_pending,
     );
 
     let timestamp = std::time::SystemTime::now()
@@ -170,13 +173,14 @@ fn format_verification_text(report: &VerificationReport) -> String {
     let mut out = String::new();
     out.push_str(&format!("Spec: {}\n", report.spec_name));
     out.push_str(&format!(
-        "Results: {} total, {} passed, {} failed, {} skipped, {} uncertain, {} pending_review\n\n",
+        "Results: {} total, {} passed, {} failed, {} skipped, {} uncertain, {} pending_review, {} external_pending\n\n",
         report.summary.total,
         report.summary.passed,
         report.summary.failed,
         report.summary.skipped,
         report.summary.uncertain,
         report.summary.pending_review,
+        report.summary.external_pending,
     ));
 
     for result in &report.results {
@@ -186,6 +190,7 @@ fn format_verification_text(report: &VerificationReport) -> String {
             Verdict::Skip => "[SKIP]",
             Verdict::Uncertain => "[????]",
             Verdict::PendingReview => "[REVIEW]",
+            Verdict::ExternalPending => "[EXTERNAL]",
         };
         out.push_str(&format!("  {icon} {}\n", result.scenario_name));
 
@@ -196,6 +201,7 @@ fn format_verification_text(report: &VerificationReport) -> String {
                 Verdict::Skip => "-",
                 Verdict::Uncertain => "?",
                 Verdict::PendingReview => "R",
+                Verdict::ExternalPending => "E",
             };
             out.push_str(&format!("    {step_icon} {}\n", step.step_text));
             if step.verdict == Verdict::Fail {
@@ -253,6 +259,21 @@ fn format_verification_text(report: &VerificationReport) -> String {
                     out.push_str(&format!(
                         "    > ai '{model}': confidence={confidence:.2}, reasoning={reasoning}\n"
                     ));
+                }
+                crate::spec_core::Evidence::ExternalArtifact {
+                    evidence_id,
+                    artifact_url,
+                    digest_algorithm,
+                    digest_value,
+                    producer,
+                } => {
+                    out.push_str(&format!(
+                        "    > external evidence '{evidence_id}': {artifact_url}, {digest_algorithm}:{digest_value}"
+                    ));
+                    if let Some(producer) = producer {
+                        out.push_str(&format!(", producer={producer}"));
+                    }
+                    out.push('\n');
                 }
             }
         }
@@ -339,12 +360,13 @@ fn format_explain_text(input: &ExplainInput, report: &VerificationReport) -> Str
     out.push_str("Verification Summary\n");
     let rate = report.summary.pass_rate() * 100.0;
     out.push_str(&format!(
-        "  {}/{} passed, {} failed, {} skipped, {} uncertain  ({rate:.1}%)\n",
+        "  {}/{} passed, {} failed, {} skipped, {} uncertain, {} external_pending  ({rate:.1}%)\n",
         report.summary.passed,
         report.summary.total,
         report.summary.failed,
         report.summary.skipped,
         report.summary.uncertain,
+        report.summary.external_pending,
     ));
     for result in &report.results {
         let icon = match result.verdict {
@@ -353,6 +375,7 @@ fn format_explain_text(input: &ExplainInput, report: &VerificationReport) -> Str
             Verdict::Skip => "[SKIP]",
             Verdict::Uncertain => "[????]",
             Verdict::PendingReview => "[REVIEW]",
+            Verdict::ExternalPending => "[EXTERNAL]",
         };
         out.push_str(&format!("  {icon} {}\n", result.scenario_name));
         for ev in &result.evidence {
@@ -425,16 +448,19 @@ fn format_explain_md(input: &ExplainInput, report: &VerificationReport) -> Strin
     }
 
     out.push_str("## Verification Summary\n\n");
-    out.push_str("| Total | Passed | Failed | Skipped | Uncertain | Pass Rate |\n");
-    out.push_str("| --- | --- | --- | --- | --- | --- |\n");
+    out.push_str(
+        "| Total | Passed | Failed | Skipped | Uncertain | External Pending | Pass Rate |\n",
+    );
+    out.push_str("| --- | --- | --- | --- | --- | --- | --- |\n");
     let rate = report.summary.pass_rate() * 100.0;
     out.push_str(&format!(
-        "| {} | {} | {} | {} | {} | {rate:.1}% |\n\n",
+        "| {} | {} | {} | {} | {} | {} | {rate:.1}% |\n\n",
         report.summary.total,
         report.summary.passed,
         report.summary.failed,
         report.summary.skipped,
         report.summary.uncertain,
+        report.summary.external_pending,
     ));
 
     for result in &report.results {
@@ -444,6 +470,7 @@ fn format_explain_md(input: &ExplainInput, report: &VerificationReport) -> Strin
             Verdict::Skip => "⏭️",
             Verdict::Uncertain => "❓",
             Verdict::PendingReview => "👁️",
+            Verdict::ExternalPending => "⏳",
         };
         out.push_str(&format!("- {icon} {}\n", result.scenario_name));
         for ev in &result.evidence {
@@ -499,6 +526,8 @@ pub fn format_orchestrator_json(input: &ExplainInput, report: &VerificationRepor
             "failed": report.summary.failed,
             "skipped": report.summary.skipped,
             "uncertain": report.summary.uncertain,
+            "pending_review": report.summary.pending_review,
+            "external_pending": report.summary.external_pending,
             "pass_rate": report.summary.pass_rate(),
         },
         "results": report.results.iter().map(|r| {
@@ -628,6 +657,7 @@ fn format_verification_compact(report: &VerificationReport) -> String {
             Verdict::Skip => "\u{2298}", // ⊘
             Verdict::Uncertain => "?",
             Verdict::PendingReview => "\u{2299}", // ⊙
+            Verdict::ExternalPending => "E",
         };
         parts.push(format!("{icon} {}", r.scenario_name));
     }
@@ -660,15 +690,18 @@ fn format_lint_json(report: &LintReport) -> String {
 fn format_verification_md(report: &VerificationReport) -> String {
     let mut out = String::new();
     out.push_str(&format!("# Verification: {}\n\n", report.spec_name));
-    out.push_str("| Total | Passed | Failed | Skipped | Uncertain | Pass Rate |\n");
-    out.push_str("| --- | --- | --- | --- | --- | --- |\n");
+    out.push_str(
+        "| Total | Passed | Failed | Skipped | Uncertain | External Pending | Pass Rate |\n",
+    );
+    out.push_str("| --- | --- | --- | --- | --- | --- | --- |\n");
     out.push_str(&format!(
-        "| {} | {} | {} | {} | {} | {:.1}% |\n\n",
+        "| {} | {} | {} | {} | {} | {} | {:.1}% |\n\n",
         report.summary.total,
         report.summary.passed,
         report.summary.failed,
         report.summary.skipped,
         report.summary.uncertain,
+        report.summary.external_pending,
         report.summary.pass_rate() * 100.0,
     ));
 
@@ -680,6 +713,7 @@ fn format_verification_md(report: &VerificationReport) -> String {
             Verdict::Skip => "⏭️",
             Verdict::Uncertain => "❓",
             Verdict::PendingReview => "👁️",
+            Verdict::ExternalPending => "⏳",
         };
         out.push_str(&format!("### {icon} {}\n\n", result.scenario_name));
 
@@ -690,6 +724,7 @@ fn format_verification_md(report: &VerificationReport) -> String {
                 Verdict::Skip => "⏭️",
                 Verdict::Uncertain => "❓",
                 Verdict::PendingReview => "👁️",
+                Verdict::ExternalPending => "⏳",
             };
             out.push_str(&format!("- {s} {}\n", step.step_text));
         }
@@ -742,6 +777,7 @@ mod tests {
     #[test]
     fn test_format_verification_text() {
         let report = VerificationReport {
+            schema_version: None,
             spec_name: "test".into(),
             results: vec![ScenarioResult {
                 scenario_name: "test scenario".into(),
@@ -761,6 +797,7 @@ mod tests {
                 skipped: 0,
                 uncertain: 0,
                 pending_review: 0,
+                external_pending: 0,
             },
         };
         let text = format_verification(&report, &OutputFormat::Text);
@@ -771,6 +808,7 @@ mod tests {
     #[test]
     fn test_format_verification_text_includes_ai_analysis_evidence() {
         let report = VerificationReport {
+            schema_version: None,
             spec_name: "ai".into(),
             results: vec![ScenarioResult {
                 scenario_name: "needs ai".into(),
@@ -794,6 +832,7 @@ mod tests {
                 skipped: 0,
                 uncertain: 1,
                 pending_review: 0,
+                external_pending: 0,
             },
         };
 
@@ -806,6 +845,7 @@ mod tests {
     #[test]
     fn test_format_verification_text_includes_test_binding_metadata() {
         let report = VerificationReport {
+            schema_version: None,
             spec_name: "verify-meta".into(),
             results: vec![ScenarioResult {
                 scenario_name: "http path".into(),
@@ -830,6 +870,7 @@ mod tests {
                 skipped: 0,
                 uncertain: 0,
                 pending_review: 0,
+                external_pending: 0,
             },
         };
 
@@ -853,6 +894,7 @@ mod tests {
             out_of_scope: vec![],
         };
         let report = VerificationReport {
+            schema_version: None,
             spec_name: "orch".into(),
             results: vec![ScenarioResult {
                 scenario_name: "happy path".into(),
@@ -877,6 +919,7 @@ mod tests {
                 skipped: 0,
                 uncertain: 0,
                 pending_review: 0,
+                external_pending: 0,
             },
         };
 
@@ -944,6 +987,7 @@ mod tests {
 
     fn make_all_pass_report() -> VerificationReport {
         VerificationReport {
+            schema_version: None,
             spec_name: "status-test".into(),
             results: vec![
                 ScenarioResult {
@@ -968,12 +1012,14 @@ mod tests {
                 skipped: 0,
                 uncertain: 0,
                 pending_review: 0,
+                external_pending: 0,
             },
         }
     }
 
     fn make_mixed_report() -> VerificationReport {
         VerificationReport {
+            schema_version: None,
             spec_name: "mixed-test".into(),
             results: vec![
                 ScenarioResult {
@@ -1005,6 +1051,7 @@ mod tests {
                 skipped: 1,
                 uncertain: 0,
                 pending_review: 0,
+                external_pending: 0,
             },
         }
     }
@@ -1077,6 +1124,7 @@ mod tests {
     #[test]
     fn test_diagnostic_format_includes_raw_test_output() {
         let report = VerificationReport {
+            schema_version: None,
             spec_name: "diag-test".into(),
             results: vec![ScenarioResult {
                 scenario_name: "test with stdout".into(),
@@ -1101,6 +1149,7 @@ mod tests {
                 skipped: 0,
                 uncertain: 0,
                 pending_review: 0,
+                external_pending: 0,
             },
         };
 

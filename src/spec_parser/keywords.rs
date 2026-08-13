@@ -143,6 +143,24 @@ pub fn match_review_field(line: &str) -> Option<&str> {
     None
 }
 
+/// Verification field recognition: `Verification: external`.
+pub fn match_verification_field(line: &str) -> Option<&str> {
+    let trimmed = line.trim().trim_start_matches('#').trim();
+    let lower = trimmed.to_lowercase();
+    lower
+        .starts_with("verification:")
+        .then(|| trimmed["verification:".len()..].trim())
+}
+
+/// Evidence identity field recognition: `Evidence: ci-build`.
+pub fn match_evidence_field(line: &str) -> Option<&str> {
+    let trimmed = line.trim().trim_start_matches('#').trim();
+    let lower = trimmed.to_lowercase();
+    lower
+        .starts_with("evidence:")
+        .then(|| trimmed["evidence:".len()..].trim())
+}
+
 /// Mode field recognition: `Mode: optimize`.
 /// Returns Some("optimize") or Some("standard"), or None if not a mode line.
 pub fn match_mode_field(line: &str) -> Option<&str> {

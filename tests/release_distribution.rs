@@ -135,10 +135,10 @@ fn readme_documents_pinned_binary_and_cargo_installation() {
     let readme = read_repo_file("README.md");
 
     for required in [
-        "releases/download/v2.1.2/specwright-aarch64-apple-darwin.tar.gz",
-        "releases/download/v2.1.2/specwright-x86_64-unknown-linux-musl.tar.gz",
+        "releases/download/v2.2.0/specwright-aarch64-apple-darwin.tar.gz",
+        "releases/download/v2.2.0/specwright-x86_64-unknown-linux-musl.tar.gz",
         "cargo install --git https://github.com/BUNotesAI/specwright --locked",
-        "--tag v2.1.2",
+        "--tag v2.2.0",
         "2.x",
     ] {
         assert!(

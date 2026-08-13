@@ -3,13 +3,14 @@ use std::collections::HashMap;
 
 /// Verification verdict for a scenario or step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum Verdict {
     Pass,
     Fail,
     Skip,
     Uncertain,
     PendingReview,
+    ExternalPending,
 }
 
 /// Result of verifying a single scenario.
@@ -63,6 +64,14 @@ pub enum Evidence {
         pattern: String,
         matched: bool,
         locations: Vec<String>,
+    },
+    ExternalArtifact {
+        evidence_id: String,
+        artifact_url: String,
+        digest_algorithm: String,
+        digest_value: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        producer: Option<String>,
     },
 }
 
@@ -122,6 +131,9 @@ pub struct VerificationSummary {
     pub uncertain: usize,
     #[serde(default)]
     pub pending_review: usize,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
+    pub external_pending: usize,
 }
 
 impl VerificationSummary {
@@ -136,6 +148,8 @@ impl VerificationSummary {
 /// Full verification report.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationReport {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
     pub spec_name: String,
     pub results: Vec<ScenarioResult>,
     pub summary: VerificationSummary,
@@ -164,8 +178,13 @@ impl VerificationReport {
             .iter()
             .filter(|r| r.verdict == Verdict::PendingReview)
             .count();
+        let external_pending = results
+            .iter()
+            .filter(|r| r.verdict == Verdict::ExternalPending)
+            .count();
 
         Self {
+            schema_version: (external_pending > 0).then_some(verification_schema_version()),
             spec_name,
             results,
             summary: VerificationSummary {
@@ -175,7 +194,16 @@ impl VerificationReport {
                 skipped,
                 uncertain,
                 pending_review,
+                external_pending,
             },
         }
     }
+}
+
+const fn verification_schema_version() -> u32 {
+    1
+}
+
+const fn is_zero(value: &usize) -> bool {
+    *value == 0
 }

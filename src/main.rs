@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 mod spec_core;
+mod spec_evidence;
 mod spec_gateway;
 mod spec_lint;
 mod spec_parser;
@@ -78,6 +79,9 @@ enum Commands {
         /// Output format: text, json, md
         #[arg(long, default_value = "text")]
         format: String,
+        /// External evidence policy: strict or allow-pending
+        #[arg(long, default_value = "strict")]
+        external_mode: String,
     },
     /// Create a starter .spec.md file
     Init {
@@ -134,6 +138,9 @@ enum Commands {
         /// How to treat pending_review verdicts: auto (count as pass) or strict (count as non-passing)
         #[arg(long, default_value = "auto")]
         review_mode: String,
+        /// External evidence policy: strict or allow-pending
+        #[arg(long, default_value = "strict")]
+        external_mode: String,
     },
     /// Compatibility alias for the contract view
     Brief {
@@ -227,6 +234,20 @@ enum Commands {
         #[arg(long, default_value = "json")]
         format: String,
     },
+    /// Import and resolve declared external verification evidence
+    ResolveEvidence {
+        /// Spec file
+        spec: PathBuf,
+        /// Code directory whose HEAD is the manifest subject
+        #[arg(long, default_value = ".")]
+        code: PathBuf,
+        /// Path to the versioned evidence manifest
+        #[arg(long)]
+        manifest: PathBuf,
+        /// Output format: text, json
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
     /// Generate structured plan context from a spec + codebase scan
     Plan {
         /// Spec file
@@ -281,6 +302,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             ai_mode,
             runner,
             format,
+            external_mode,
         } => cmd_verify(
             &spec,
             &code,
@@ -289,6 +311,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             &ai_mode,
             runner.as_deref(),
             &format,
+            &external_mode,
         ),
         Commands::Init {
             level,
@@ -310,6 +333,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             layers,
             resume,
             review_mode,
+            external_mode,
         } => cmd_lifecycle(
             &spec,
             &code,
@@ -324,6 +348,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             layers.as_deref(),
             resume,
             &review_mode,
+            &external_mode,
         ),
         Commands::Brief { spec, format } => cmd_brief(&spec, &format),
         Commands::Contract { spec, format } => cmd_contract(&spec, &format),
@@ -356,6 +381,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             decisions,
             format,
         } => cmd_resolve_ai(&spec, &code, &decisions, &format),
+        Commands::ResolveEvidence {
+            spec,
+            code,
+            manifest,
+            format,
+        } => cmd_resolve_evidence(&spec, &code, &manifest, &format),
         Commands::Plan {
             spec,
             code,
@@ -457,6 +488,7 @@ fn cmd_lint(
 
 // ── Verify ──────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)] // Mirrors the stable verify CLI surface.
 fn cmd_verify(
     spec: &Path,
     code: &Path,
@@ -465,7 +497,9 @@ fn cmd_verify(
     ai_mode: &str,
     runner: Option<&str>,
     format: &str,
+    external_mode: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    validate_external_mode(external_mode)?;
     let gw = crate::spec_gateway::SpecGateway::load(spec)?;
     let change_scope = GitChangeScope::parse(change_scope)?;
     let ai_mode = parse_ai_mode(ai_mode)?;
@@ -480,11 +514,13 @@ fn cmd_verify(
         crate::spec_report::format_verification(&report, &out_format)
     );
 
-    let non_passing = report.summary.failed + report.summary.skipped + report.summary.uncertain;
-    if non_passing > 0 {
+    if !gw.is_passing_with_modes(&report, "auto", external_mode) {
         Err(format!(
-            "verification not passing: {} failed, {} skipped, {} uncertain",
-            report.summary.failed, report.summary.skipped, report.summary.uncertain,
+            "verification not passing: {} failed, {} skipped, {} uncertain, {} external_pending",
+            report.summary.failed,
+            report.summary.skipped,
+            report.summary.uncertain,
+            report.summary.external_pending,
         )
         .into())
     } else {
@@ -510,7 +546,9 @@ fn cmd_lifecycle(
     layers: Option<&str>,
     resume: Option<Option<String>>,
     review_mode: &str,
+    external_mode: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    validate_external_mode(external_mode)?;
     // Validate --resume requires --run-log-dir
     let resume_mode = if let Some(ref mode_opt) = resume {
         if run_log_dir.is_none() {
@@ -599,7 +637,7 @@ fn cmd_lifecycle(
     let mut verify_report = verify_report;
     apply_dependency_skips(&mut verify_report, &gw.resolved().all_scenarios);
 
-    let passing = gw.is_passing_with_review_mode(&verify_report, review_mode);
+    let passing = gw.is_passing_with_modes(&verify_report, review_mode, external_mode);
 
     // Collect optimization candidates: optimize-mode scenarios that passed
     let optimization_candidates: Vec<String> =
@@ -703,12 +741,13 @@ fn cmd_lifecycle(
             spec_name: contract.name.clone(),
             passing,
             summary: format!(
-                "{}/{} passed, {} failed, {} skipped, {} uncertain",
+                "{}/{} passed, {} failed, {} skipped, {} uncertain, {} external_pending",
                 verify_report.summary.passed,
                 verify_report.summary.total,
                 verify_report.summary.failed,
                 verify_report.summary.skipped,
                 verify_report.summary.uncertain,
+                verify_report.summary.external_pending,
             ),
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -850,6 +889,11 @@ fn apply_dependency_skips(
         .iter()
         .filter(|r| r.verdict == crate::spec_core::Verdict::PendingReview)
         .count();
+    let external_pending = report
+        .results
+        .iter()
+        .filter(|r| r.verdict == crate::spec_core::Verdict::ExternalPending)
+        .count();
     report.summary = crate::spec_core::VerificationSummary {
         total,
         passed,
@@ -857,6 +901,7 @@ fn apply_dependency_skips(
         skipped,
         uncertain,
         pending_review,
+        external_pending,
     };
 }
 
@@ -1299,6 +1344,16 @@ fn parse_ai_mode(input: &str) -> Result<crate::spec_verify::AiMode, Box<dyn std:
     }
 }
 
+fn validate_external_mode(input: &str) -> Result<(), Box<dyn std::error::Error>> {
+    match input {
+        "strict" | "allow-pending" => Ok(()),
+        other => Err(format!(
+            "unsupported --external-mode `{other}` (expected `strict` or `allow-pending`)"
+        )
+        .into()),
+    }
+}
+
 // ── Explain ─────────────────────────────────────────────────────
 
 fn cmd_explain(
@@ -1354,8 +1409,13 @@ fn build_stamp_trailers(
         format!("Spec-Name: {name}"),
         format!("Spec-Passing: {passing}"),
         format!(
-            "Spec-Summary: {}/{} passed, {} failed, {} skipped, {} uncertain",
-            summary.passed, summary.total, summary.failed, summary.skipped, summary.uncertain,
+            "Spec-Summary: {}/{} passed, {} failed, {} skipped, {} uncertain, {} external_pending",
+            summary.passed,
+            summary.total,
+            summary.failed,
+            summary.skipped,
+            summary.uncertain,
+            summary.external_pending,
         ),
     ];
 
@@ -2104,8 +2164,12 @@ Scenario: 远端失败返回稳定错误
 
 fn format_non_passing_summary(summary: &crate::spec_core::VerificationSummary) -> String {
     format!(
-        "verification not passing: {} failed, {} skipped, {} uncertain, {} pending_review",
-        summary.failed, summary.skipped, summary.uncertain, summary.pending_review,
+        "verification not passing: {} failed, {} skipped, {} uncertain, {} pending_review, {} external_pending",
+        summary.failed,
+        summary.skipped,
+        summary.uncertain,
+        summary.pending_review,
+        summary.external_pending,
     )
 }
 
@@ -2389,6 +2453,66 @@ fn cmd_resolve_ai(
     } else {
         Err(format_non_passing_summary(&merged_report.summary).into())
     }
+}
+
+fn cmd_resolve_evidence(
+    spec: &Path,
+    code: &Path,
+    manifest_path: &Path,
+    format: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use sha2::{Digest, Sha256};
+
+    let spec_bytes = std::fs::read(spec)?;
+    let spec_hash = format!("{:x}", Sha256::digest(&spec_bytes));
+    let subject_commit = current_git_commit(code)?;
+    let gw = crate::spec_gateway::SpecGateway::load(spec)?;
+    gw.quality_gate(0.0)
+        .map_err(|failure| format!("quality gate failed: {failure}"))?;
+    let report = gw.verify(code)?;
+    let manifest: crate::spec_evidence::EvidenceManifest =
+        serde_json::from_slice(&std::fs::read(manifest_path)?)?;
+    let resolved = crate::spec_evidence::resolve_evidence(
+        manifest,
+        &gw.resolved().task.meta.name,
+        &spec_hash,
+        &subject_commit,
+        &gw.resolved().all_scenarios,
+        report,
+    )?;
+    let passing = gw.is_passing(&resolved);
+
+    if format == "json" {
+        let mut verification = serde_json::to_value(&resolved)?;
+        verification["summary"]["external_pending"] = serde_json::json!(0);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "schema_version": 1,
+                "stage": "resolve-evidence",
+                "passed": passing,
+                "verification": verification,
+            }))?
+        );
+    } else {
+        println!("{}", gw.format_report(&resolved, format));
+    }
+    if passing {
+        Ok(())
+    } else {
+        Err(format_non_passing_summary(&resolved.summary).into())
+    }
+}
+
+fn current_git_commit(code: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(code)
+        .output()?;
+    if !output.status.success() {
+        return Err("cannot resolve subject commit from git HEAD".into());
+    }
+    Ok(String::from_utf8(output.stdout)?.trim().to_string())
 }
 
 // ── Plan ─────────────────────────────────────────────────────────
@@ -3388,6 +3512,7 @@ Scenario: verification metadata stays visible
             out_of_scope: vec!["AI verification".into()],
         };
         let report = crate::spec_core::VerificationReport {
+            schema_version: None,
             spec_name: "test".into(),
             results: vec![crate::spec_core::ScenarioResult {
                 scenario_name: "happy path".into(),
@@ -3403,6 +3528,7 @@ Scenario: verification metadata stays visible
                 skipped: 0,
                 uncertain: 0,
                 pending_review: 0,
+                external_pending: 0,
             },
         };
 
@@ -3434,6 +3560,7 @@ Scenario: verification metadata stays visible
             out_of_scope: vec!["HTML output".into()],
         };
         let report = crate::spec_core::VerificationReport {
+            schema_version: None,
             spec_name: "pr".into(),
             results: vec![
                 crate::spec_core::ScenarioResult {
@@ -3458,6 +3585,7 @@ Scenario: verification metadata stays visible
                 skipped: 0,
                 uncertain: 0,
                 pending_review: 0,
+                external_pending: 0,
             },
         };
 
@@ -3483,6 +3611,7 @@ Scenario: verification metadata stays visible
             skipped: 0,
             uncertain: 0,
             pending_review: 0,
+            external_pending: 0,
         };
 
         let trailers = build_stamp_trailers("my-contract", false, &summary, None);
@@ -3769,6 +3898,7 @@ Scenario: verification metadata stays visible
 
         // Test filter_report_by_layers preserves matching and removes non-matching
         let report = crate::spec_core::VerificationReport {
+            schema_version: None,
             spec_name: "test".into(),
             results: vec![
                 crate::spec_core::ScenarioResult {
@@ -3800,6 +3930,7 @@ Scenario: verification metadata stays visible
                 skipped: 0,
                 uncertain: 1,
                 pending_review: 0,
+                external_pending: 0,
             },
         };
 
@@ -3987,6 +4118,7 @@ Scenario: verification metadata stays visible
             skipped: 0,
             uncertain: 0,
             pending_review: 0,
+            external_pending: 0,
         };
         let jj_ctx = vcs::VcsContext {
             vcs_type: vcs::VcsType::Jj,
@@ -4015,6 +4147,7 @@ Scenario: verification metadata stays visible
             skipped: 0,
             uncertain: 0,
             pending_review: 0,
+            external_pending: 0,
         };
         let git_ctx = vcs::VcsContext {
             vcs_type: vcs::VcsType::Git,

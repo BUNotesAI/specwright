@@ -1,14 +1,15 @@
 use crate::spec_core::{
     Boundary, BoundaryCategory, Constraint, ConstraintCategory, ParserWarning, ReviewMode,
-    Scenario, ScenarioMode, Section, Span, SpecDocument, SpecError, SpecResult, Step, TestSelector,
+    Scenario, ScenarioMode, ScenarioVerification, Section, Span, SpecDocument, SpecError,
+    SpecResult, Step, TestSelector,
 };
 use std::path::{Path, PathBuf};
 
 use super::keywords::{
     RemovedKeyword, SectionKind, TestSelectorField, detect_removed_cjk_keyword, extract_params,
-    match_depends_field, match_mode_field, match_review_field, match_scenario_header,
-    match_scenario_tags, match_section_header, match_step_keyword, match_test_selector,
-    match_test_selector_field,
+    match_depends_field, match_evidence_field, match_mode_field, match_review_field,
+    match_scenario_header, match_scenario_tags, match_section_header, match_step_keyword,
+    match_test_selector, match_test_selector_field, match_verification_field,
 };
 use super::meta::parse_meta;
 
@@ -251,6 +252,8 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<(Vec<Scenario>, Vec<Pa
     let mut current_steps: Vec<Step> = Vec::new();
     let mut current_test_selector: Option<TestSelectorDraft> = None;
     let mut current_tags: Vec<String> = Vec::new();
+    let mut current_verification = ScenarioVerification::Standard;
+    let mut current_evidence: Option<String> = None;
     let mut current_review: ReviewMode = ReviewMode::default();
     let mut current_mode: ScenarioMode = ScenarioMode::Standard;
     let mut current_depends_on: Vec<String> = Vec::new();
@@ -266,6 +269,8 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<(Vec<Scenario>, Vec<Pa
                     steps: std::mem::take(&mut current_steps),
                     test_selector: finalize_test_selector(current_test_selector.take(), end)?,
                     tags: std::mem::take(&mut current_tags),
+                    verification: std::mem::take(&mut current_verification),
+                    evidence: current_evidence.take(),
                     review: std::mem::take(&mut current_review),
                     mode: std::mem::take(&mut current_mode),
                     depends_on: std::mem::take(&mut current_depends_on),
@@ -274,6 +279,8 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<(Vec<Scenario>, Vec<Pa
             }
             current_name = Some((name.to_string(), line_num));
             current_tags = Vec::new();
+            current_verification = ScenarioVerification::Standard;
+            current_evidence = None;
             current_review = ReviewMode::default();
             current_mode = ScenarioMode::Standard;
             current_depends_on = Vec::new();
@@ -290,6 +297,25 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<(Vec<Scenario>, Vec<Pa
                 } else {
                     current_review = ReviewMode::Auto;
                 }
+            }
+        } else if let Some(value) = match_verification_field(line) {
+            if current_name.is_some() {
+                current_verification = match value.to_ascii_lowercase().as_str() {
+                    "external" => ScenarioVerification::External,
+                    "standard" => ScenarioVerification::Standard,
+                    _ => {
+                        return Err(SpecError::Parse {
+                            message: format!(
+                                "unsupported Verification value `{value}`; expected `standard` or `external`"
+                            ),
+                            span: Span::line(line_num),
+                        });
+                    }
+                };
+            }
+        } else if let Some(value) = match_evidence_field(line) {
+            if current_name.is_some() {
+                current_evidence = (!value.is_empty()).then(|| value.to_string());
             }
         } else if let Some(mode_value) = match_mode_field(line) {
             if current_name.is_some() {
@@ -369,6 +395,8 @@ fn parse_scenarios(lines: &[(usize, &str)]) -> SpecResult<(Vec<Scenario>, Vec<Pa
             steps: current_steps,
             test_selector: finalize_test_selector(current_test_selector, end)?,
             tags: current_tags,
+            verification: current_verification,
+            evidence: current_evidence,
             review: current_review,
             mode: current_mode,
             depends_on: current_depends_on,

@@ -304,7 +304,7 @@ impl SpecGateway {
     // ── Stage 4: DECIDE ─────────────────────────────────────────
 
     pub fn is_passing(&self, report: &VerificationReport) -> bool {
-        self.is_passing_with_review_mode(report, "auto")
+        self.is_passing_with_modes(report, "auto", "strict")
     }
 
     /// Check if verification is passing, with review mode support.
@@ -316,16 +316,29 @@ impl SpecGateway {
         report: &VerificationReport,
         review_mode: &str,
     ) -> bool {
+        self.is_passing_with_modes(report, review_mode, "strict")
+    }
+
+    /// Check passing policy for human-review and external-evidence pending states.
+    pub fn is_passing_with_modes(
+        &self,
+        report: &VerificationReport,
+        review_mode: &str,
+        external_mode: &str,
+    ) -> bool {
         let base = report.summary.total > 0
             && report.summary.failed == 0
             && report.summary.skipped == 0
             && report.summary.uncertain == 0;
 
+        let external_allowed =
+            external_mode == "allow-pending" || report.summary.external_pending == 0;
+
         if review_mode == "strict" {
-            base && report.summary.pending_review == 0
+            base && report.summary.pending_review == 0 && external_allowed
         } else {
             // "auto" mode: PendingReview counts as pass
-            base
+            base && external_allowed
         }
     }
 
@@ -364,7 +377,8 @@ impl SpecGateway {
             report.summary.failed
                 + report.summary.skipped
                 + report.summary.uncertain
-                + report.summary.pending_review,
+                + report.summary.pending_review
+                + report.summary.external_pending,
             report.summary.total,
         ));
 
@@ -637,6 +651,7 @@ Scenario: 缺少 selector
     fn test_skip_is_not_passing() {
         let gw = SpecGateway::from_input(SAMPLE).unwrap();
         let report = VerificationReport {
+            schema_version: None,
             spec_name: "测试任务".into(),
             results: vec![crate::spec_core::ScenarioResult {
                 scenario_name: "未验证场景".into(),
@@ -656,6 +671,7 @@ Scenario: 缺少 selector
                 skipped: 1,
                 uncertain: 0,
                 pending_review: 0,
+                external_pending: 0,
             },
         };
 
@@ -863,6 +879,7 @@ Scenario: 正常路径
     fn test_pass_plus_skip_is_not_passing() {
         let gw = SpecGateway::from_input(SAMPLE).unwrap();
         let report = VerificationReport {
+            schema_version: None,
             spec_name: "测试任务".into(),
             results: vec![
                 crate::spec_core::ScenarioResult {
@@ -895,6 +912,7 @@ Scenario: 正常路径
                 skipped: 1,
                 uncertain: 0,
                 pending_review: 0,
+                external_pending: 0,
             },
         };
 

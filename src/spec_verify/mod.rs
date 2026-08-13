@@ -737,6 +737,27 @@ pub fn run_verification(
     let mut all_results = Vec::new();
     let mut covered_scenarios = HashSet::new();
 
+    for scenario in &ctx.resolved_spec.all_scenarios {
+        if scenario.verification == crate::spec_core::ScenarioVerification::External {
+            covered_scenarios.insert(scenario.name.clone());
+            all_results.push(ScenarioResult {
+                scenario_name: scenario.name.clone(),
+                verdict: Verdict::ExternalPending,
+                step_results: scenario
+                    .steps
+                    .iter()
+                    .map(|step| StepVerdict {
+                        step_text: step.text.clone(),
+                        verdict: Verdict::ExternalPending,
+                        reason: "awaiting declared external evidence".into(),
+                    })
+                    .collect(),
+                evidence: Vec::new(),
+                duration_ms: 0,
+            });
+        }
+    }
+
     for verifier in verifiers {
         let results = verifier.verify(ctx)?;
         for result in results {
@@ -1119,6 +1140,8 @@ mod tests {
                 span: Span::line(1),
             }],
             test_selector: None,
+            verification: Default::default(),
+            evidence: None,
             tags: vec![],
             review: Default::default(),
             mode: Default::default(),

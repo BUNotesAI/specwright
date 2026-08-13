@@ -164,6 +164,21 @@ pub enum ReviewMode {
     Human,
 }
 
+/// Verification source declared by a scenario.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScenarioVerification {
+    #[default]
+    Standard,
+    External,
+}
+
+impl ScenarioVerification {
+    pub fn is_standard(&self) -> bool {
+        *self == Self::Standard
+    }
+}
+
 impl ReviewMode {
     pub fn is_auto(&self) -> bool {
         *self == Self::Auto
@@ -178,6 +193,10 @@ pub struct Scenario {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub test_selector: Option<TestSelector>,
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "ScenarioVerification::is_standard")]
+    pub verification: ScenarioVerification,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
     #[serde(default, skip_serializing_if = "ReviewMode::is_auto")]
     pub review: ReviewMode,
     #[serde(default, skip_serializing_if = "ScenarioMode::is_standard")]
